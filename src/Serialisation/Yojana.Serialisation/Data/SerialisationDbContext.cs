@@ -86,6 +86,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
 
     public DbSet<SerialAllocationOverride> AllocationOverrides => Set<SerialAllocationOverride>();
     public DbSet<ItemTrackingModeChange> ItemTrackingModeChanges => Set<ItemTrackingModeChange>();
+    public DbSet<ItemSerialisationSettings> ItemSerialisationSettings => Set<ItemSerialisationSettings>();
     public DbSet<ManufacturingMessageReceipt> ManufacturingMessageReceipts => Set<ManufacturingMessageReceipt>();
     public DbSet<CorrectionRecordUnit> CorrectionUnits => Set<CorrectionRecordUnit>();
 
@@ -633,6 +634,16 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(c => c.ActorRef).HasMaxLength(200);
             b.HasIndex(c => new { c.TenantId, c.CorrectionId }).IsUnique();
             b.HasIndex(c => new { c.TenantId, c.ItemId, c.EffectiveAt });
+        });
+
+        modelBuilder.Entity<ItemSerialisationSettings>(b =>
+        {
+            b.ToTable("item_serialisation_settings", t =>
+                t.HasCheckConstraint("ck_item_serialisation_settings_model_numbers_json", "ISJSON(model_numbers_json) = 1"));
+            b.HasKey(row => new { row.TenantId, row.ItemId });
+            b.Property(row => row.ModelNumbersJson).HasColumnName("model_numbers_json");
+            b.Property(row => row.LastModifiedBy).HasMaxLength(200);
+            b.HasIndex(row => new { row.TenantId, row.LastModifiedAt });
         });
 
         modelBuilder.Entity<ManufacturingMessageReceipt>(b =>

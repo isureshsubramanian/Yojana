@@ -13,6 +13,8 @@ import { returnsApi } from "./api";
 import { CONDITION_GRADES, gradeOptionState, humanise, receiptTone, receiptValuationRule, valuationRuleForGrade } from "./format";
 import type { RmaDetail, RmaDetailLine, RmaListRow } from "./types";
 import "./returns.css";
+import { isModelNumberRefusal, ModelNumberConfirmation } from "../units/ModelNumberConfirmation";
+import type { ApiError } from "../api/client";
 
 export function Component() {
   const tenantTime = useTenantTime();
@@ -31,6 +33,7 @@ export function Component() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const [modelNumberRefusal, setModelNumberRefusal] = useState<ApiError | null>(null);
   const applyDetail = useCallback((next: RmaDetail) => {
     setDetail(next); setActiveLineId(next.lines.find((line) => !line.receiptOutcome)?.rmaLineId ?? next.lines[0]?.rmaLineId ?? null);
     setGrades(Object.fromEntries(next.lines.map((line) => [line.rmaLineId, line.conditionGrade ?? "defective"])));
@@ -77,16 +80,17 @@ export function Component() {
   const activeValue = activeLine ? received[activeLine.rmaLineId] : undefined;
   const canReceive = !!detail && ["authorised", "in_transit"].includes(detail.stage) && !!locationId
     && !!receivedAt && detail.lines.every((line) => typeof received[line.rmaLineId] === "string" || unreadable.has(line.rmaLineId));
-  const receiveReturn = async () => {
+  const receiveReturn = async (modelNumberConfirmationReason?: string) => {
     if (!detail || !locationId || !canReceive) return;
-    setBusy(true); setError(null);
+    setBusy(true); setError(null); setModelNumberRefusal(null);
     try {
       await returnsApi.receive(detail.rmaId, {
         receivingLocationId: locationId, dispatchedAt: null, receivedAt: tenantTime.fromLocalInput(receivedAt),
         lines: detail.lines.map((line) => ({ rmaLineId: line.rmaLineId, receivedIdentifier: unreadable.has(line.rmaLineId) ? null : { value: received[line.rmaLineId]!, issuerPartyRef: null, identifierType: null, erpSerialId: null }, conditionGrade: grades[line.rmaLineId] ?? "defective", valuationRule: valuationRuleForGrade(grades[line.rmaLineId] ?? "defective"), outcome: "accepted", exceptionNote: notes[line.rmaLineId]?.trim() || null })),
+        confirmedNotModelNumber: !!modelNumberConfirmationReason, modelNumberConfirmationReason: modelNumberConfirmationReason ?? null,
       });
       const next = await returnsApi.detail(detail.rmaId); applyDetail(next); setMessage(`${next.rmaNumber ?? "Return"} received into quarantine`); await loadToday();
-    } catch (reason) { setError(reason); } finally { setBusy(false); }
+    } catch (reason) { if (isModelNumberRefusal(reason)) setModelNumberRefusal(reason); else setError(reason); } finally { setBusy(false); }
   };
   const markUnreadable = () => {
     if (!activeLine) { setMessage("Load an RMA before recording an unreadable label."); return; }
@@ -117,6 +121,7 @@ export function Component() {
           </div></section>
           {activeLine && <section className="card" aria-labelledby="receipt-grade-heading"><div className="card-header"><h2 id="receipt-grade-heading">Grade on receipt</h2><span className="meta">sets the valuation rule · inspection can change it later</span></div><div className="card-body"><div className="returns-options" role="radiogroup" aria-label="Condition grade">{CONDITION_GRADES.map((grade) => { const state = gradeOptionState(grade); const selected = (grades[activeLine.rmaLineId] ?? "defective") === grade; return <label className={`returns-option${selected ? " on" : ""}${state.enabled ? "" : " off"}`} key={grade} title={state.reason ?? undefined}><input type="radio" name="condition-grade" disabled={!state.enabled || !!activeLine.receiptOutcome} checked={selected} onChange={() => setGrades((current) => ({ ...current, [activeLine.rmaLineId]: grade }))} /><span>{humanise(grade)}<span className="s">{state.reason ?? gradeHelp(grade)}</span></span></label>; })}</div><div className="returns-inline-fields"><LocationField id="receipt-location" label="Quarantine location" value={locationId} onChange={setLocationId} kind="quarantine" hint="Required · custody moves here at the receipt business time" /><label className="field"><span className="lbl">Received at</span><input className="input" type="datetime-local" value={receivedAt} onChange={(event) => setReceivedAt(event.target.value)} /></label><label className="field"><span className="lbl">Valuation rule{valuation.proposed ? " · proposed" : ""}</span><span className="returns-readonly-value">{humanise(valuation.rule)}</span></label></div><label className="field" style={{ marginTop: 14 }}><span className="lbl">Inspection note</span><textarea className="textarea" value={notes[activeLine.rmaLineId] ?? ""} onChange={(event) => setNotes((current) => ({ ...current, [activeLine.rmaLineId]: event.target.value }))} placeholder="Fault, packaging and visible-condition observations" /></label></div></section>}
           <ErrorNote error={error} />
+          <ModelNumberConfirmation refusal={modelNumberRefusal} busy={busy} onDismiss={() => setModelNumberRefusal(null)} onConfirm={receiveReturn} />
         </div>
         <div className="stack">
           <section className="card"><div className="card-header"><h2>Will be recorded</h2><span className="meta">one transaction</span></div><table className="table dense"><tbody><tr><td className="primary">Return received</td><td>authorised or in transit → received</td></tr><tr><td className="primary">Custody moved</td><td>current custody → quarantine</td></tr><tr><td className="primary">Condition graded{valuation.proposed ? " · proposed" : ""}</td><td>{humanise(activeGrade)} · {humanise(valuation.rule)}</td></tr><tr><td className="primary">Receipt outcome</td><td>{activeValue ? matched ? "accepted" : "mismatch" : unreadable.size ? "provisional identity" : "waiting for scan"}</td></tr></tbody></table><div className="card-footer"><span>Business time {receivedAt ? tenantTime.dateTime(tenantTime.fromLocalInput(receivedAt)) : "—"}</span></div></section>

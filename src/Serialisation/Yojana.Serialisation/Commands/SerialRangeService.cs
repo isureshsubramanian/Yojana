@@ -7,6 +7,7 @@ using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Identity;
+using Yojana.Serialisation.Ports;
 
 namespace Yojana.Serialisation.Commands;
 
@@ -19,7 +20,8 @@ namespace Yojana.Serialisation.Commands;
 /// into the same ordinals. Released ranges (cancelled orders) keep blocking their ordinals: serials are never re-issued
 /// (OD-07 default).
 /// </summary>
-public sealed class SerialRangeService(SerialisationDbContext db, ISerialSchemeSource schemes, SerialAllocationReservationStore reservations, ITenantContext tenant)
+public sealed class SerialRangeService(SerialisationDbContext db, ISerialSchemeSource schemes,
+    SerialAllocationReservationStore reservations, EffectiveItemProfiles items, ITenantContext tenant)
 {
     public async Task<AllocateSerialRangeResult> AllocateAsync(AllocateSerialRange command, CancellationToken cancellationToken)
     {
@@ -36,6 +38,11 @@ public sealed class SerialRangeService(SerialisationDbContext db, ISerialSchemeS
             var members = existing.RandomisedListRef is null ? [] : await db.SerialRangeMembers.AsNoTracking().Where(m => m.TenantId == tenantId && m.RangeId == existing.RangeId).OrderBy(m => m.Ordinal).Select(m => m.Value).ToListAsync(cancellationToken);
             return new AllocateSerialRangeResult(existing.RangeId, existing.Scheme, existing.StartValue, existing.EndValue, existing.Count, existing.RandomisedListRef is not null, members, false, command.Start);
         }
+
+        if (command.Start is not null && command.ItemId is { } itemId
+            && await items.GetAsync(itemId, command.EventTime, cancellationToken) is { } profile)
+            ModelNumberRules.RefuseUnlessConfirmed(ModelNumberRules.Matches(profile, scheme.IdentifierType, command.Start),
+                command.ConfirmedNotModelNumber, command.ModelNumberConfirmationReason);
 
         await LockSchemeAsync(tenantId, scheme.Code, cancellationToken);
         var block = scheme.BlockFor(command.EventTime);

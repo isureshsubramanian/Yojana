@@ -4264,6 +4264,43 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ItemSerialisationSettings", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("item_id");
+
+                    b.Property<DateTime>("LastModifiedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("last_modified_at");
+
+                    b.Property<string>("LastModifiedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("last_modified_by");
+
+                    b.Property<string>("ModelNumbersJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("model_numbers_json");
+
+                    b.HasKey("TenantId", "ItemId")
+                        .HasName("pk_item_serialisation_settings");
+
+                    b.HasIndex("TenantId", "LastModifiedAt")
+                        .HasDatabaseName("ix_item_serialisation_settings_tenant_id_last_modified_at");
+
+                    b.ToTable("item_serialisation_settings", "serialisation", t =>
+                        {
+                            t.HasCheckConstraint("ck_item_serialisation_settings_model_numbers_json", "ISJSON(model_numbers_json) = 1");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ItemTrackingModeChange", b =>
                 {
                     b.Property<Guid>("TenantId")

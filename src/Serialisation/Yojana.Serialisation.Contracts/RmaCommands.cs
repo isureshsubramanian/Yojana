@@ -100,7 +100,9 @@ public sealed record ReceiveReturn(
     DateTime? DispatchedAt,
     DateTime ReceivedAt,
     DateTime EventTime,
-    string ActorRef = "");
+    string ActorRef = "",
+    bool ConfirmedNotModelNumber = false,
+    string? ModelNumberConfirmationReason = null);
 
 public sealed record ReceiveReturnResult(Guid RmaId, string Stage, IReadOnlyList<ReturnReceiptResultLine> Lines, Guid EventId, bool Replayed);
 

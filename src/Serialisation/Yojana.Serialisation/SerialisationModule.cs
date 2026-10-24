@@ -120,6 +120,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<UnitResolver>();
         builder.Services.AddScoped<PostingPeriods>();
         builder.Services.AddScoped<EffectiveItemProfiles>();
+        builder.Services.AddScoped<ItemSerialisationSettingsService>();
 
         // Selection sets and bulk operations (MOD-11 part built in P1, P1-T18); later phases add their IBulkOperation beside ReleaseUnitsOperation.
         builder.Services.AddScoped<SelectionSetResolver>();

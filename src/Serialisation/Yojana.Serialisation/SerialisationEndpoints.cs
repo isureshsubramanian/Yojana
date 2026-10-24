@@ -1207,6 +1207,19 @@ public static class SerialisationEndpoints
             try { return Results.Ok(await settings.SetAsync(policy, ct)); }
             catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
         }).RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        generalSettings.MapGet("/items/{itemId:guid}/serialisation", async (Guid itemId,
+            ItemSerialisationSettingsService settings, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await settings.GetAsync(itemId, ct)); }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status404NotFound); }
+        });
+        generalSettings.MapPut("/items/{itemId:guid}/serialisation", async (Guid itemId,
+            UpdateItemModelNumbers update, ItemSerialisationSettingsService settings, ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            try { return Results.Ok(await settings.SetAsync(itemId, update, Actor(user), ct)); }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
+        }).RequireAuthorization(YojanaPolicy.TenantAdministrator);
         generalSettings.MapGet("/time-zone", async (TenantTimeZoneSettings settings, CancellationToken ct) =>
             Results.Ok(await settings.GetAsync(ct)));
         generalSettings.MapPut("/time-zone", async (UpdateTenantTimeZoneSettings update,

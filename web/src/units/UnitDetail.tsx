@@ -21,6 +21,8 @@ import { CoverSinceSalePanel } from "../entitlements/CoverSinceSalePanel";
 import type { UnitEntitlementDetail } from "../entitlements/types";
 import { useReferenceNames } from "../corrections/ReferenceFields";
 import { QuestionsPanel } from "../questions/QuestionsPanel";
+import { isModelNumberRefusal, ModelNumberConfirmation } from "./ModelNumberConfirmation";
+import type { ApiError } from "../api/client";
 
 const HISTORY_PAGE = 20;
 const FLAGS = ["lost", "stolen", "written_off", "clone_seen", "recalled", "authenticity_failed"];
@@ -280,13 +282,14 @@ function CorrectForm({ unitId, types, onDone }: { unitId: string; types: string[
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const submit = async () => {
-    setBusy(true); setError(null);
+  const [modelNumberRefusal, setModelNumberRefusal] = useState<ApiError | null>(null);
+  const submit = async (modelNumberConfirmationReason?: string) => {
+    setBusy(true); setError(null); setModelNumberRefusal(null);
     try {
-      const r = await units.correctIdentifier({ commandId: newCommandId(), unitId, identifierType: type, newRawValue: value, reason, eventTime: now(), legalEntityId: DEFAULT_LEGAL_ENTITY, approverRef: approver || null, note: note || null });
+      const r = await units.correctIdentifier({ commandId: newCommandId(), unitId, identifierType: type, newRawValue: value, reason, eventTime: now(), legalEntityId: DEFAULT_LEGAL_ENTITY, approverRef: approver || null, note: note || null, confirmedNotModelNumber: !!modelNumberConfirmationReason, modelNumberConfirmationReason: modelNumberConfirmationReason ?? null });
       updateDrawer({ eyebrow: "Recorded · unit.identifier_corrected", title: r.newNormalisedValue, mono: true }, <><h3>Done</h3><Kv rows={[["Before", r.oldNormalisedValue], ["After", r.newNormalisedValue], ["Old row", "closed, still searchable"]]} /></>);
       onDone();
-    } catch (e) { setError(e); } finally { setBusy(false); }
+    } catch (e) { if (isModelNumberRefusal(e)) setModelNumberRefusal(e); else setError(e); } finally { setBusy(false); }
   };
   return (
     <>
@@ -298,7 +301,8 @@ function CorrectForm({ unitId, types, onDone }: { unitId: string; types: string[
         <div className="field"><label htmlFor="c-approver">Approver <span className="hint">· required after the unit appeared on an external document</span></label><input id="c-approver" className="input" value={approver} onChange={(e) => setApprover(e.target.value)} /></div>
         <div className="field"><label htmlFor="c-note">Note</label><textarea id="c-note" className="textarea" value={note} onChange={(e) => setNote(e.target.value)} /></div>
         <ErrorNote error={error} />
-        <div className="act"><button type="button" className="btn primary block" disabled={!value || busy} aria-busy={busy} onClick={submit}>Record correction</button></div>
+        <ModelNumberConfirmation refusal={modelNumberRefusal} busy={busy} onDismiss={() => setModelNumberRefusal(null)} onConfirm={submit} />
+        <div className="act"><button type="button" className="btn primary block" disabled={!value || busy} aria-busy={busy} onClick={() => void submit()}>Record correction</button></div>
       </div>
       <p className="hint" style={{ marginTop: 12 }}>A new row replaces the open one of that type; the old value stays searchable and resolves to this unit. No stock moves; the events stay as they are.</p>
     </>

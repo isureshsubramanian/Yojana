@@ -118,6 +118,7 @@ public sealed class DemoConventionsTests
         Assert.True(Assert.IsType<DemoCatalogue.ItemSerialisation>(catalogue.Items["SS-1110"].Serialisation).RequiresSanitisation);
         Assert.True(Assert.IsType<DemoCatalogue.ItemSerialisation>(catalogue.Items["SS-1112"].Serialisation).RequiresSanitisation);
         Assert.False(Assert.IsType<DemoCatalogue.ItemSerialisation>(catalogue.Items["PF-400"].Serialisation).RequiresSanitisation);
+        Assert.Equal(["HX20PR-64P6ZY0"], Assert.IsType<DemoCatalogue.ItemSerialisation>(catalogue.Items["HD-20T"].Serialisation).ModelNumbers);
     }
 
     [Fact]

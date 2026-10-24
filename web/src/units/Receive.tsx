@@ -9,6 +9,9 @@ import { Breadcrumbs } from "../shell/PageHeader";
 import { usePeople } from "../people/people";
 import { ErrorNote, Figure, Kv, Section, useActor } from "./common";
 import { outcomeTone, pct, sentence, serialFromScan, splitSerials } from "./format";
+import { isModelNumberRefusal, ModelNumberConfirmation } from "./ModelNumberConfirmation";
+import type { ApiError } from "../api/client";
+import { ItemField } from "../corrections/ReferenceFields";
 
 interface Captured { n: number; raw: string; serial: string; vendor: string | null; lot: string | null; scan: ScanResult | null; source: "scan" | "typed" | "list"; at: string; errors: string[]; result?: CommissionLineResult | undefined }
 
@@ -38,6 +41,7 @@ export function Component() {
   const [page, setPage] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [modelNumberRefusal, setModelNumberRefusal] = useState<ApiError | null>(null);
   const [scanNote, setScanNote] = useState<string | null>(null);
   const [result, setResult] = useState<CommissionUnitsResult | null>(null);
 
@@ -86,22 +90,23 @@ export function Component() {
   const grid = { rows: shown.slice((page - 1) * PAGE, page * PAGE), total: shown.length, page, pageSize: PAGE, continuation: null };
   const ready = GUID.test(itemId) && (valid.length + pending) > 0 && !busy;
 
-  const commit = async () => {
-    setBusy(true); setError(null);
+  const commit = async (modelNumberConfirmationReason?: string) => {
+    setBusy(true); setError(null); setModelNumberRefusal(null);
     try {
       const ordered = [...rows].reverse().filter((r) => r.errors.length === 0 && (!vendorRequired || r.vendor));
       const lines = ordered.map((r) => ({ identifiers: [{ type: "internal_serial", rawValue: r.serial }, ...(r.vendor ? [{ type: "vendor_serial", rawValue: r.vendor }] : [])], clientReference: String(r.n), lotId: GUID.test(r.lot ?? "") ? r.lot : null }));
       for (let i = 0; i < pending; i++) lines.push({ identifiers: [], clientReference: `pending-${i + 1}`, lotId: null });
       const r = await units.commission({
-        commandId: newCommandId(), itemId, origin, lines, eventTime: now(), actorRef: actor, legalEntityId: DEFAULT_LEGAL_ENTITY,
+        commandId: newCommandId(), itemId, origin, lines, eventTime: now(), legalEntityId: DEFAULT_LEGAL_ENTITY,
         document: GUID.test(docId) ? { type: docType, id: docId, line: docLine ? Number(docLine) : null } : null,
         locationId: GUID.test(locationId) ? locationId : null, locationKind: locationKind || null, skipInvalidLines: true,
+        confirmedNotModelNumber: !!modelNumberConfirmationReason, modelNumberConfirmationReason: modelNumberConfirmationReason ?? null,
       });
       setResult(r);
       setRows((current) => current.map((row) => ({ ...row, result: r.lines.find((l) => l.clientReference === String(row.n)) })));
-    } catch (e) { setError(e); } finally { setBusy(false); }
+    } catch (e) { if (isModelNumberRefusal(e)) setModelNumberRefusal(e); else setError(e); } finally { setBusy(false); }
   };
-  useModEnter(commit, !ready);
+  useModEnter(() => void commit(), !ready);
 
   const columns: GridColumn<Captured>[] = [
     { key: "n", label: "#", width: 8, numeric: true, muted: true, render: (r) => r.n },
@@ -138,7 +143,7 @@ export function Component() {
           </div>
           <div className="actions">
             <Link className="btn ghost" to="/units">Discard session</Link>
-            <button type="button" className="btn primary" disabled={!ready} aria-busy={busy} onClick={commit}>Commission {valid.length + pending} units<Shortcut keys="mod+enter" /></button>
+            <button type="button" className="btn primary" disabled={!ready} aria-busy={busy} onClick={() => void commit()}>Commission {valid.length + pending} units<Shortcut keys="mod+enter" /></button>
           </div>
         </div>
 
@@ -148,7 +153,7 @@ export function Component() {
             <div className="card-body">
               <div className="stack" style={{ gap: 16 }}>
                 <div className="form-grid">
-                  <div className="field"><label htmlFor="r-item">Item id <span className="hint">· from the host's item master</span></label><input id="r-item" className="input serial" value={itemId} onChange={(e) => setItemId(e.target.value)} placeholder="00000000-0000-0000-0000-000000000000" /></div>
+                  <ItemField id="r-item" label="Item" value={itemId || null} onChange={value => setItemId(value ?? "")} hint="Choose by item code or name" />
                   <div className="field"><label htmlFor="r-origin">Origin</label><select id="r-origin" className="select" value={origin} onChange={(e) => setOrigin(e.target.value)}>{ORIGINS.map((o) => <option key={o} value={o}>{sentence(o)}</option>)}</select></div>
                   <div className="field"><label htmlFor="r-doctype">Document type</label><input id="r-doctype" className="input" value={docType} onChange={(e) => setDocType(e.target.value)} /></div>
                   <div className="field"><label htmlFor="r-docid">Document id <span className="hint">· line optional</span></label><div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 64px", gap: 8 }}><input id="r-docid" className="input serial" value={docId} onChange={(e) => setDocId(e.target.value)} placeholder="guid" /><input className="input num" value={docLine} onChange={(e) => setDocLine(e.target.value)} placeholder="line" aria-label="Document line" /></div></div>
@@ -195,6 +200,7 @@ export function Component() {
                 {decide.length > 0 && <div className="note warn"><strong>{decide.length} rows need a decision</strong>&nbsp;before commit. Commit records the {valid.length} valid rows and leaves these in the session.</div>}
                 {result && <div className="note ok"><strong>Recorded.</strong>&nbsp;{result.commissioned} commissioned, {result.pending} pending identifier, {result.refused} refused, {result.duplicates} duplicates. Refused rows show their reason in the table.</div>}
                 <ErrorNote error={error} />
+                <ModelNumberConfirmation refusal={modelNumberRefusal} busy={busy} onDismiss={() => setModelNumberRefusal(null)} onConfirm={commit} />
               </div>
             </div>
           </section>

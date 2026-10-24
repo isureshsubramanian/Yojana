@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
@@ -19,6 +20,43 @@ public sealed class EffectiveItemProfiles(SerialisationDbContext db, IItemQueryP
             .Where(c => c.TenantId == tenant.TenantId && c.ItemId == itemId && c.EffectiveAt <= effectiveAt)
             .OrderByDescending(c => c.EffectiveAt).ThenByDescending(c => c.RecordedAt)
             .Select(c => c.TrackingMode).FirstOrDefaultAsync(cancellationToken);
-        return mode is null ? profile : profile with { TrackingMode = mode };
+        var local = await db.ItemSerialisationSettings.AsNoTracking()
+            .Where(row => row.TenantId == tenant.TenantId && row.ItemId == itemId)
+            .Select(row => row.ModelNumbersJson)
+            .SingleOrDefaultAsync(cancellationToken);
+        return profile with
+        {
+            TrackingMode = mode ?? profile.TrackingMode,
+            ModelNumbers = local is null ? profile.ModelNumbers ?? [] : JsonSerializer.Deserialize<string[]>(local) ?? [],
+        };
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, ItemSerialisationProfile?>> GetManyAsync(
+        IReadOnlyCollection<Guid> itemIds,
+        DateTime effectiveAt,
+        CancellationToken cancellationToken)
+    {
+        var ids = itemIds.Distinct().ToList();
+        if (ids.Count == 0) return new Dictionary<Guid, ItemSerialisationProfile?>();
+        var profiles = await source.GetManyAsync(ids, cancellationToken);
+        var changes = await db.ItemTrackingModeChanges.AsNoTracking()
+            .Where(row => row.TenantId == tenant.TenantId && ids.Contains(row.ItemId) && row.EffectiveAt <= effectiveAt)
+            .OrderByDescending(row => row.EffectiveAt).ThenByDescending(row => row.RecordedAt)
+            .Select(row => new { row.ItemId, row.TrackingMode })
+            .ToListAsync(cancellationToken);
+        var modes = changes.GroupBy(row => row.ItemId).ToDictionary(group => group.Key, group => group.First().TrackingMode);
+        var local = await db.ItemSerialisationSettings.AsNoTracking()
+            .Where(row => row.TenantId == tenant.TenantId && ids.Contains(row.ItemId))
+            .Select(row => new { row.ItemId, row.ModelNumbersJson })
+            .ToDictionaryAsync(row => row.ItemId, row => row.ModelNumbersJson, cancellationToken);
+        return ids.ToDictionary(itemId => itemId, itemId => profiles.GetValueOrDefault(itemId) is { } profile
+            ? profile with
+            {
+                TrackingMode = modes.GetValueOrDefault(itemId) ?? profile.TrackingMode,
+                ModelNumbers = local.TryGetValue(itemId, out var json)
+                    ? JsonSerializer.Deserialize<string[]>(json) ?? []
+                    : profile.ModelNumbers ?? [],
+            }
+            : null);
     }
 }

@@ -9,6 +9,8 @@ using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Ledger;
+using Yojana.Serialisation.Identity;
+using Yojana.Serialisation.Ports;
 
 namespace Yojana.Serialisation.Commands;
 
@@ -26,7 +28,7 @@ namespace Yojana.Serialisation.Commands;
 /// </summary>
 public static class CorrectIdentifierHandler
 {
-    public static async Task<CorrectIdentifierResult> Handle(CorrectIdentifier command, SerialisationDbContext db, IUnitEventWriter writer, IdentifierService identifiers, CorrectionLedger corrections, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+    public static async Task<CorrectIdentifierResult> Handle(CorrectIdentifier command, SerialisationDbContext db, IUnitEventWriter writer, IdentifierService identifiers, EffectiveItemProfiles items, CorrectionLedger corrections, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         CorrectionRules.ValidateReason(CorrectionCommand.CorrectIdentifier, command.Reason);
@@ -50,6 +52,9 @@ public static class CorrectIdentifierHandler
         }
 
         var itemId = await db.ItemAssignments.AsNoTracking().Where(a => a.TenantId == tenantId && a.UnitId == unit.UnitId && a.ValidTo == null).Select(a => (Guid?)a.ItemId).FirstOrDefaultAsync(cancellationToken);
+        if (itemId is { } assignedItem && await items.GetAsync(assignedItem, command.EventTime, cancellationToken) is { } profile)
+            ModelNumberRules.RefuseUnlessConfirmed(ModelNumberRules.Matches(profile, command.IdentifierType, command.NewRawValue),
+                command.ConfirmedNotModelNumber, command.ModelNumberConfirmationReason);
         // Customer asset tags are scoped to the owning party (ADR-0001 customer_asset_tag); the open ownership row says who that is.
         var ownerPartyRef = await db.Episodes.AsNoTracking().Where(e => e.TenantId == tenantId && e.UnitId == unit.UnitId && e.Kind == EpisodeKind.Ownership && e.ValidTo == null).Select(e => e.PartyRef).FirstOrDefaultAsync(cancellationToken);
         var prepared = identifiers.Prepare(new IdentifierInput(command.IdentifierType, command.NewRawValue, command.IssuerPartyRef ?? open.IssuerPartyRef, command.Qualifier ?? open.Qualifier, open.EnterpriseIdentifier), itemId, ownerPartyRef);
@@ -65,7 +70,9 @@ public static class CorrectIdentifierHandler
 
         if (await identifiers.HolderOfAsync(prepared.Policy.Scheme, prepared.ScopeKey, prepared.Normalised, cancellationToken) is { } holder && holder.UnitId != unit.UnitId)
         {
-            throw new CommandRefusedException("identifier_in_use", $"'{prepared.Normalised}' is open on unit {holder.UnitId} ({holder.LifecycleStatus}).", "if the two units are crossed use SwapIdentifiers (P3); if they are the same physical unit use MergeUnits (P3)");
+            var hint = itemId is { } duplicateItem && await identifiers.IsUnitOfItemAsync(holder.UnitId, duplicateItem, cancellationToken)
+                ? " " + ModelNumberRules.SameItemDuplicateHint : "";
+            throw new CommandRefusedException("identifier_in_use", $"'{prepared.Normalised}' is open on unit {holder.UnitId} ({holder.LifecycleStatus}).{hint}", "if the two units are crossed use SwapIdentifiers (P3); if they are the same physical unit use MergeUnits (P3)");
         }
 
         // P1 behaviour is retained: shipment is the existing command's evidence that the identifier appeared externally.
@@ -103,7 +110,9 @@ public static class CorrectIdentifierHandler
                 LegalEntityId = command.LegalEntityId, ActorRef = command.ActorRef, IdempotencyKey = key,
                 Attributes = CorrectionLedger.Attributes(metadata, new
                 {
-                    command_id = command.CommandId, identifier_type = command.IdentifierType, reason = command.Reason, approver_ref = command.ApproverRef, note = command.Note,
+                    command_id = command.CommandId, identifier_type = command.IdentifierType,
+                    reason = command.ConfirmedNotModelNumber ? command.ModelNumberConfirmationReason?.Trim() : command.Reason,
+                    correction_reason = command.ConfirmedNotModelNumber ? command.Reason : null, approver_ref = command.ApproverRef, note = command.Note,
                     before = new { identifier_id = open.IdentifierId, raw_value = open.RawValue, normalised_value = open.NormalisedValue },
                     after = new { identifier_id = replacement.IdentifierId, raw_value = replacement.RawValue, normalised_value = replacement.NormalisedValue },
                 }),
@@ -133,6 +142,7 @@ public static class PreviewCorrectIdentifierHandler
             var result = await CorrectIdentifierHandler.Handle(command, db,
                 scope.ServiceProvider.GetRequiredService<IUnitEventWriter>(),
                 scope.ServiceProvider.GetRequiredService<IdentifierService>(),
+                scope.ServiceProvider.GetRequiredService<EffectiveItemProfiles>(),
                 scope.ServiceProvider.GetRequiredService<CorrectionLedger>(),
                 scope.ServiceProvider.GetRequiredService<ITenantContext>(),
                 scope.ServiceProvider.GetRequiredService<IClock>(), cancellationToken);

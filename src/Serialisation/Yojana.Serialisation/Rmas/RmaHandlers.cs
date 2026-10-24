@@ -12,6 +12,8 @@ using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Documents;
 using Yojana.Serialisation.Entitlements;
 using Yojana.Serialisation.Ledger;
+using Yojana.Serialisation.Identity;
+using Yojana.Serialisation.Ports;
 
 namespace Yojana.Serialisation.Rmas;
 
@@ -304,7 +306,8 @@ public static class ReceiveReturnHandler
 {
     public static async Task<ReceiveReturnResult> Handle(ReceiveReturn command, SerialisationDbContext db, UnitResolver units,
         EpisodeService episodes, PostingPeriods periods, IStockUnitEventPort stock, IUnitEventWriter writer,
-        ITenantContext tenant, IClock clock, RmaStageCounterWriter counters, CancellationToken cancellationToken)
+        EffectiveItemProfiles itemProfiles, ITenantContext tenant, IClock clock, RmaStageCounterWriter counters,
+        CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var rma = await db.Rmas.SingleOrDefaultAsync(r => r.TenantId == tenantId && r.RmaId == command.RmaId, cancellationToken)
@@ -320,11 +323,23 @@ public static class ReceiveReturnHandler
             throw new CommandRefusedException("return_time_invalid", "A return cannot be received before its recorded dispatch.");
         RmaStateMachine.EnsureCanReceive(rma);
         var postingPeriod = await periods.ResolveAsync(command.ReceivedAt, cancellationToken);
+        var requestedUnitIds = lines.Select(line => line.RequestedUnitId).Distinct().ToList();
+        var requestedItems = await db.ItemAssignments.AsNoTracking()
+            .Where(row => row.TenantId == tenantId && requestedUnitIds.Contains(row.UnitId) && row.ValidTo == null)
+            .ToDictionaryAsync(row => row.UnitId, row => row.ItemId, cancellationToken);
+        var profiles = await itemProfiles.GetManyAsync(requestedItems.Values.Distinct().ToList(), command.ReceivedAt, cancellationToken);
         var resolved = new Dictionary<Guid, Guid?>();
         foreach (var input in command.Lines)
         {
             if (!ConditionGrades.IsKnown(input.ConditionGrade)) throw new CommandRefusedException("condition_grade_invalid", $"'{input.ConditionGrade}' is not a condition grade.");
             if (!ReturnOutcome.All.Contains(input.Outcome)) throw new CommandRefusedException("return_outcome_invalid", $"'{input.Outcome}' is not a return outcome.");
+            var line = lines.Single(value => value.RmaLineId == input.RmaLineId);
+            if (input.ReceivedIdentifier is { } receivedIdentifier
+                && requestedItems.TryGetValue(line.RequestedUnitId, out var requestedItemId)
+                && profiles.GetValueOrDefault(requestedItemId) is { } profile)
+                ModelNumberRules.RefuseUnlessConfirmed(ModelNumberRules.Matches(profile,
+                        receivedIdentifier.IdentifierType ?? IdentifierType.InternalSerial, receivedIdentifier.Value),
+                    command.ConfirmedNotModelNumber, command.ModelNumberConfirmationReason);
             resolved[input.RmaLineId] = input.ReceivedIdentifier is null ? null : (await units.ResolveAsync(input.ReceivedIdentifier, null, cancellationToken))?.UnitId;
         }
         var receiptFacts = new Dictionary<Guid, (Guid Authorised, Guid? Received, Guid? Provisional, string Outcome)>();
@@ -386,7 +401,7 @@ public static class ReceiveReturnHandler
                 UnitId = receivedUnit ?? authorised, EventTime = command.ReceivedAt, EventType = RmaEventType.Received, PresetEventId = eventId,
                 LegalEntityId = rma.ServiceEntityId, ActorRef = command.ActorRef, PostingPeriod = postingPeriod,
                 IdempotencyKey = IdempotencyKey.ForCommand(CommissionUnitsHandler.Source, command.CommandId, receivedUnit ?? authorised, RmaEventType.Received, command.ReceivedAt),
-                Attributes = JsonObjectText.Of(new { rma_id = rma.RmaId, rma_line_id = line.RmaLineId, return_receipt_id = receiptId, authorised_unit_id = authorised, received_unit_id = receivedUnit, provisional_unit_id = provisional, outcome, condition_grade = input.ConditionGrade, valuation_rule = input.ValuationRule, posting_period = postingPeriod, source_location_id = sourceLocationId }),
+                Attributes = JsonObjectText.Of(new { rma_id = rma.RmaId, rma_line_id = line.RmaLineId, return_receipt_id = receiptId, authorised_unit_id = authorised, received_unit_id = receivedUnit, provisional_unit_id = provisional, outcome, condition_grade = input.ConditionGrade, valuation_rule = input.ValuationRule, posting_period = postingPeriod, source_location_id = sourceLocationId, reason = command.ConfirmedNotModelNumber ? command.ModelNumberConfirmationReason?.Trim() : null }),
             });
         }
         db.ReturnReceipts.AddRange(receipts);

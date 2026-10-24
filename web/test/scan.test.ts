@@ -71,7 +71,7 @@ test("pause submits scanner-speed input but typed text never auto-submits", () =
 
   const slowClock = new FakeTimeouts(); const slowSubmitted: ReturnType<typeof submission>[] = [];
   const slow = new PauseEndedScan(new ScanTimer(), slowClock);
-  type(slow, slowClock, "WCC4M5AFPEK3", 100, slowSubmitted);
+  type(slow, slowClock, "HXC4M5AFPEK3", 100, slowSubmitted);
   slowClock.advance(300); assert.equal(slowSubmitted.length, 0);
 });
 
@@ -178,4 +178,20 @@ test("ordinary typing, a bare Alt press and Clear add nothing", () => {
 
 test("a separator typed twice, by the system and the scan box, is kept once", () => {
   assert.equal(recoverGroupSeparators(`21A${GROUP_SEPARATOR}${GROUP_SEPARATOR}10B`), `21A${GROUP_SEPARATOR}10B`);
+});
+
+test("model-number refusals offer a reasoned confirmation on every serial capture screen", () => {
+  const source = (path: string) => readFileSync(new URL(`../src/${path}`, import.meta.url), "utf8");
+  const confirmation = source("units/ModelNumberConfirmation.tsx");
+  for (const token of ["serial_is_model_number", "This really is the serial", "Reason", "Confirm serial"])
+    assert.ok(confirmation.includes(token), token);
+  for (const screen of ["units/Receive.tsx", "units/SerialRanges.tsx", "units/UnitDetail.tsx", "returns/ReturnReceipt.tsx"]) {
+    const text = source(screen);
+    assert.ok(text.includes("isModelNumberRefusal"), screen);
+    assert.ok(text.includes("ModelNumberConfirmation"), screen);
+    assert.ok(text.includes("modelNumberConfirmationReason"), screen);
+  }
+  const settings = source("settings/ItemSerialisation.tsx");
+  for (const token of ["tenant_administrator", "Item serialisation", "Model and part numbers", "20", "64", "ItemField"])
+    assert.ok(settings.includes(token), token);
 });

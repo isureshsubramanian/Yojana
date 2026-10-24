@@ -35,7 +35,9 @@ public sealed record CommissionUnits(
     /// <summary>Case 22: a trade-in of a foreign brand gets a unit and a graded value but is not ours; null = true except for trade-ins.</summary>
     bool? BrandIsOurs = null,
     /// <summary>How much earlier history is known; claim reconstruction and migration use opening-only instead of inventing facts.</summary>
-    string HistoryDepth = Yojana.Serialisation.Contracts.HistoryDepth.Full);
+    string HistoryDepth = Yojana.Serialisation.Contracts.HistoryDepth.Full,
+    bool ConfirmedNotModelNumber = false,
+    string? ModelNumberConfirmationReason = null);
 
 public sealed record CommissionLineResult(int Index, string? ClientReference, Guid? UnitId, string Outcome, IReadOnlyList<string> Reasons)
 {
@@ -48,7 +50,9 @@ public sealed record CommissionLineResult(int Index, string? ClientReference, Gu
 public sealed record CommissionUnitsResult(IReadOnlyList<CommissionLineResult> Lines, int Commissioned, int Pending, int Refused, int Duplicates);
 
 /// <summary>Put an identifier on an existing unit: the first one on a pending unit moves it on (case 6); an extra type adds a row.</summary>
-public sealed record AssignIdentifier(Guid CommandId, Guid UnitId, IdentifierInput Identifier, DateTime EventTime, string ActorRef, Guid LegalEntityId, DocumentRef? Document = null);
+public sealed record AssignIdentifier(Guid CommandId, Guid UnitId, IdentifierInput Identifier, DateTime EventTime, string ActorRef,
+    Guid LegalEntityId, DocumentRef? Document = null, bool ConfirmedNotModelNumber = false,
+    string? ModelNumberConfirmationReason = null);
 
 public sealed record AssignIdentifierResult(Guid UnitId, Guid IdentifierId, string NormalisedValue, string LifecycleStatus);
 
@@ -73,7 +77,11 @@ public sealed record CorrectionMetadata(
 /// Identity rule 5: a new identifier row replaces the open one of that type; the old row closes with the reason and
 /// points at its successor; the unit's key and every event stay as they are; no stock moves.
 /// </summary>
-public sealed record CorrectIdentifier(Guid CommandId, Guid UnitId, string IdentifierType, string NewRawValue, string Reason, DateTime EventTime, string ActorRef, Guid LegalEntityId, string? ApproverRef = null, string? Note = null, Guid? IssuerPartyRef = null, string? Qualifier = null, CorrectionMetadata? Correction = null, CorrectionCommitter? CommittedBy = null);
+public sealed record CorrectIdentifier(Guid CommandId, Guid UnitId, string IdentifierType, string NewRawValue, string Reason,
+    DateTime EventTime, string ActorRef, Guid LegalEntityId, string? ApproverRef = null, string? Note = null,
+    Guid? IssuerPartyRef = null, string? Qualifier = null, CorrectionMetadata? Correction = null,
+    CorrectionCommitter? CommittedBy = null, bool ConfirmedNotModelNumber = false,
+    string? ModelNumberConfirmationReason = null);
 
 /// <summary>Rehearses <see cref="CorrectIdentifier"/> through the real handler in a rolled-back transaction.</summary>
 public sealed record PreviewCorrectIdentifier(CorrectIdentifier Command);
@@ -284,7 +292,9 @@ public sealed record AllocateSerialRange(
     string? EnterpriseIdentifier = null,
     DocumentRef? AllocatedTo = null,
     Guid? AllocatedToPartyRef = null,
-    string? Note = null);
+    string? Note = null,
+    bool ConfirmedNotModelNumber = false,
+    string? ModelNumberConfirmationReason = null);
 
 public sealed record AllocateSerialRangeResult(Guid RangeId, string Scheme, string? StartValue, string? EndValue, int Count, bool Randomised, IReadOnlyList<string> Serials, bool StartMoved, string? RequestedStart);
 

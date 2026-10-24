@@ -101,7 +101,7 @@ public sealed class ScanParserTests
 
     [Theory]
     [InlineData("3R29440J")]
-    [InlineData("WCC4M5AFPEK3")]
+    [InlineData("HXC4M5AFPEK3")]
     [InlineData("S802C1A1950E3132074")]
     public void Scanner_serial_fixtures_stay_plain_without_alternatives(string raw)
     {
