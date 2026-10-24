@@ -338,7 +338,7 @@ public sealed class Cx01Adapter(
                 configured, cancellationToken);
         return Cx01Mapper.Map(tenant.TenantId, connectionId, entity, raw, previous, recovered, managed, captureMode,
             clock.UtcNow, Cx01Mapper.IsCancelledOriginal(raw),
-            new Cx01FieldReader(Cx01FieldMap.Effective(configured.FieldMap)));
+            new Cx01FieldReader(Cx01FieldMap.Effective(configured.FieldMap)), configured.Documents?.CurrencyMap);
     }
 
     private async Task<Dictionary<int, IReadOnlyList<CanonicalSerial>>> RecoverSerialsAsync(Guid connectionId,

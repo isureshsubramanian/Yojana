@@ -75,6 +75,22 @@ public sealed class Cx01FieldMapTests
         }));
     }
 
+    [Fact]
+    public void An_inbound_amount_in_the_remote_company_code_reads_back_as_its_iso_currency()
+    {
+        using var raw = JsonDocument.Parse("""
+            {"DocEntry":1291,"DocDate":"2026-10-24T00:00:00Z","UpdateDate":"2026-10-24T00:00:00Z","UpdateTime":"23:03:57",
+             "CardCode":"V10000","DocCurrency":"$","DocumentLines":[{"LineNum":0,"ItemCode":"YJ-BAT-P675","Quantity":1,
+             "Price":4.5,"WarehouseCode":"01","SerialNumbers":[]}]}
+            """);
+        var mapped = Cx01Mapper.Map(new TenantId(Guid.NewGuid()), Guid.NewGuid(), Cx01Protocol.Entities["goods_receipts"],
+            raw.RootElement, new Dictionary<int, IReadOnlyList<Contracts.CanonicalSerial>>(),
+            new Dictionary<int, IReadOnlyList<Contracts.CanonicalSerial>>(), new HashSet<int>(), "poll",
+            new DateTime(2026, 10, 24, 17, 0, 0, DateTimeKind.Utc), currencyMap: new Dictionary<string, string> { ["USD"] = "$" });
+        Assert.Contains("\"USD\"", mapped.Acceptance.CanonicalMessage, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"$\"", mapped.Acceptance.CanonicalMessage, StringComparison.Ordinal);
+    }
+
     private static JsonElement Map(string entity, JsonElement raw, IReadOnlyDictionary<string, Cx01FieldSource>? map)
     {
         var mapped = Cx01Mapper.Map(new TenantId(Guid.NewGuid()), Guid.NewGuid(), Cx01Protocol.Entities[entity],

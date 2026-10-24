@@ -200,7 +200,8 @@ internal static class Cx01Mapper
         JsonElement raw, IReadOnlyDictionary<int, IReadOnlyList<CanonicalSerial>> previousSerials,
         IReadOnlyDictionary<int, IReadOnlyList<CanonicalSerial>> recoveredSerials,
         IReadOnlySet<int> serialManagedLines, string captureMode, DateTime observedUtc,
-        bool mapCancelledOriginal = false, Cx01FieldReader? fields = null)
+        bool mapCancelledOriginal = false, Cx01FieldReader? fields = null,
+        IReadOnlyDictionary<string, string>? currencyMap = null)
     {
         fields ??= Cx01FieldReader.Defaults;
         var key = Text(raw, entity.KeyField) ?? throw new InvalidOperationException("CX01 response has no key.");
@@ -240,7 +241,7 @@ internal static class Cx01Mapper
                 break;
             default:
             {
-                var lines = Lines(raw, previousSerials, recoveredSerials, serialManagedLines, missing);
+                var lines = Lines(raw, previousSerials, recoveredSerials, serialManagedLines, missing, currencyMap);
                 if (missing.Count > 0) completeness = "partial";
                 payload = entity.CanonicalMessage switch
                 {
@@ -252,7 +253,7 @@ internal static class Cx01Mapper
                     "InvoicePosted" => new InvoicePosted(DocumentRef(raw, key), Text(raw, "CardCode") ?? "",
                         lines.Select(x => x.BaseDocumentRef).Where(x => x is not null).Cast<ExternalDocumentRef>()
                             .Distinct().ToList(), lines,
-                        new Money(Decimal(raw, "DocTotal"), Text(raw, "DocCurrency") ?? "")),
+                        new Money(Decimal(raw, "DocTotal"), Currency(raw, currencyMap) ?? "")),
                     "GoodsReceiptPosted" => new GoodsReceiptPosted(DocumentRef(raw, key),
                         Text(raw, "CardCode") ?? "", lines, BaseDocument(lines)),
                     "ProductionCompleted" => new ProductionCompleted(DocumentRef(raw, key),
@@ -307,7 +308,7 @@ internal static class Cx01Mapper
         IReadOnlyDictionary<int, IReadOnlyList<CanonicalSerial>> previous,
         IReadOnlyDictionary<int, IReadOnlyList<CanonicalSerial>> recovered,
         IReadOnlySet<int> serialManagedLines,
-        List<Cx01MissingSerialLine> missing)
+        List<Cx01MissingSerialLine> missing, IReadOnlyDictionary<string, string>? currencyMap)
     {
         var result = new List<CanonicalLine>();
         foreach (var line in LineElements(document))
@@ -329,7 +330,7 @@ internal static class Cx01Mapper
             result.Add(new CanonicalLine(lineNo, lineNo.ToString(CultureInfo.InvariantCulture),
                 Text(line, "ItemCode") ?? "", quantity, Text(line, "UoMCode") ?? "EA", serials, [],
                 Text(line, "WarehouseCode"), baseRef, Text(document, "CardCode"), DecimalOrNull(line, "Price"),
-                Text(document, "DocCurrency")));
+                Currency(document, currencyMap)));
         }
         return result;
     }
@@ -412,6 +413,14 @@ internal static class Cx01Mapper
         "cSupplier" => "vendor",
         _ => "both",
     };
+
+    // The connection's currency map runs ISO 4217 to the remote company's own code ("USD" to "$"); an inbound
+    // amount is read back through it so the gateway sees the ISO code. An unmapped code passes through unchanged.
+    private static string? Currency(JsonElement document, IReadOnlyDictionary<string, string>? currencyMap)
+    {
+        var remote = Text(document, "DocCurrency");
+        return remote is not null && currencyMap?.FirstOrDefault(x => x.Value == remote).Key is { } iso ? iso : remote;
+    }
 
     private static string NormaliseTime(string value)
     {
