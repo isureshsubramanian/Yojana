@@ -7,8 +7,14 @@
 .p7-empty strong { color: var(--text-1); font-size: var(--fs-3); }
 .p7-drop { min-height: 126px; display: grid; place-items: center; text-align: center; padding: 20px; border: 1px dashed var(--border-strong); border-radius: var(--radius-s); background: var(--surface-2); cursor: pointer; }
 .p7-drop:hover { border-color: var(--accent); }
-.p7-history-filters { display: grid; grid-template-columns: repeat(5, minmax(140px, 1fr)); gap: 12px; padding: 14px; margin-top: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-1); }
-.p7-history-filters label { display: grid; gap: 5px; color: var(--text-2); font-size: 12px; }
+.p7-history-shared { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 14px; }
+.p7-history-shared .findbar { border: 0; padding: 0; }
+.p7-history-dates { display: flex; gap: 10px; }
+.p7-history-dates label, .p7-card-filter { display: grid; gap: 3px; color: var(--text-2); font-size: 11px; }
+.p7-history-dates .input { min-width: 145px; }
+.p7-card-filter { grid-template-columns: auto minmax(120px, auto); align-items: center; }
+.p7-card-filter .select { height: 30px; }
+.p7-history-note { padding-block: 10px; color: var(--text-2); border-bottom: 1px solid var(--border); }
 .p7-drop input { position: absolute; opacity: 0; pointer-events: none; }
 .p7-drop strong, .p7-drop span { display: block; }
 .p7-drop span { color: var(--text-2); font-size: 12px; margin-top: 4px; }
@@ -66,6 +72,7 @@ html[data-mode="dark"] .portal-frame { color-scheme: dark; }
 .coverage-card strong, .coverage-card span { display: block; }
 .coverage-card span { color: var(--text-2); font-size: 12px; margin-top: 3px; }
 @media (max-width: 980px) { .portal-top { grid-template-columns: 1fr auto; height: auto; min-height: 68px; padding-block: 10px; } .portal-top nav { grid-column: 1 / -1; order: 3; overflow-x: auto; } .portal-account { display: none; } .portal-content { padding: 22px 18px 48px; } .p7-steps, .p7-result-notices { grid-template-columns: 1fr; } .p7-step { border-right: 0; border-bottom: 1px solid var(--border); } }
+@media (max-width: 980px) { .p7-history-shared { grid-template-columns: 1fr; } .p7-history-dates { flex-wrap: wrap; } .collapsible-card-actions { flex-wrap: wrap; } }
 
 /* Upload history download icons: enabled links, disabled spans that keep their tooltip, empty slots keep the column aligned. */
 .p7-file-actions { display: inline-flex; gap: 4px; }

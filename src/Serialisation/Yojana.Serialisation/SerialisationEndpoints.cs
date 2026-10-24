@@ -1473,11 +1473,11 @@ public static class SerialisationEndpoints
         var importJobs = app.MapGroup("/api/imports").RequireAuthorization(policy => policy.RequireClaim(YojanaClaim.Role,
             YojanaRole.SerialAdministrator, YojanaRole.ProductionSupervisor, YojanaRole.Quality,
             YojanaRole.InventoryController, YojanaRole.WarehouseLead, YojanaRole.TenantAdministrator));
-        importJobs.MapGet("/history", (DateTime? from, DateTime? to, string? source, string? status,
+        importJobs.MapGet("/history", (DateTime? from, DateTime? to, string? find, string? status,
             string? uploader, string? fileName, string? hash, string? cursor, int? take, ClaimsPrincipal user,
             ImportQueries queries, CancellationToken ct) => ImportInvoke(async () =>
             {
-                var page = await queries.HistoryAsync(new(from, to, source, status, uploader, fileName, hash), cursor, take ?? 50, ct);
+                var page = await queries.HistoryAsync(new(from, to, status, uploader, find, fileName, hash), cursor, take ?? 50, ct);
                 var actor = Actor(user);
                 var roles = Roles(user);
                 return page with
@@ -1490,15 +1490,41 @@ public static class SerialisationEndpoints
                     }).ToList(),
                 };
             }));
-        importJobs.MapGet("/history/export", (DateTime? from, DateTime? to, string? source, string? status,
+        importJobs.MapGet("/history/export", (DateTime? from, DateTime? to, string? find, string? status,
             string? uploader, string? fileName, string? hash, HttpContext http, ImportQueries queries,
             ITabularExporter exporter, CancellationToken ct) =>
         {
             http.Response.Headers.ContentDisposition = "attachment; filename=import-file-history.csv";
             return Results.Stream(stream => exporter.WriteAsync("csv", new TabularExport(
                 ["file_name", "format", "size", "original_hash", "converted_hash", "uploader", "uploaded_at", "source", "status", "applied", "skipped", "rejected", "storage_state"],
-                queries.ExportHistoryAsync(new(from, to, source, status, uploader, fileName, hash), ct)), stream, ct),
+                queries.ExportHistoryAsync(new(from, to, status, uploader, find, fileName, hash), ct)), stream, ct),
                 exporter.ContentType("csv"), "import-file-history.csv");
+        });
+        importJobs.MapGet("/history/feed-messages", (DateTime? from, DateTime? to, string? find, string? status,
+            string? cursor, int? take, ImportQueries queries, CancellationToken ct) => ImportInvoke(() =>
+                queries.FeedMessagesAsync(new(from, to, find, status), cursor, take ?? 50, ct)));
+        importJobs.MapGet("/history/feed-messages/export", (DateTime? from, DateTime? to, string? find, string? status,
+            HttpContext http, ImportQueries queries, ITabularExporter exporter, CancellationToken ct) =>
+        {
+            http.Response.Headers.ContentDisposition = "attachment; filename=partner-feed-message-history.csv";
+            return Results.Stream(stream => exporter.WriteAsync("csv", new TabularExport(
+                ["message_reference", "document_type", "document_id", "document_line", "received_at", "caller",
+                    "status", "shipped", "asset_tags", "rejected", "payload_hash", "import_job_id"],
+                queries.ExportFeedMessagesAsync(new(from, to, find, status), ct)), stream, ct),
+                exporter.ContentType("csv"), "partner-feed-message-history.csv");
+        });
+        importJobs.MapGet("/history/comparisons", (DateTime? from, DateTime? to, string? find, string? status,
+            string? cursor, int? take, ImportQueries queries, CancellationToken ct) => ImportInvoke(() =>
+                queries.ComparisonsAsync(new(from, to, find, status), cursor, take ?? 50, ct)));
+        importJobs.MapGet("/history/comparisons/export", (DateTime? from, DateTime? to, string? find, string? status,
+            HttpContext http, ImportQueries queries, ITabularExporter exporter, CancellationToken ct) =>
+        {
+            http.Response.Headers.ContentDisposition = "attachment; filename=file-comparison-history.csv";
+            return Results.Stream(stream => exporter.WriteAsync("csv", new TabularExport(
+                ["first_file_id", "first_file_name", "first_file_hash", "second_file_id", "second_file_name",
+                    "second_file_hash", "status", "applied", "skipped", "rejected", "ran_at", "import_job_id"],
+                queries.ExportComparisonsAsync(new(from, to, find, status), ct)), stream, ct),
+                exporter.ContentType("csv"), "file-comparison-history.csv");
         });
         // Downloads sit outside the import-role group: the administrators and the service manager may download any file
         // without running imports, and an uploader keeps access to their own file. ImportFileDownloadPolicy decides.

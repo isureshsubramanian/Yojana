@@ -2,6 +2,7 @@
 export { ApprovalInbox } from "./ApprovalInbox";
 export { ActionDialog } from "./ActionDialog";
 export { DataGrid, type GridColumn } from "./DataGrid";
+export { CollapsibleCard } from "./CollapsibleCard";
 export { FindBar } from "./FindBar";
 export { FormActions } from "./FormActions";
 export { KpiStrip } from "./KpiStrip";

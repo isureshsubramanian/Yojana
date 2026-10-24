@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Security;
@@ -41,9 +43,12 @@ public sealed class ImportQueries(SerialisationDbContext db, ImportService impor
             && (row.OriginalFileReference != null || row.OriginalContent != null));
         if (filter.From is { } from) query = query.Where(row => row.RecordedTime >= from);
         if (filter.To is { } to) query = query.Where(row => row.RecordedTime < to);
-        if (!string.IsNullOrWhiteSpace(filter.Source)) query = query.Where(row => row.Source == filter.Source);
         if (!string.IsNullOrWhiteSpace(filter.Status)) query = query.Where(row => row.Status == filter.Status);
         if (!string.IsNullOrWhiteSpace(filter.Uploader)) query = query.Where(row => row.ActorRef == filter.Uploader);
+        if (!string.IsNullOrWhiteSpace(filter.Find))
+            query = query.Where(row => row.FileName.Contains(filter.Find)
+                || row.OriginalHash.Contains(filter.Find)
+                || row.ConvertedHash != null && row.ConvertedHash.Contains(filter.Find));
         if (!string.IsNullOrWhiteSpace(filter.FileName)) query = query.Where(row => row.FileName.Contains(filter.FileName));
         if (!string.IsNullOrWhiteSpace(filter.Hash))
             query = query.Where(row => row.OriginalHash == filter.Hash || row.ConvertedHash == filter.Hash);
@@ -85,6 +90,147 @@ public sealed class ImportQueries(SerialisationDbContext db, ImportService impor
                     row.ConvertedHash, row.UploaderName, row.UploadedAt.ToString("O", CultureInfo.InvariantCulture), row.Source,
                     row.Status, row.Applied.ToString(CultureInfo.InvariantCulture), row.Skipped.ToString(CultureInfo.InvariantCulture),
                     row.Rejected.ToString(CultureInfo.InvariantCulture), row.StorageState];
+            cursor = page.NextCursor;
+        } while (cursor is not null);
+    }
+
+    public async Task<FeedMessageHistoryPage> FeedMessagesAsync(ImportHistoryFilter filter, string? cursor, int take,
+        CancellationToken cancellationToken)
+    {
+        take = Math.Clamp(take, 1, 200);
+        var query = db.ThreePlFeedMessages.AsNoTracking().Where(row => row.TenantId == tenant.TenantId);
+        if (filter.From is { } from) query = query.Where(row => row.RecordedTime >= from);
+        if (filter.To is { } to) query = query.Where(row => row.RecordedTime < to);
+        if (!string.IsNullOrWhiteSpace(filter.Find))
+            query = query.Where(row => row.MessageReference.Contains(filter.Find) || row.PayloadHash.Contains(filter.Find));
+        if (!string.IsNullOrWhiteSpace(filter.Status)) query = query.Where(row => row.Status == filter.Status);
+        if (Parse(cursor) is { } after)
+            query = query.Where(row => row.RecordedTime < after.Time
+                || row.RecordedTime == after.Time && row.FeedMessageId.CompareTo(after.Id) < 0);
+        var rows = await query.OrderByDescending(row => row.RecordedTime).ThenByDescending(row => row.FeedMessageId)
+            .Take(take + 1).Select(row => new FeedProjection
+            {
+                FeedMessageId = row.FeedMessageId, MessageReference = row.MessageReference,
+                DocumentType = row.DocumentType, DocumentId = row.DocumentId, DocumentLine = row.DocumentLine,
+                ImportJobId = row.ImportJobId, PayloadHash = row.PayloadHash, Status = row.Status,
+                Shipped = row.ShippedCount, AssetTags = row.AssetTagCount, Rejected = row.RejectedCount,
+                ActorRef = row.ActorRef, RecordedTime = row.RecordedTime,
+            }).ToListAsync(cancellationToken);
+        var more = rows.Count > take;
+        if (more) rows.RemoveAt(rows.Count - 1);
+        var names = await users.DisplayNamesAsync(rows.Select(row => row.ActorRef).Distinct().ToList(), cancellationToken);
+        var items = rows.Select(row => new FeedMessageHistoryRow(row.FeedMessageId, row.MessageReference,
+            row.DocumentType, row.DocumentId, row.DocumentLine, row.ImportJobId, row.PayloadHash, row.Status,
+            row.Shipped, row.AssetTags, row.Rejected, names.GetValueOrDefault(row.ActorRef, "Former user"),
+            row.RecordedTime)).ToList();
+        var last = more ? rows[^1] : null;
+        return new(items, last is null ? null : Cursor(last.RecordedTime, last.FeedMessageId));
+    }
+
+    public async IAsyncEnumerable<IReadOnlyList<string?>> ExportFeedMessagesAsync(ImportHistoryFilter filter,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        string? cursor = null;
+        do
+        {
+            var page = await FeedMessagesAsync(filter, cursor, 200, cancellationToken);
+            foreach (var row in page.Items)
+                yield return [row.MessageReference, row.DocumentType, row.DocumentId.ToString("D"),
+                    row.DocumentLine.ToString(CultureInfo.InvariantCulture), row.ReceivedAt.ToString("O", CultureInfo.InvariantCulture),
+                    row.CallerName, row.Status, row.Shipped.ToString(CultureInfo.InvariantCulture),
+                    row.AssetTags.ToString(CultureInfo.InvariantCulture), row.Rejected.ToString(CultureInfo.InvariantCulture),
+                    row.PayloadHash, row.ImportJobId.ToString("D")];
+            cursor = page.NextCursor;
+        } while (cursor is not null);
+    }
+
+    public async Task<ComparisonHistoryPage> ComparisonsAsync(ImportHistoryFilter filter, string? cursor, int take,
+        CancellationToken cancellationToken)
+    {
+        take = Math.Clamp(take, 1, 200);
+        var query = db.ImportJobs.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+            && row.Mode == ImportMode.Compare && row.ParentJobId != null
+            && row.OriginalFileReference == null && row.OriginalContent == null
+            && !row.FileName.EndsWith(" versus selection"));
+        if (filter.From is { } from) query = query.Where(row => row.RecordedTime >= from);
+        if (filter.To is { } to) query = query.Where(row => row.RecordedTime < to);
+        if (!string.IsNullOrWhiteSpace(filter.Find))
+        {
+            var find = filter.Find;
+            query = query.Where(row => row.FileName.Contains(find) || db.ImportJobs.Any(input =>
+                input.TenantId == tenant.TenantId
+                && (input.OriginalFileReference != null || input.OriginalContent != null)
+                && (input.OriginalHash.Contains(find) || input.ConvertedHash != null && input.ConvertedHash.Contains(find))
+                && (input.JobId == row.ParentJobId || row.FileName.EndsWith(" versus " + input.FileName))));
+        }
+        if (!string.IsNullOrWhiteSpace(filter.Status)) query = query.Where(row => row.Status == filter.Status);
+        if (Parse(cursor) is { } after)
+            query = query.Where(row => row.RecordedTime < after.Time
+                || row.RecordedTime == after.Time && row.JobId.CompareTo(after.Id) < 0);
+        var rows = await query.OrderByDescending(row => row.RecordedTime).ThenByDescending(row => row.JobId)
+            .Take(take + 1).Select(row => new ComparisonProjection
+            {
+                JobId = row.JobId, ParentJobId = row.ParentJobId!.Value, FileName = row.FileName,
+                ComparisonHash = row.OriginalHash, Status = row.Status, Applied = row.AppliedCount,
+                Skipped = row.SkippedCount, Rejected = row.RejectedCount, RecordedTime = row.RecordedTime,
+            }).ToListAsync(cancellationToken);
+        var more = rows.Count > take;
+        if (more) rows.RemoveAt(rows.Count - 1);
+        var firstIds = rows.Select(row => row.ParentJobId).Distinct().ToList();
+        var firstFiles = await db.ImportJobs.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && firstIds.Contains(row.JobId))
+            .Select(row => new InputFileProjection { Id = row.JobId, Name = row.FileName, Hash = row.OriginalHash })
+            .ToListAsync(cancellationToken);
+        var firstById = firstFiles.ToDictionary(row => row.Id);
+        // TIGHT COUPLING (file-comparison history provenance)
+        // WHAT: this read mirrors ImportComparisonService's exact "A versus B" name and composite-hash convention.
+        // WHY: the stored comparison has job A's id but no job B field. WHAT BREAKS IF SEPARATED: this query can no
+        // longer prove which second file was used, and must show the file as unavailable rather than attach an unrelated same-named file.
+        var secondNames = rows.Select(row => firstById.TryGetValue(row.ParentJobId, out var first)
+                && row.FileName.StartsWith(first.Name + " versus ", StringComparison.Ordinal)
+                ? row.FileName[(first.Name.Length + " versus ".Length)..] : null)
+            .Where(name => name is not null).Distinct().ToList();
+        // Any stored upload with the second name is a candidate; the composite hash proves which contents were compared.
+        var candidates = await db.ImportJobs.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && secondNames.Contains(row.FileName)
+                && (row.OriginalFileReference != null || row.OriginalContent != null))
+            .Select(row => new InputFileProjection { Id = row.JobId, Name = row.FileName, Hash = row.OriginalHash, RecordedTime = row.RecordedTime })
+            .ToListAsync(cancellationToken);
+        var items = new List<ComparisonHistoryRow>(rows.Count);
+        foreach (var row in rows)
+        {
+            // One row that cannot be traced shows its file as unavailable; it never fails the whole card.
+            var first = firstById.GetValueOrDefault(row.ParentJobId);
+            var prefix = first is null ? null : first.Name + " versus ";
+            var secondName = prefix is not null && row.FileName.StartsWith(prefix, StringComparison.Ordinal)
+                ? row.FileName[prefix.Length..] : null;
+            // Uploads with the same name and hash have identical contents, so the latest one before the run stands for them.
+            var second = first is null || secondName is null ? null : candidates
+                .Where(candidate => candidate.Name == secondName && candidate.RecordedTime <= row.RecordedTime
+                    && ComparisonHash(first.Hash, candidate.Hash) == row.ComparisonHash)
+                .OrderByDescending(candidate => candidate.RecordedTime).FirstOrDefault();
+            items.Add(new(row.JobId,
+                first is null ? new(null, UnavailableFile, null) : new(first.Id, first.Name, first.Hash),
+                second is null ? new(null, secondName ?? UnavailableFile, null) : new(second.Id, second.Name, second.Hash),
+                row.Status, row.Applied, row.Skipped, row.Rejected, row.RecordedTime));
+        }
+        var last = more ? rows[^1] : null;
+        return new(items, last is null ? null : Cursor(last.RecordedTime, last.JobId));
+    }
+
+    public async IAsyncEnumerable<IReadOnlyList<string?>> ExportComparisonsAsync(ImportHistoryFilter filter,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        string? cursor = null;
+        do
+        {
+            var page = await ComparisonsAsync(filter, cursor, 200, cancellationToken);
+            foreach (var row in page.Items)
+                yield return [row.FirstFile.Id?.ToString("D"), row.FirstFile.Name, row.FirstFile.Hash,
+                    row.SecondFile.Id?.ToString("D"), row.SecondFile.Name, row.SecondFile.Hash, row.Status,
+                    row.Applied.ToString(CultureInfo.InvariantCulture), row.Skipped.ToString(CultureInfo.InvariantCulture),
+                    row.Rejected.ToString(CultureInfo.InvariantCulture), row.RanAt.ToString("O", CultureInfo.InvariantCulture),
+                    row.JobId.ToString("D")];
             cursor = page.NextCursor;
         } while (cursor is not null);
     }
@@ -134,6 +280,12 @@ public sealed class ImportQueries(SerialisationDbContext db, ImportService impor
         return (new DateTime(ticks, DateTimeKind.Utc), id);
     }
 
+    private static string Cursor(DateTime time, Guid id) =>
+        $"{time.Ticks.ToString(CultureInfo.InvariantCulture)}.{id:N}";
+
+    private static string ComparisonHash(string first, string second) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(first + ":" + second))).ToLowerInvariant();
+
     private static (int Number, Guid Id)? ParseRow(string? cursor)
     {
         if (string.IsNullOrWhiteSpace(cursor)) return null;
@@ -164,4 +316,44 @@ public sealed class ImportQueries(SerialisationDbContext db, ImportService impor
         public bool ConvertedAvailable { get; init; }
         public string? OriginalReference { get; init; }
     }
+
+    private sealed class FeedProjection
+    {
+        public Guid FeedMessageId { get; init; }
+        public required string MessageReference { get; init; }
+        public required string DocumentType { get; init; }
+        public Guid DocumentId { get; init; }
+        public int DocumentLine { get; init; }
+        public Guid ImportJobId { get; init; }
+        public required string PayloadHash { get; init; }
+        public required string Status { get; init; }
+        public int Shipped { get; init; }
+        public int AssetTags { get; init; }
+        public int Rejected { get; init; }
+        public required string ActorRef { get; init; }
+        public DateTime RecordedTime { get; init; }
+    }
+
+    private sealed class ComparisonProjection
+    {
+        public Guid JobId { get; init; }
+        public Guid ParentJobId { get; init; }
+        public required string FileName { get; init; }
+        public required string ComparisonHash { get; init; }
+        public required string Status { get; init; }
+        public int Applied { get; init; }
+        public int Skipped { get; init; }
+        public int Rejected { get; init; }
+        public DateTime RecordedTime { get; init; }
+    }
+
+    private sealed class InputFileProjection
+    {
+        public Guid Id { get; init; }
+        public required string Name { get; init; }
+        public required string Hash { get; init; }
+        public DateTime RecordedTime { get; init; }
+    }
+
+    private const string UnavailableFile = "File no longer available";
 }

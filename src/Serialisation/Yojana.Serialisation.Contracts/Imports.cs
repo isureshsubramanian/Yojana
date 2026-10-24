@@ -131,13 +131,25 @@ public sealed record ImportJobSummary(Guid JobId, string Source, string FileName
 public sealed record ImportJobPage(IReadOnlyList<ImportJobSummary> Items, string? NextCursor);
 public sealed record ImportRowPage(IReadOnlyList<ImportRowView> Items, string? NextCursor);
 
-public sealed record ImportFileHistoryFilter(DateTime? From = null, DateTime? To = null, string? Source = null,
-    string? Status = null, string? Uploader = null, string? FileName = null, string? Hash = null);
+public sealed record ImportFileHistoryFilter(DateTime? From = null, DateTime? To = null, string? Status = null,
+    string? Uploader = null, string? Find = null, string? FileName = null, string? Hash = null);
 public sealed record ImportFileHistoryRow(Guid JobId, string FileName, string Format, long Size,
     string OriginalHash, string? ConvertedHash, string UploaderName, string UploaderReference, DateTime UploadedAt,
     string Source, string Status, int Applied, int Skipped, int Rejected, string StorageState,
     bool OriginalAvailable, bool ConvertedAvailable, string? ArchiveStoreName = null, bool MayDownload = false);
 public sealed record ImportFileHistoryPage(IReadOnlyList<ImportFileHistoryRow> Items, string? NextCursor);
+
+public sealed record ImportHistoryFilter(DateTime? From = null, DateTime? To = null, string? Find = null,
+    string? Status = null);
+public sealed record FeedMessageHistoryRow(Guid FeedMessageId, string MessageReference, string DocumentType,
+    Guid DocumentId, int DocumentLine, Guid ImportJobId, string PayloadHash, string Status, int Shipped,
+    int AssetTags, int Rejected, string CallerName, DateTime ReceivedAt);
+public sealed record FeedMessageHistoryPage(IReadOnlyList<FeedMessageHistoryRow> Items, string? NextCursor);
+/// <summary>An input file of a comparison; Id and Hash are null when the file can no longer be identified.</summary>
+public sealed record ComparisonInputFile(Guid? Id, string Name, string? Hash);
+public sealed record ComparisonHistoryRow(Guid JobId, ComparisonInputFile FirstFile, ComparisonInputFile SecondFile,
+    string Status, int Applied, int Skipped, int Rejected, DateTime RanAt);
+public sealed record ComparisonHistoryPage(IReadOnlyList<ComparisonHistoryRow> Items, string? NextCursor);
 
 /// <summary>Compare two already-intaken jobs, or one job against a stored selection set.</summary>
 public sealed record CompareImports(Guid CommandId, Guid JobAId, Guid? JobBId, Guid? SelectionId, string ActorRef);
