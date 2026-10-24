@@ -42,7 +42,7 @@ public sealed class RemoteFailureTests
     }
 
     [Theory]
-    [InlineData("Set-Cookie: B1SESSION=6c1f0d2e-private; path=/", "6c1f0d2e-private")]
+    [InlineData("Set-Cookie: ERPSESSION=6c1f0d2e-private; path=/", "6c1f0d2e-private")]
     [InlineData("ROUTEID=.node-private", ".node-private")]
     [InlineData("{\"UserName\":\"manager\",\"Password\":\"hunter2\"}", "hunter2")]
     [InlineData("request carried Bearer eyJhbGciOi.private.sig", "eyJhbGciOi.private.sig")]
