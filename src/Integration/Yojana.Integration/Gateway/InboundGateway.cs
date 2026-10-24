@@ -47,7 +47,7 @@ public sealed class TranslateInboundMessageHandler
 
 public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenant, IClock clock,
     GatewayReferenceStore references, ConnectionCapabilityReader capabilities, BoundedWaitResequencer resequencer,
-    IMessageBus bus, InboundTranslationRecoveryOptions recoveryOptions,
+    IMessageBus bus, InboundTranslationRecoveryOptions recoveryOptions, ITenantCurrency currency,
     IErpChangeDivergenceSink erpChangeDivergences)
 {
     public async Task<GatewayTranslationResult> TranslateAsync(Guid inboundMessageId, CancellationToken cancellationToken)
@@ -107,6 +107,19 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
             row.TranslatedAt = clock.UtcNow;
             await db.SaveChangesAsync(cancellationToken);
             return new(row.InboundMessageId, row.MessageType, true, 0, ["unsupported"]);
+        }
+
+        if (await ForeignAmountReasonAsync(row, cancellationToken) is { } foreignAmountReason)
+        {
+            // A connector may pass a local amount as the canonical price and home currency. If it only has the
+            // document's foreign amount, keep the raw/canonical message for a person; this boundary never converts it.
+            await RaiseAsync(row, "currency_not_home", foreignAmountReason, cancellationToken);
+            row.TranslationStatus = InboundTranslationStatus.NeedsAttention;
+            row.TranslationStartedAt = null;
+            row.LastTranslationError = foreignAmountReason;
+            row.AttentionReasonCode = "currency_not_home";
+            await db.SaveChangesAsync(cancellationToken);
+            return new(row.InboundMessageId, row.MessageType, false, 0, [foreignAmountReason]);
         }
 
         var result = await IsSecondaryDocumentAsync(row, cancellationToken) ? Done(row, 0, []) : row.MessageType switch
@@ -395,6 +408,36 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
     private async Task<Guid> LegalEntityAsync(Guid connectionId, CancellationToken cancellationToken) =>
         await db.ConnectionGatewaySettings.Where(x => x.TenantId == tenant.TenantId && x.ConnectionId == connectionId)
             .Select(x => x.LegalEntityId).SingleAsync(cancellationToken);
+
+    private async Task<string?> ForeignAmountReasonAsync(InboundMessage row, CancellationToken cancellationToken)
+    {
+        var home = await currency.GetAsync(cancellationToken);
+        if (home is null) return null;
+        IEnumerable<string?> supplied = row.MessageType switch
+        {
+            nameof(GoodsReceiptPosted) => LineCurrencies(Message<GoodsReceiptPosted>(row).Payload.Lines),
+            nameof(ProductionCompleted) => LineCurrencies(Message<ProductionCompleted>(row).Payload.Lines
+                .Concat(Message<ProductionCompleted>(row).Payload.Components)),
+            nameof(DeliveryPosted) => LineCurrencies(Message<DeliveryPosted>(row).Payload.Lines),
+            nameof(InvoicePosted) => InvoiceCurrencies(Message<InvoicePosted>(row).Payload),
+            nameof(ReturnReceived) => LineCurrencies(Message<ReturnReceived>(row).Payload.Lines),
+            nameof(TransferPosted) => LineCurrencies(Message<TransferPosted>(row).Payload.Lines),
+            nameof(InventoryAdjusted) => LineCurrencies(Message<InventoryAdjusted>(row).Payload.Lines),
+            nameof(WarrantyLineSold) => WarrantyCurrencies(Message<WarrantyLineSold>(row).Payload),
+            _ => [],
+        };
+        var foreign = supplied.Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!.Trim().ToUpperInvariant())
+            .FirstOrDefault(value => value != home);
+        return foreign is null ? null : $"amount in {foreign}; the ERP's {home} amount is needed";
+
+        static IEnumerable<string?> InvoiceCurrencies(InvoicePosted invoice) =>
+            LineCurrencies(invoice.Lines).Append(invoice.Totals.Currency);
+        static IEnumerable<string?> LineCurrencies(IEnumerable<CanonicalLine> lines) =>
+            lines.Where(line => line.Price is not null).Select(line => line.Currency);
+        static IEnumerable<string?> WarrantyCurrencies(WarrantyLineSold warranty) =>
+            [warranty.Line.Price is null ? null : warranty.Line.Currency, warranty.Price.Currency];
+    }
 
     private async Task<ConsumedEventResult> InvokeAsync(object message, CancellationToken cancellationToken) =>
         await bus.InvokeAsync<ConsumedEventResult>(message, Options(), cancellationToken);

@@ -5,6 +5,7 @@ using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Corrections;
+using Yojana.Serialisation.Currency;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
@@ -35,6 +36,8 @@ public static class AmendEntitlementHandler
     internal static async Task<AmendEntitlementResult> AmendAsync(AmendEntitlement command, SerialisationDbContext db, EntitlementLedger ledger, AmendmentApprovalSettings approvals, IWarrantyClaimsPort claims,
         IWarrantyCertificatePort certificates, ITenantCurrency currency, ITenantContext tenant, CorrectionLedger? corrections, bool recordCorrection, CancellationToken cancellationToken, decimal? salePrice = null, string? saleCurrency = null)
     {
+        if (saleCurrency is not null)
+            await HomeCurrencyGuard.RequireAsync(currency, saleCurrency, cancellationToken);
         var tenantId = tenant.TenantId;
         var entitlement = await ledger.LoadAsync(command.EntitlementId, cancellationToken);
         if (entitlement.Direction != EntitlementDirection.Outbound) throw new CommandRefusedException("outbound_entitlement_required", "Customer entitlement amendments do not apply to supplier cover.");

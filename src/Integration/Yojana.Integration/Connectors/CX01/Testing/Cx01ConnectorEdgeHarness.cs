@@ -160,7 +160,7 @@ public sealed class Cx01ConnectorEdgeHarness : IConnectorEdgeHarness
         };
         var invoice = new InvoicePosted(
             new("invoice", logicalReference, new(2026, 9, 1), logicalReference),
-            "FIC-CUSTOMER", [], canonical.Payload.Lines, new(total, "GBP"));
+            "FIC-CUSTOMER", [], canonical.Payload.Lines, new(total, "EUR"));
         return Acceptance(envelope, invoice, "{\"fictional_invoice\":true}");
     }
 

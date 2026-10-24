@@ -231,8 +231,26 @@ public sealed class CorrectSourceDocumentTests(SerialisationHostFixture fixture)
         Assert.True(statements < 250, $"500-unit source correction took {statements} statements");
     }
 
+    [DatabaseFact]
+    public async Task Corrected_invoice_price_must_use_the_home_currency()
+    {
+        var tenant = await fixture.NewTenantAsync("csfx");
+        var setup = await ArrangeAsync(tenant, 1, ownerChanges: false, createWrongCover: false,
+            invoiceCurrency: "USD");
+        var selection = await SelectAsync(tenant, setup.Serials);
+
+        var refused = await Assert.ThrowsAsync<CommandRefusedException>(() =>
+            InvokeAsync<CorrectSourceDocumentResult>(tenant, new CorrectSourceDocument(Guid.NewGuid(), selection,
+                setup.WrongDelivery, setup.CorrectOrder, CorrectSourceDocumentReason.InvoiceSplitError,
+                ShippedAt.AddDays(5), OrderDesk.UserRef, Entity,
+                Correction: new(Guid.NewGuid(), CorrectSourceDocumentReason.InvoiceSplitError,
+                    InitiatingRole: CorrectionInitiatingRole.CustomerService), CommittedBy: OrderDesk)));
+
+        Assert.Equal("currency_not_home", refused.Rule);
+    }
+
     private async Task<Setup> ArrangeAsync(TenantId tenant, int count, bool ownerChanges, bool createWrongCover,
-        int correctPolicyMonths = 12, int correctInvoiceOffsetDays = 2)
+        int correctPolicyMonths = 12, int correctInvoiceOffsetDays = 2, string invoiceCurrency = "EUR")
     {
         var item = Guid.NewGuid();
         var warehouse = Guid.NewGuid();
@@ -262,10 +280,10 @@ public sealed class CorrectSourceDocumentTests(SerialisationHostFixture fixture)
         await InvokeAsync<ConsumedEventResult>(tenant, new SalesDeliveryConfirmed(new(Guid.NewGuid(), Entity, ShippedAt, "test"), pod.Document));
 
         var wrongInvoice = new InvoiceDocument(new("invoice", Guid.NewGuid()), wrongOrder, customer, Entity,
-            ShippedAt.AddDays(1), [new InvoiceLine(7, Guid.NewGuid(), count, count * 10m, "GBP", "warranty_service",
+            ShippedAt.AddDays(1), [new InvoiceLine(7, Guid.NewGuid(), count, count * 10m, invoiceCurrency, "warranty_service",
                 PolicyVersionId: oldPolicy, Target: new(WarrantyTargetRule.SameOrder))], "PO-WRONG", "GB");
         var correctInvoice = new InvoiceDocument(new("invoice", Guid.NewGuid()), correctOrder, correctedCustomer, Entity,
-            ShippedAt.AddDays(correctInvoiceOffsetDays), [new InvoiceLine(8, Guid.NewGuid(), count, count * 10m, "GBP", "warranty_service",
+            ShippedAt.AddDays(correctInvoiceOffsetDays), [new InvoiceLine(8, Guid.NewGuid(), count, count * 10m, invoiceCurrency, "warranty_service",
                 PolicyVersionId: correctPolicy, Target: new(WarrantyTargetRule.SameOrder))], "PO-CORRECT", "GB");
         Documents.Add(wrongInvoice);
         Documents.Add(correctInvoice);

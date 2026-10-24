@@ -58,8 +58,8 @@ export const settingsRegistry: SettingsRegistryEntry[] = [
   { group: "Organisation", name: "Security events", description: "Sign-ins, lockouts and administrator security actions", path: "/settings/security-events", icon: "shield", roles: administrator, route: () => import("./SecurityEvents") },
   { group: "Organisation", name: "Time zone", description: "Document time plus issuing-entity overrides", path: "/settings/time-zone", icon: "globe", roles: administrator,
     currentValue: signal => timeZoneSettingsApi.get(signal).then(value => `${value.tenantTimeZone ?? "UTC"} · ${value.legalEntityOverrides.length} entity ${value.legalEntityOverrides.length === 1 ? "override" : "overrides"}`), route: () => import("./TimeZoneSettings") },
-  { group: "Organisation", name: "Currencies", description: "Working and accepted currencies", path: "/settings/currencies", icon: "coins", roles: administrator,
-    currentValue: signal => claimsApi.currency(signal).then(value => `${value.currency ?? "Not set"} working · ${value.accepted.length ? value.accepted.join(", ") : "no additional"} accepted`), route: () => import("./Currencies") },
+  { group: "Organisation", name: "Currencies", description: "Home currency and recorded-amount lock", path: "/settings/currencies", icon: "coins", roles: administrator,
+    currentValue: signal => claimsApi.currency(signal).then(value => `${value.currency ?? "Not set"} home · ${value.changeable ? "changeable" : "locked"}`), route: () => import("./Currencies") },
 
   { group: "Documents", name: "Document numbering", description: "Series modes and gap behaviour per document", path: "/settings/numbering", icon: "range", roles: administrator,
     currentValue: signal => numberingApi.settings(signal).then(value => { const sequence = value.series.filter(row => row.mode === "sequence").length; return `${value.series.length} series · ${sequence === value.series.length ? "all sequence" : `${sequence} sequence`}`; }), route: () => import("./Numbering") },

@@ -9,6 +9,7 @@ using Yojana.Serialisation.Commands;
 using Yojana.Serialisation.Condition;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Corrections;
+using Yojana.Serialisation.Currency;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Documents;
@@ -30,7 +31,7 @@ public sealed class RefurbishmentService(
     SerialRangeService serialRanges,
     BulkIngestion bulk,
     SerialReuseSettings serialReuse,
-    IEnumerable<IReleaseGuard> releaseGuards,
+    IEnumerable<IReleaseGuard> releaseGuards, ITenantCurrency tenantCurrency,
     EntitlementLedger entitlementLedger,
     CorrectionLedger corrections,
     IJurisdictionRuleResolver jurisdictionRules,
@@ -271,6 +272,7 @@ public sealed class RefurbishmentService(
             return PartResult(replay, true);
         var workOrder = await OpenWorkOrderAsync(command.WorkOrderId, cancellationToken);
         if (command.UnitCost < 0) throw new CommandRefusedException("part_cost_invalid", "Installed part cost cannot be negative.");
+        await HomeCurrencyGuard.RequireAsync(tenantCurrency, command.Currency, cancellationToken);
         var currency = Currency(command.Currency);
         var custodyDrafts = new List<UnitEventDraft>();
         if (command.Part.ChildUnitId is { } childUnitId)
@@ -323,6 +325,7 @@ public sealed class RefurbishmentService(
             return new(replay.WorkOrderId, replay.LabourId, replay.Hours, replay.HourlyRate, replay.Amount, replay.Currency, replay.CostId, replay.EventId, true);
         var workOrder = await OpenWorkOrderAsync(command.WorkOrderId, cancellationToken);
         if (command.Hours <= 0 || command.HourlyRate < 0) throw new CommandRefusedException("labour_amount_invalid", "Labour hours must be positive and the hourly rate cannot be negative.");
+        await HomeCurrencyGuard.RequireAsync(tenantCurrency, command.Currency, cancellationToken);
         if (command.OperationId is { } operationId && !await db.RefurbishmentOperations.AnyAsync(o => o.TenantId == tenantId && o.WorkOrderId == workOrder.WorkOrderId && o.OperationId == operationId, cancellationToken))
             throw new CommandRefusedException("operation_unknown", $"Operation {operationId} does not exist on this work order.");
         var amount = decimal.Round(command.Hours * command.HourlyRate, 2, MidpointRounding.AwayFromZero);
@@ -349,6 +352,7 @@ public sealed class RefurbishmentService(
         var workOrder = await OpenWorkOrderAsync(command.WorkOrderId, cancellationToken);
         if (!RefurbishmentCostKind.All.Contains(command.Kind)) throw new CommandRefusedException("refurbishment_cost_kind_unknown", $"'{command.Kind}' is not a refurbishment cost kind.");
         if (command.Amount < 0) throw new CommandRefusedException("refurbishment_cost_invalid", "Refurbishment cost cannot be negative.");
+        await HomeCurrencyGuard.RequireAsync(tenantCurrency, command.Currency, cancellationToken);
         if (command.Kind == RefurbishmentCostKind.GradedReceipt && await db.RefurbishmentCosts.AnyAsync(c => c.TenantId == tenant.TenantId && c.WorkOrderId == workOrder.WorkOrderId && c.Kind == RefurbishmentCostKind.GradedReceipt, cancellationToken))
             throw new CommandRefusedException("graded_receipt_value_exists", "The work order already has its graded receipt value.");
         return CostResult(await AddCostAsync(workOrder, command.CommandId, command.Kind, command.Amount,

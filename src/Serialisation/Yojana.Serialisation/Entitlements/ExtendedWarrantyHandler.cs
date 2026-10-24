@@ -6,6 +6,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Corrections;
+using Yojana.Serialisation.Currency;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
@@ -20,7 +21,7 @@ namespace Yojana.Serialisation.Entitlements;
 /// </summary>
 public static partial class AttachExtendedWarrantyHandler
 {
-    public static async Task<AttachExtendedWarrantyResult> Handle(AttachExtendedWarranty command, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken)
+    public static async Task<AttachExtendedWarrantyResult> Handle(AttachExtendedWarranty command, SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store, ITimeZonePort zones, ITenantCurrency currency, ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var key = EntitlementLedger.Key(command.CommandId, command.UnitId, EntitlementEventType.ExtendedSold, command.EventTime);
@@ -36,6 +37,7 @@ public static partial class AttachExtendedWarrantyHandler
 
         if (command.Price <= 0) throw new CommandRefusedException("price_not_positive", "A separately priced plan needs a price above zero.");
         if (!CurrencyCode().IsMatch(command.Currency)) throw new CommandRefusedException("currency_invalid", $"'{command.Currency}' is not an ISO 4217 code.");
+        await HomeCurrencyGuard.RequireAsync(currency, command.Currency, cancellationToken);
 
         var unit = await db.Current.AsNoTracking().Where(c => c.TenantId == tenantId && c.UnitId == command.UnitId).Select(c => new { c.ItemId, c.LocationId }).FirstOrDefaultAsync(cancellationToken)
             ?? throw new CommandRefusedException("unit_unknown", $"Unit {command.UnitId} does not exist.");

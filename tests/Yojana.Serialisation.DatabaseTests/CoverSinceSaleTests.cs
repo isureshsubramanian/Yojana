@@ -192,15 +192,18 @@ public sealed class CoverSinceSaleTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
-    public async Task Refund_without_a_recorded_amount_does_not_invent_negative_money_and_currencies_stay_separate()
+    public async Task Foreign_purchase_is_refused_and_a_refund_without_an_amount_does_not_invent_negative_money()
     {
         var s = await Setup("covermoney");
         var added = await Add(s.Tenant, s.Unit, s.Owner, "accidental_damage", 180);
-        await Add(s.Tenant, s.Unit, s.Owner, "extended_term", 640, "EUR");
+        var refused = await Assert.ThrowsAsync<CommandRefusedException>(() =>
+            Add(s.Tenant, s.Unit, s.Owner, "extended_term", 640, "EUR"));
+        Assert.Equal("currency_not_home", refused.Rule);
+        await Add(s.Tenant, s.Unit, s.Owner, "extended_term", 640);
         await Invoke<EntitlementChangeResult>(s.Tenant, new CloseEntitlement(Guid.NewGuid(), added.EntitlementId, EntitlementClosedReason.Refunded, new(2026, 9, 20), new(2026, 9, 20, 10, 0, 0, DateTimeKind.Utc), "quality.user"));
         var view = await View(s.Tenant, s.Unit);
         Assert.Null(view.Changes.Single(c => c.Kind == "closed_early").Amount);
-        Assert.Equal(new[] { new CoverMoney("USD", 180), new CoverMoney("EUR", 640) }, view.Value);
+        Assert.Equal(new CoverMoney("USD", 820), Assert.Single(view.Value));
         using var scope = fixture.ScopeFor(s.Tenant);
         var summary = await scope.ServiceProvider.GetRequiredService<CoverDeviationQueries>().SummaryAsync(new(), CancellationToken.None);
         Assert.Equal(view.Value, summary.Value);

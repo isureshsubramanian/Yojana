@@ -6,6 +6,7 @@ using Yojana.Serialisation.Claims;
 using Yojana.Serialisation.Commands;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Corrections;
+using Yojana.Serialisation.Currency;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Documents;
@@ -17,7 +18,7 @@ namespace Yojana.Serialisation.Rmas;
 public static class DefineReturnReasonHandler
 {
     public static async Task<ReturnReasonRow> Handle(DefineReturnReason command, SerialisationDbContext db,
-        ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        ITenantCurrency currency, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var code = command.Code.Trim();
         if (code.Length is 0 or > 40 || code.Any(ch => !(char.IsAsciiLetterLower(ch) || char.IsAsciiDigit(ch) || ch == '_')))
@@ -33,6 +34,8 @@ public static class DefineReturnReasonHandler
             || command.RestockFeeRule != RestockFeeRule.None && command.RestockFeeValue is not >= 0
             || command.RestockFeeRule == RestockFeeRule.Percentage && command.RestockFeeValue > 100)
             throw new CommandRefusedException("restock_fee_value_invalid", "The restocking-fee value must match its rule and a percentage cannot exceed 100.");
+        if (command.RestockFeeRule == RestockFeeRule.Fixed)
+            await HomeCurrencyGuard.GetRequiredAsync(currency, cancellationToken);
 
         var row = await db.ReturnReasons.FirstOrDefaultAsync(reason => reason.TenantId == tenant.TenantId
             && reason.Code == code, cancellationToken);
@@ -67,7 +70,7 @@ public static class RequestRmaHandler
 {
     public static async Task<RequestRmaResult> Handle(RequestRma command, SerialisationDbContext db, UnitResolver units,
         ISalesDocumentQueryPort sales, RmaSaleFactsResolver saleFacts, RmaStageCounterWriter counters,
-        IUnitEventWriter writer, DocumentNumbers numbers, ITenantContext tenant, IClock clock,
+        IUnitEventWriter writer, DocumentNumbers numbers, ITenantCurrency currency, ITenantContext tenant, IClock clock,
         CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
@@ -79,6 +82,7 @@ public static class RequestRmaHandler
         }
 
         if (command.Lines.Count == 0) throw new CommandRefusedException("rma_lines_required", "An RMA needs at least one line.");
+        await HomeCurrencyGuard.RequireAsync(currency, command.Currency, cancellationToken);
         if (command.RequestDate > DateOnly.FromDateTime(command.EventTime)) throw new CommandRefusedException("rma_request_date_future", "The RMA request date cannot be after its business time.");
         var resolved = new List<(RmaRequestLineInput Input, Guid UnitId)>();
         foreach (var input in command.Lines)

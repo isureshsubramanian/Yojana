@@ -32,17 +32,48 @@ public sealed class CurrencyCatalogueTests
     }
 
     [Fact]
-    public async Task Working_currency_is_set_once_and_accepted_currencies_stay_editable()
+    public async Task Home_currency_changes_until_the_first_amount_then_reports_why_it_is_locked()
     {
-        var currency = new TenantCurrency(new MemorySettings(), Catalogue);
+        var usage = new MemoryUsage();
+        var currency = new TenantCurrency(new MemorySettings(), Catalogue, [usage]);
         Assert.Equal("EUR", await currency.SetAsync("eur", CancellationToken.None));
         Assert.Equal("EUR", await currency.SetAsync("EUR", CancellationToken.None));
-        var locked = await Assert.ThrowsAsync<TenantCurrencyLockedException>(() => currency.SetAsync("USD", CancellationToken.None));
-        Assert.Equal("EUR", locked.Current);
-        Assert.Equal("EUR", await currency.GetAsync(CancellationToken.None));
+        Assert.Equal("USD", await currency.SetAsync("USD", CancellationToken.None));
+        Assert.True((await currency.GetStatusAsync(CancellationToken.None)).Changeable);
 
-        Assert.Equal(["EUR", "GBP", "USD"], await currency.SetAcceptedAsync(["USD", "GBP"], CancellationToken.None));
-        Assert.Equal(["EUR", "GBP"], await currency.SetAcceptedAsync(["GBP"], CancellationToken.None));
+        usage.Count = 1;
+        var locked = await Assert.ThrowsAsync<TenantCurrencyLockedException>(() => currency.SetAsync("EUR", CancellationToken.None));
+        Assert.Equal("USD", locked.Current);
+        Assert.Equal("working_currency_locked", TenantCurrencyLockedException.Rule);
+        Assert.Equal([new CurrencyUsage("claims", 1)], locked.Usage);
+        Assert.False((await currency.GetStatusAsync(CancellationToken.None)).Changeable);
+    }
+
+    [Fact]
+    public async Task Currency_change_rechecks_usage_inside_the_versioned_settings_write()
+    {
+        var usage = new MemoryUsage();
+        var currency = new TenantCurrency(new MemorySettings(), Catalogue, [usage]);
+        await currency.SetAsync("EUR", CancellationToken.None);
+        usage.CountOnCall = call => call >= 2 ? 1 : 0;
+
+        var locked = await Assert.ThrowsAsync<TenantCurrencyLockedException>(() =>
+            currency.SetAsync("USD", CancellationToken.None));
+
+        Assert.Equal("EUR", await currency.GetAsync(CancellationToken.None));
+        Assert.Equal([new CurrencyUsage("claims", 1)], locked.Usage);
+    }
+
+    private sealed class MemoryUsage : ICurrencyUsage
+    {
+        public long Count { get; set; }
+        public Func<int, long>? CountOnCall { get; set; }
+        private int calls;
+        public Task<IReadOnlyList<CurrencyUsage>> CountAsync(CancellationToken cancellationToken)
+        {
+            var count = CountOnCall?.Invoke(++calls) ?? Count;
+            return Task.FromResult<IReadOnlyList<CurrencyUsage>>(count == 0 ? [] : [new("claims", count)]);
+        }
     }
 
     private sealed class MemorySettings : ITenantSettings
@@ -55,6 +86,18 @@ public sealed class CurrencyCatalogueTests
         {
             values[key] = value;
             return Task.CompletedTask;
+        }
+
+        public Task<VersionedTenantSetting?> GetVersionedAsync(string key, CancellationToken cancellationToken) =>
+            Task.FromResult(values.TryGetValue(key, out var value) ? new VersionedTenantSetting(value, value, DateTime.UnixEpoch) : null);
+
+        public Task<VersionedTenantSetting> SetAsync(string key, string value, string expectedVersion, CancellationToken cancellationToken)
+        {
+            var current = values.GetValueOrDefault(key);
+            if (expectedVersion != (current ?? ITenantSettings.MissingVersion))
+                throw new TenantSettingVersionConflictException(key, expectedVersion, current ?? ITenantSettings.MissingVersion);
+            values[key] = value;
+            return Task.FromResult(new VersionedTenantSetting(value, value, DateTime.UnixEpoch));
         }
     }
 }

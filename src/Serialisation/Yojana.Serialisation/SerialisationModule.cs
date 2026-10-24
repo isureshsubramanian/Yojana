@@ -33,6 +33,8 @@ using Yojana.Serialisation.MigrationLoads;
 using Yojana.Platform.Contracts.Records;
 using Yojana.Platform.Contracts.Settings;
 using Yojana.Serialisation.Settings;
+using Yojana.Serialisation.Currency;
+using Yojana.Platform.Contracts.Tenancy;
 
 namespace Yojana.Serialisation;
 
@@ -44,6 +46,9 @@ public static class SerialisationModule
     public static IHostApplicationBuilder AddSerialisationModule(this IHostApplicationBuilder builder)
     {
         builder.AddModuleDbContext<SerialisationDbContext>(Schema);
+        builder.Services.AddScoped<SerialisationCurrencyUsage>();
+        builder.Services.AddScoped<ICurrencyUsage>(services => services.GetRequiredService<SerialisationCurrencyUsage>());
+        builder.Services.AddScoped<ICurrencyUsageReport>(services => services.GetRequiredService<SerialisationCurrencyUsage>());
         builder.Services.AddScoped<ISettingsSummaryContributor, LabelsSettingsSummaryContributor>();
         builder.Services.AddScoped<ISettingsSummaryContributor, JurisdictionsSettingsSummaryContributor>();
         builder.Services.AddScoped<ISettingsSummaryContributor, WorkbenchChoicesSettingsSummaryContributor>();
@@ -166,7 +171,11 @@ public static class SerialisationModule
         // End P6 labels block.
         // P6 jurisdiction-rules block. Feature modules see only these read ports; command/query endpoints use the
         // concrete service as the catalogue boundary.
-        builder.Services.AddScoped<JurisdictionCatalogueService>();
+        // Coupled to the jurisdiction command handlers: the factory hides PlatformDbContext behind ITenantCurrency so
+        // Wolverine keeps SerialisationDbContext as their single transactional context. A direct registration breaks startup.
+        builder.Services.AddScoped(services => new JurisdictionCatalogueService(
+            services.GetRequiredService<SerialisationDbContext>(), services.GetRequiredService<ITenantCurrency>(),
+            services.GetRequiredService<ITenantContext>(), services.GetRequiredService<Yojana.Platform.Contracts.Time.IClock>()));
         builder.Services.AddScoped<JurisdictionPublishedEventMapper>();
         builder.Services.TryAddScoped<IJurisdictionRuleResolver>(sp => sp.GetRequiredService<JurisdictionCatalogueService>());
         builder.Services.TryAddScoped<IJurisdictionRegionPort>(sp => sp.GetRequiredService<JurisdictionCatalogueService>());
@@ -309,6 +318,7 @@ public static class SerialisationModule
             sp.GetRequiredService<IJurisdictionRuleResolver>(),
             sp.GetRequiredService<IItemQueryPort>(),
             sp.GetRequiredService<Entitlements.WarrantyReferenceSettings>(),
+            sp.GetRequiredService<ITenantCurrency>(),
             sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantContext>(),
             sp.GetRequiredService<Yojana.Platform.Contracts.Time.IClock>()));
 

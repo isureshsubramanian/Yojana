@@ -138,7 +138,6 @@ public sealed class ConcurrencyPreparation(IServiceProvider services, BenchOptio
         scope.ServiceProvider.GetRequiredService<ITenantContextSetter>().Set(new TenantId(Tenant));
         var currency = scope.ServiceProvider.GetRequiredService<ITenantCurrency>();
         await currency.SetAsync("EUR", cancellationToken);
-        await currency.SetAcceptedAsync(["EUR"], cancellationToken);
     }
 
     private async Task<Guid> EnsurePoliciesAsync(CancellationToken cancellationToken)

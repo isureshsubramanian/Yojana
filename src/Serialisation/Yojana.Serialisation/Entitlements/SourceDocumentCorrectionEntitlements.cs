@@ -7,6 +7,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Corrections;
+using Yojana.Serialisation.Currency;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
@@ -26,6 +27,7 @@ public sealed class SourceDocumentCorrectionEntitlements(
     IJurisdictionRuleResolver jurisdictionRules,
     IItemQueryPort items,
     WarrantyReferenceSettings warrantyReference,
+    ITenantCurrency currency,
     ITenantContext tenant,
     IClock clock)
 {
@@ -75,6 +77,8 @@ public sealed class SourceDocumentCorrectionEntitlements(
         if (units.Count != ids.Count) throw new CommandRefusedException("unit_unknown", "At least one selected unit has no current projection.");
 
         var lines = await LinesAsync(corrected, cancellationToken);
+        foreach (var code in lines.Select(line => line.Line.Currency).Distinct(StringComparer.Ordinal))
+            await HomeCurrencyGuard.RequireAsync(currency, code, cancellationToken);
 
         var live = await LiveAsync(ids, cancellationToken);
         var previousDocuments = SourceDocuments(previous);

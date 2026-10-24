@@ -122,7 +122,8 @@ public static class PlatformSetup
         // ("multiple DbContext types detected"). Coupled to the module handlers that read the currency (Serialisation
         // PolicyStore, AmendEntitlementHandler and SubmitClaimHandler); a plain AddScoped<ITenantCurrency, TenantCurrency>() breaks them.
         builder.Services.AddSingleton<ICurrencyCatalogue, RuntimeCurrencyCatalogue>();
-        builder.Services.AddScoped<ITenantCurrency>(sp => new TenantCurrency(sp.GetRequiredService<ITenantSettings>(), sp.GetRequiredService<ICurrencyCatalogue>()));
+        builder.Services.AddScoped<ITenantCurrency>(sp => new TenantCurrency(sp.GetRequiredService<ITenantSettings>(),
+            sp.GetRequiredService<ICurrencyCatalogue>(), sp.GetServices<ICurrencyUsage>()));
 
         builder.Services.AddDbContextWithWolverineIntegration<PlatformDbContext>(
             db => db.UseSqlServer(options.ConnectionString, sql => SqlServerConventions(sql, PlatformDbContext.SchemaName)),
@@ -448,6 +449,12 @@ public static class PlatformSetup
             logger.LogInformation("Migrating {Database}", migration.Name);
             await migration.MigrateAsync(cancellationToken);
         }
+
+        // CUR-01 removed this setting contract. Delete its rows after every upgrade so old clients and restored databases
+        // are harmless; the idempotent statement is the one-time clean-up for each row and needs no schema migration.
+        var platform = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        await platform.TenantSettings.Where(setting => setting.Key == "tenant.currencies.accepted")
+            .ExecuteDeleteAsync(cancellationToken);
     }
 
     public static IReadOnlyList<Type> RegisteredContexts => ModuleContexts;

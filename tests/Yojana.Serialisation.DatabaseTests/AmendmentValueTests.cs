@@ -70,7 +70,7 @@ public sealed class AmendmentValueTests(SerialisationHostFixture fixture)
     [DatabaseFact]
     public async Task Amounts_wait_for_the_tenant_currency_and_a_policy_value_must_be_in_it()
     {
-        var tenant = await fixture.NewTenantAsync("va");
+        var tenant = await fixture.NewTenantWithoutCurrencyAsync("va");
         await InvokeAsync<CoverageFamilyRow>(tenant, new DefineCoverageFamily("base_warranty", "Base warranty", false, AssuranceOrService.Assurance));
         Ports.RegisterZone(Site, "Europe/Berlin");
 
@@ -80,19 +80,19 @@ public sealed class AmendmentValueTests(SerialisationHostFixture fixture)
         Assert.Equal("approval_policy_invalid", noCurrency.Rule);
         Assert.Contains("tenant currency", noCurrency.Message);
         var unpublished = await Assert.ThrowsAsync<CommandRefusedException>(() => PublishAsync(tenant, new AmendmentValueTerm(2.5m, "EUR", AmendmentValueTerm.PerDay)));
-        Assert.Equal("policy_invalid", unpublished.Rule);
-        Assert.Contains("tenant currency", unpublished.Message);
+        Assert.Equal("tenant_currency_not_set_up", unpublished.Rule);
 
         Assert.Equal("EUR", await InScopeAsync(tenant, sp => sp.GetRequiredService<ITenantCurrency>().SetAsync(" eur ", CancellationToken.None)));
         var otherCurrency = await Assert.ThrowsAsync<CommandRefusedException>(() => PublishAsync(tenant, new AmendmentValueTerm(2.5m, "USD", AmendmentValueTerm.PerDay)));
-        Assert.Contains("in USD; the tenant works in EUR", otherCurrency.Message);
+        Assert.Equal("currency_not_home", otherCurrency.Rule);
+        Assert.Equal("Amounts in this company are in EUR.", otherCurrency.Message);
         await InScopeAsync(tenant, async sp => { await sp.GetRequiredService<AmendmentApprovalSettings>().SetAsync(AmountBound(unbounded), CancellationToken.None); return 0; });
     }
 
     [DatabaseFact]
     public async Task The_value_comes_from_the_policy_or_the_user_and_finance_reviews_above_the_amount()
     {
-        var tenant = await fixture.NewTenantAsync("vb");
+        var tenant = await fixture.NewTenantWithoutCurrencyAsync("vb");
         await InvokeAsync<CoverageFamilyRow>(tenant, new DefineCoverageFamily("base_warranty", "Base warranty", false, AssuranceOrService.Assurance));
         Ports.RegisterZone(Site, "Europe/Berlin");
         var before = await PublishAsync(tenant, null);

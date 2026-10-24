@@ -20,6 +20,7 @@ export interface ClaimSummary {
   recoveryOpenCount: number; recoveryVendorCount: number; oldestOpenNumber: string | null; oldestOpenClaimId: string | null;
   oldestOpenAgeDays: number | null; oldestOpenStatus: string | null; oldestOpenEvidenceRequested: boolean;
   ageBuckets: number[]; adjudicationTargetWorkingDays: number; coverageSources: string[]; serviceCountries: string[]; allClaims: number;
+  otherCurrencyClaimCount: number;
 }
 
 export interface ClaimLineRow {
@@ -142,7 +143,10 @@ export interface SubmitClaim {
 export interface SubmitClaimResult { claimId: string; unitId: string; status: string; claimLineIds: string[]; eventId: string; replayed: boolean }
 export interface ClaimChangeResult { claimId: string; status: string; eventId: string; replayed: boolean }
 
-export interface TenantCurrency { currency: string | null; accepted: string[] }
+export interface CurrencyUsage { kind: string; count: number }
+export interface OtherCurrencyUsage extends CurrencyUsage { currency: string }
+export interface TenantCurrency { currency: string | null; changeable: boolean; usage: CurrencyUsage[] }
+export interface CurrencyUsageReport { currency: string | null; rows: OtherCurrencyUsage[] }
 export interface CurrencyInfo { code: string; name: string; symbol: string; minorDigits: number }
 export interface CoverageFamily { familyCode: string; name: string; stacking: boolean; accountingTag: string; active: boolean }
 

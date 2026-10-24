@@ -107,7 +107,10 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
             await db.SaveChangesAsync();
         }
         using (var scope = ScopeFor(tenant))
+        {
             await scope.ServiceProvider.GetRequiredService<ITenantSettings>().SetAsync("serial_confirmation_mode", "copy_allowed", CancellationToken.None);
+            await scope.ServiceProvider.GetRequiredService<ITenantCurrency>().SetAsync("EUR", CancellationToken.None);
+        }
         return tenant;
     }
 

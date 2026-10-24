@@ -449,7 +449,7 @@ public sealed class WorkbenchAcceptanceTests(SerialisationHostFixture fixture)
                     ["contract_date"] = "2026-09-01",
                     ["obligor_entity_id"] = obligor.ToString(),
                     ["price"] = "120.00",
-                    ["currency"] = "GBP",
+                    ["currency"] = "EUR",
                 };
                 return EntitlementPath(tenant, choice, route, routeCommand, selection, AmendmentReason.Purchase,
                     new(At.AddDays(2), "ignored", Entity, source, Extra: extra), YojanaRole.ServiceDesk);

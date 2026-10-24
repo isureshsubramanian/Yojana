@@ -6,6 +6,7 @@ using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Commands;
 using Yojana.Serialisation.Certificates;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Currency;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Entitlements;
@@ -31,12 +32,18 @@ public static class ApplyMigratedUnitsHandler
     public static async Task<ApplyMigratedUnitsResult> Handle(ApplyMigratedUnits command, SerialisationDbContext db, BulkIngestion bulk,
         MigrationCoverBulkWriter coverWriter, CertificateVersioningEngine certificates, IdentifierService identifiers,
         EffectiveItemProfiles items, LedgerPublication publication, ICurrencyCatalogue currencies,
-        ITenantContext tenant, IClock clock,
+        ITenantCurrency tenantCurrency, ITenantContext tenant, IClock clock,
         CancellationToken cancellationToken)
     {
         if (command.Units.Count > MaxUnitsPerChunk)
         {
             throw new CommandRefusedException("chunk_too_large", $"A chunk carries at most {MaxUnitsPerChunk} units; this one has {command.Units.Count}.", "send smaller chunks");
+        }
+
+        foreach (var code in command.Units.SelectMany(unit => unit.ReplacementLinks ?? [])
+                     .Select(link => link.Currency).Where(code => code != "XXX").Distinct(StringComparer.Ordinal))
+        {
+            await HomeCurrencyGuard.RequireAsync(tenantCurrency, code, cancellationToken);
         }
 
         // TIGHT COUPLING (OD-52, migrated history publishes nothing per unit)

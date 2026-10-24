@@ -85,7 +85,8 @@ public sealed record ClaimSummary(
     int AdjudicationTargetWorkingDays,
     IReadOnlyList<string> CoverageSources,
     IReadOnlyList<string> ServiceCountries,
-    long AllClaims);
+    long AllClaims,
+    int OtherCurrencyClaimCount);
 
 /// <summary>One stored claim line with its decision, for the claim drawer and the adjudication screen.</summary>
 public sealed record ClaimLineRow(
