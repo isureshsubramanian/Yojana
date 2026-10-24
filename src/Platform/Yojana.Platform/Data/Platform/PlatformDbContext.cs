@@ -39,6 +39,9 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
     public DbSet<UserPasskey> UserPasskeys => Set<UserPasskey>();
     public DbSet<PasskeyCeremony> PasskeyCeremonies => Set<PasskeyCeremony>();
 
+    public DbSet<ErasureRequest> ErasureRequests => Set<ErasureRequest>();
+    public DbSet<ErasureStoreCount> ErasureStoreCounts => Set<ErasureStoreCount>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Tenant>(b =>
@@ -213,6 +216,44 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
             b.HasIndex(t => t.TokenHash).IsUnique();
             b.HasIndex(t => new { t.UserId, t.CreatedAt });
             b.HasOne<AppUser>().WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ErasureRequest>(b =>
+        {
+            // TIGHT COUPLING (ADR-0017 certificate redaction): the Serialisation certificate trigger reads this exact
+            // platform.erasure_request table with subject_kind 'Party' and status pending/running. Changing any of
+            // those persistence values without changing the trigger blocks the only lawful immutability exception.
+            b.ToTable("erasure_request", table =>
+            {
+                table.HasCheckConstraint("ck_erasure_request_status", "status IN ('pending','running','completed','failed')");
+                table.HasCheckConstraint("ck_erasure_request_subject_kind", "subject_kind IN ('Party','User')");
+            });
+            b.HasKey(x => new { x.TenantId, x.ErasureId });
+            b.Property(x => x.SubjectKind).HasConversion<string>().HasMaxLength(16);
+            b.Property(x => x.RequestReference).HasMaxLength(120);
+            b.Property(x => x.Reason).HasMaxLength(1000);
+            b.Property(x => x.Status).HasMaxLength(20);
+            b.Property(x => x.RetentionBasis).HasMaxLength(1000);
+            b.Property(x => x.ReviewDecisionsJson).HasColumnType("nvarchar(max)");
+            b.Property(x => x.FailureRule).HasMaxLength(80);
+            b.Property(x => x.FailureDetail).HasMaxLength(1000);
+            b.HasIndex(x => new { x.TenantId, x.RequestedAt, x.ErasureId });
+            b.HasIndex(x => new { x.TenantId, x.SubjectKind, x.SubjectId, x.Status });
+            b.HasIndex(x => new { x.TenantId, x.RequestReference }).IsUnique();
+        });
+
+        modelBuilder.Entity<ErasureStoreCount>(b =>
+        {
+            b.ToTable("erasure_store_count", table => table.HasCheckConstraint(
+                "ck_erasure_store_count_status", "status IN ('previewed','completed')"));
+            b.HasKey(x => new { x.TenantId, x.ErasureId, x.Store, x.Kind });
+            b.Property(x => x.Store).HasMaxLength(40);
+            b.Property(x => x.Kind).HasMaxLength(80);
+            b.Property(x => x.Action).HasMaxLength(240);
+            b.Property(x => x.Status).HasMaxLength(20);
+            b.HasIndex(x => new { x.TenantId, x.ErasureId, x.Status });
+            b.HasOne<ErasureRequest>().WithMany().HasForeignKey(x => new { x.TenantId, x.ErasureId })
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // Base conventions (naming, filters) run after the explicit mapping so they see the final shape.

@@ -1,4 +1,5 @@
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Privacy;
 
 namespace Yojana.Serialisation.Data.Entities;
 
@@ -82,6 +83,7 @@ public sealed class CustomerReconciliationRow : ITenantScoped
 }
 
 /// <summary>Customer registration evidence and the optional back-office decision that applies it.</summary>
+[PersonalData]
 public sealed class PortalRegistration : ITenantScoped
 {
     public TenantId TenantId { get; set; }

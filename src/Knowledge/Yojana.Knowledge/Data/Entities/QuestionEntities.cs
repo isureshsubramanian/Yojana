@@ -1,7 +1,9 @@
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Privacy;
 
 namespace Yojana.Knowledge.Data.Entities;
 
+[PersonalData]
 public sealed class Question : ITenantScoped
 {
     public TenantId TenantId { get; set; }
@@ -38,6 +40,7 @@ public sealed class QuestionSimilarEntry : ITenantScoped
     public DateTime MatchedAt { get; set; }
 }
 
+[PersonalData]
 public sealed class QuestionReply : ITenantScoped
 {
     public TenantId TenantId { get; set; }
@@ -51,6 +54,7 @@ public sealed class QuestionReply : ITenantScoped
 }
 
 /// <summary>Earlier question or reply text. Exactly one of QuestionBody or ReplyId identifies what was edited.</summary>
+[PersonalData]
 public sealed class QuestionReplyRevision : ITenantScoped
 {
     public TenantId TenantId { get; set; }

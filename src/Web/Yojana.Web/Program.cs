@@ -16,6 +16,7 @@ using Yojana.Platform.Data.Platform.Entities;
 using Yojana.Platform.Mail;
 using Yojana.Platform.Messaging.Smoke;
 using Yojana.Platform.Presence;
+using Yojana.Platform.Privacy;
 using Yojana.Platform.Seeding;
 using Yojana.Platform.Security;
 using Yojana.Platform.Shell;
@@ -126,6 +127,7 @@ screenEndpoints.MapIntegrationEndpoints();
 app.MapKnowledgeEndpoints();
 app.MapSettingsSummaryEndpoints();
 app.MapYojanaLegalEntityEndpoints();
+app.MapYojanaPrivacyEndpoints();
 
 app.MapGet("/health", async (PlatformDbContext db, CancellationToken ct) =>
 {

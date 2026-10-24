@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Serialisation.Contracts;
+using CommandRefusedException = Yojana.Platform.Contracts.CommandRefusedException;
 
 namespace Yojana.Integration.Verification;
 

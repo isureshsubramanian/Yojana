@@ -7,6 +7,8 @@ using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
+using Yojana.Platform.Contracts.Privacy;
+using Yojana.Integration.Privacy;
 
 namespace Yojana.Integration.Gateway;
 
@@ -14,7 +16,8 @@ public sealed record ItemReferenceAttributes(bool IsWarrantyProduct, string? War
     string ManufacturerItemCode = "");
 public sealed record PartyReferenceAttributes(string? TaxId, string Country, string PartyKind);
 
-public sealed class GatewayReferenceStore(IntegrationDbContext db, ITenantContext tenant, IClock clock)
+public sealed class GatewayReferenceStore(IntegrationDbContext db, ITenantContext tenant, IClock clock,
+    IPersonalDataErasureReadPort erasures, ExternalIdErasureProtector? erasureProtector = null)
 {
     public async Task<Guid> ResolveAsync(Guid connectionId, string entityType, string externalId,
         bool provisional, CancellationToken cancellationToken)
@@ -27,6 +30,14 @@ public sealed class GatewayReferenceStore(IntegrationDbContext db, ITenantContex
             && x.ValidTo == null,
             cancellationToken);
         if (row is not null) return row.ModuleId;
+        if (entityType == "party" && erasureProtector is not null
+            && await erasureProtector.ProtectedIfConfiguredAsync(externalId, cancellationToken) is { } protectedId)
+        {
+            row = await db.ExternalIdMaps.SingleOrDefaultAsync(x => x.TenantId == tenantId
+                && x.ConnectionId == connectionId && x.EntityType == entityType && x.ExternalId == protectedId
+                && x.ValidTo == null, cancellationToken);
+            if (row is not null) return row.ModuleId;
+        }
         var now = clock.UtcNow;
         row = new ExternalIdMap
         {
@@ -88,10 +99,16 @@ public sealed class GatewayReferenceStore(IntegrationDbContext db, ITenantContex
             };
             db.ReferenceProjections.Add(row);
         }
-        row.Code = party.PartyExternalId;
-        row.DisplayName = party.LegalName;
-        row.AttributesJson = JsonSerializer.Serialize(new PartyReferenceAttributes(party.TaxId,
-            party.Country, party.PartyKind.RawValue ?? party.PartyKind.Value), IntegrationContracts.Json);
+        // HIDDEN COUPLING (ADR-0017): Platform commits the erasure tombstone before any holder runs and this gateway
+        // consults it on every party upsert. Removing this read or changing that order lets synchronisation restore the
+        // erased name. The contract is IPersonalDataErasureReadPort; Integration never reads Platform tables.
+        var erased = await erasures.ErasedPartyAsync(id, cancellationToken);
+        row.Code = erased is null ? party.PartyExternalId : $"ERASED-{id.ToString("N")[..4].ToUpperInvariant()}";
+        row.DisplayName = erased?.Token ?? party.LegalName;
+        row.AttributesJson = erased is null
+            ? JsonSerializer.Serialize(new PartyReferenceAttributes(party.TaxId,
+                party.Country, party.PartyKind.RawValue ?? party.PartyKind.Value), IntegrationContracts.Json)
+            : "{}";
         row.Deleted = party.Deleted;
         row.UpdatedAt = clock.UtcNow;
         return id;

@@ -1,7 +1,9 @@
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Privacy;
 
 namespace Yojana.Serialisation.Data.Entities;
 
+[PersonalData]
 public sealed class CertificateInstance : ITenantScoped
 {
     public TenantId TenantId { get; set; }
@@ -61,6 +63,16 @@ public sealed class CertificateSignature : ITenantScoped
     public DateTime SignedAt { get; set; }
     public required string HashSigned { get; set; }
     public required string SignatureMethod { get; set; }
+}
+
+/// <summary>Audit of ADR-0017 owner redaction; the original payload fingerprint remains verifiable.</summary>
+public sealed class CertificateRedaction : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public Guid CertificateId { get; set; }
+    public Guid ErasureId { get; set; }
+    public required string OriginalPayloadHash { get; set; }
+    public DateTime RedactedAt { get; set; }
 }
 
 public sealed class ReprintLog : ITenantScoped

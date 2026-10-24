@@ -264,12 +264,9 @@ public sealed record ReleaseUnitResult(Guid UnitId, Guid BuildRecordId, int Buil
 /// </summary>
 public sealed record CommandRefusal(string Rule, string Message, string? UnblockingStep = null);
 
-public class CommandRefusedException(string rule, string message, string? unblockingStep = null) : InvalidOperationException(message)
+public class CommandRefusedException(string rule, string message, string? unblockingStep = null)
+    : Yojana.Platform.Contracts.CommandRefusedException(rule, message, unblockingStep)
 {
-    public string Rule { get; } = rule;
-
-    public string? UnblockingStep { get; } = unblockingStep;
-
     public CommandRefusal Refusal => new(Rule, Message, UnblockingStep);
 }
 

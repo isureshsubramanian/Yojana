@@ -127,6 +127,162 @@ namespace Yojana.Platform.Data.Platform.Migrations
                     b.ToTable("document_presence", "platform");
                 });
 
+            modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.ErasureRequest", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ErasureId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("erasure_id");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTime?>("FailedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("failed_at");
+
+                    b.Property<string>("FailureDetail")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("failure_detail");
+
+                    b.Property<string>("FailureRule")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("failure_rule");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("RequestReference")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)")
+                        .HasColumnName("request_reference");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("requested_at");
+
+                    b.Property<Guid>("RequestedBy")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("requested_by");
+
+                    b.Property<string>("RetentionBasis")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("retention_basis");
+
+                    b.Property<string>("ReviewDecisionsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("review_decisions_json");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("subject_id");
+
+                    b.Property<string>("SubjectKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("subject_kind");
+
+                    b.HasKey("TenantId", "ErasureId")
+                        .HasName("pk_erasure_request");
+
+                    b.HasIndex("TenantId", "RequestReference")
+                        .IsUnique()
+                        .HasDatabaseName("ux_erasure_request_tenant_id_request_reference");
+
+                    b.HasIndex("TenantId", "RequestedAt", "ErasureId")
+                        .HasDatabaseName("ix_erasure_request_tenant_id_requested_at_erasure_id");
+
+                    b.HasIndex("TenantId", "SubjectKind", "SubjectId", "Status")
+                        .HasDatabaseName("ix_erasure_request_tenant_id_subject_kind_subject_id_status");
+
+                    b.ToTable("erasure_request", "platform", t =>
+                        {
+                            t.HasCheckConstraint("ck_erasure_request_status", "status IN ('pending','running','completed','failed')");
+
+                            t.HasCheckConstraint("ck_erasure_request_subject_kind", "subject_kind IN ('Party','User')");
+                        });
+                });
+
+            modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.ErasureStoreCount", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ErasureId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("erasure_id");
+
+                    b.Property<string>("Store")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("store");
+
+                    b.Property<string>("Kind")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(240)
+                        .HasColumnType("nvarchar(240)")
+                        .HasColumnName("action");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("completed_at");
+
+                    b.Property<int>("ErasedCount")
+                        .HasColumnType("int")
+                        .HasColumnName("erased_count");
+
+                    b.Property<int>("PreviewCount")
+                        .HasColumnType("int")
+                        .HasColumnName("preview_count");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.HasKey("TenantId", "ErasureId", "Store", "Kind")
+                        .HasName("pk_erasure_store_count");
+
+                    b.HasIndex("TenantId", "ErasureId", "Status")
+                        .HasDatabaseName("ix_erasure_store_count_tenant_id_erasure_id_status");
+
+                    b.ToTable("erasure_store_count", "platform", t =>
+                        {
+                            t.HasCheckConstraint("ck_erasure_store_count_status", "status IN ('previewed','completed')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.MailMessage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -838,6 +994,16 @@ namespace Yojana.Platform.Data.Platform.Migrations
                         .HasDatabaseName("ix_user_tenant_membership_tenant_id_created_at_user_id");
 
                     b.ToTable("user_tenant_membership", "platform");
+                });
+
+            modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.ErasureStoreCount", b =>
+                {
+                    b.HasOne("Yojana.Platform.Data.Platform.Entities.ErasureRequest", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ErasureId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_erasure_store_count_tenant_id_erasure_id");
                 });
 
             modelBuilder.Entity("Yojana.Platform.Data.Platform.Entities.MailMessage", b =>

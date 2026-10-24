@@ -1,4 +1,5 @@
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Privacy;
 
 namespace Yojana.Serialisation.Data.Entities;
 
@@ -59,9 +60,11 @@ public abstract class UnitEventRow : ITenantScoped
 }
 
 /// <summary>The live, partitioned ledger.</summary>
+[PersonalData]
 public sealed class UnitEvent : UnitEventRow;
 
 /// <summary>Switched-out cold partitions; same columns, same scheme, still queryable for reprints and audits.</summary>
+[PersonalData]
 public sealed class UnitEventArchive : UnitEventRow;
 
 /// <summary>

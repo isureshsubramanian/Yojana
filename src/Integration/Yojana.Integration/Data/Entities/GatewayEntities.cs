@@ -1,7 +1,9 @@
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Privacy;
 
 namespace Yojana.Integration.Data.Entities;
 
+[PersonalData]
 public sealed class ReferenceProjection : ITenantScoped
 {
     public TenantId TenantId { get; set; }
@@ -26,6 +28,7 @@ public sealed class ConnectorCatalogueEntry : ITenantScoped
     public DateTime UpdatedAt { get; set; }
 }
 
+[PersonalData]
 public sealed class CanonicalDocument : ITenantScoped
 {
     public TenantId TenantId { get; set; }
@@ -85,6 +88,7 @@ public sealed class ConnectionGatewaySetting : ITenantScoped
     public string? ServiceCertificateSha256 { get; set; }
 }
 
+[PersonalData]
 public sealed class OutboundCommandRow : ITenantScoped
 {
     public TenantId TenantId { get; set; }

@@ -1,4 +1,5 @@
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Privacy;
 
 namespace Yojana.Serialisation.Data.Entities;
 
@@ -237,6 +238,7 @@ public sealed class BuildRecord : ITenantScoped
 /// SerialAllocationReassignment is its immutable audit. Commissioning resolves both set-wise through
 /// SerialAllocationReservationStore.
 /// </summary>
+[PersonalData]
 public sealed class SerialRange : ITenantScoped
 {
     public TenantId TenantId { get; set; }

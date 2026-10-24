@@ -1,4 +1,5 @@
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Privacy;
 
 namespace Yojana.Serialisation.Data.Entities;
 
@@ -6,6 +7,7 @@ namespace Yojana.Serialisation.Data.Entities;
 /// A correction workbench request freezes the command's own preview and carries only server-recorded approvals. The
 /// command arguments remain opaque JSON here: the workbench owns routing, while each command continues to own meaning.
 /// </summary>
+[PersonalData]
 public sealed class WorkbenchRequest : ITenantScoped
 {
     public TenantId TenantId { get; set; }

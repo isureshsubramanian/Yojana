@@ -1,4 +1,5 @@
 using Yojana.Platform.Contracts.Mail;
+using Yojana.Platform.Contracts.Privacy;
 using Yojana.Platform.Contracts.Tenancy;
 
 namespace Yojana.Platform.Data.Platform.Entities;
@@ -31,6 +32,7 @@ public sealed class TenantSetting : ITenantScoped
 }
 
 /// <summary>A sign-in identity. Users can belong to several tenants through <see cref="UserTenantMembership"/>.</summary>
+[PersonalData]
 public sealed class AppUser
 {
     public Guid Id { get; set; }
@@ -75,6 +77,7 @@ public sealed class SignInThrottle
 /// Global security audit. TenantId is nullable because sign-in occurs before tenant selection; tenant visibility is
 /// enforced by SecurityEventQueries using the selected tenant and memberships rather than by tenant RLS.
 /// </summary>
+[PersonalData]
 public sealed class SecurityEvent
 {
     public Guid Id { get; set; }
@@ -153,6 +156,7 @@ public sealed class DocumentPresence : ITenantScoped
 /// here: they travel only in the delivery message, which Wolverine deletes once the attempt is handled, because account
 /// mail carries single-use links.
 /// </summary>
+[PersonalData]
 public sealed class MailMessage
 {
     public Guid Id { get; set; }
@@ -184,6 +188,7 @@ public static class MailStatus
 /// Global password-reset state. It deliberately has no tenant id because a user is a global identity and no tenant
 /// exists before sign-in. TokenHash is the SHA-256 digest of the single-use token; the token itself is never stored.
 /// </summary>
+[PersonalData]
 public sealed class PasswordResetToken
 {
     public Guid Id { get; set; }
@@ -200,6 +205,7 @@ public sealed class PasswordResetToken
 /// inspection and acceptance happen before a tenant is known. Every tenant-side reader must filter TenantId itself;
 /// there is no RLS safety net for this table.
 /// </summary>
+[PersonalData]
 public sealed class UserInvitation
 {
     public Guid Id { get; set; }
@@ -222,6 +228,7 @@ public sealed class UserInvitation
 /// A global user's authenticator enrolment. This deliberately has no tenant id: sign-in and enrolment happen before
 /// tenant selection and one identity may span tenants. Tenant policy is consulted through active memberships.
 /// </summary>
+[PersonalData]
 public sealed class UserAuthenticator
 {
     public Guid Id { get; set; }
@@ -246,6 +253,7 @@ public static class UserAuthenticatorStatus
 /// One global, single-use recovery code. Only a salted PBKDF2 digest is stored; the friendly eight-character display
 /// format has 40 bits, so a deliberately slow hash protects it from cheap offline enumeration.
 /// </summary>
+[PersonalData]
 public sealed class UserRecoveryCode
 {
     public Guid UserId { get; set; }
@@ -258,6 +266,7 @@ public sealed class UserRecoveryCode
 /// A global user's passkey (WebAuthn credential, P9-T27). Global like <see cref="UserAuthenticator"/>: a passkey signs a
 /// person in before any tenant is chosen. Only the public key is stored; the private key never leaves the device.
 /// </summary>
+[PersonalData]
 public sealed class UserPasskey
 {
     public Guid Id { get; set; }

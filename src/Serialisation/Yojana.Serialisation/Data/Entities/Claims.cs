@@ -1,10 +1,12 @@
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Privacy;
 
 namespace Yojana.Serialisation.Data.Entities;
 
 // MOD-07 claim half (P4-T02). Measurements and selected entitlement ids are recorded as JSON because adjudication reads
 // each value with its owning claim or line and never filters inside either document.
 
+[PersonalData]
 public sealed class Claim : ITenantScoped
 {
     public TenantId TenantId { get; set; }
@@ -53,6 +55,7 @@ public sealed class Claim : ITenantScoped
     public byte[] RowVersion { get; set; } = [];
 }
 
+[PersonalData]
 public sealed class ClaimLine : ITenantScoped
 {
     public TenantId TenantId { get; set; }
@@ -80,6 +83,7 @@ public sealed class ClaimLine : ITenantScoped
     public Guid? CoverageDecisionRef { get; set; }
 }
 
+[PersonalData]
 public sealed class ClaimEvidence : ITenantScoped
 {
     public TenantId TenantId { get; set; }

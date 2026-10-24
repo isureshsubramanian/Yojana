@@ -1,4 +1,5 @@
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Privacy;
 
 namespace Yojana.Integration.LegacyMigration.Staging;
 
@@ -54,6 +55,7 @@ public sealed class SerialBinStagingRow : StagingRow
     public decimal? Quantity { get; set; }
 }
 
+[PersonalData]
 public sealed class TransactionLogHeaderStagingRow : StagingRow
 {
     public int? LogEntry { get; set; }
@@ -219,6 +221,7 @@ public sealed class ReturnStagingRow : StagingRow
     public string? Cancelled { get; set; }
 }
 
+[PersonalData]
 public sealed class MarketingDocumentHeaderStagingRow : StagingRow
 {
     public string? SourceDocumentTable { get; set; }
