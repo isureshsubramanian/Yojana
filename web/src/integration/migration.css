@@ -159,8 +159,11 @@
 .migration-overrides-table .table { min-width: 900px; }
 .migration-overrides-table .table td { white-space: normal; line-height: 1.35; }
 .migration-overrides-table .card-header .checkrow { padding: 0; border: 0; }
-.migration-settings-layout .grid-viewport .table { min-width: 620px; }
-.migration-settings-layout .grid-viewport .select { min-width: 135px; }
+.migration-condition-rules .table { table-layout: fixed; width: 100%; }
+.migration-condition-rules .table td { padding-left: 6px; padding-right: 6px; }
+.migration-condition-rules .table .select { width: 100%; min-width: 0; }
+.migration-condition-rules .actions-col { width: 40px; }
+.migration-condition-rules .movement-col { width: 38%; }
 .migration-parallel-picker { align-items: end; }
 .migration-parallel-kpis { display: grid; gap: 8px; }
 .migration-reconciliation-link { justify-self: end; }
