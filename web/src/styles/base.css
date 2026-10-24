@@ -104,6 +104,9 @@ svg.ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-wid
 .crumbs li + li::before { content: "/"; margin-right: 8px; color: var(--border-strong); }
 .page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
 .page-header .sub { margin-top: 6px; font-size: 14px; color: var(--text-2); }
+/* A short standing note in the header's top-right slot (who may change a page), kept narrow so it reads as an aside. */
+.page-header .actions:has(> .page-header-note) { align-self: flex-start; }
+.page-header-note { max-width: 340px; margin: 0; padding: 10px 12px; border-radius: var(--radius-s); background: var(--accent-soft); font-size: 12px; line-height: 1.45; color: var(--text-2); }
 .page-header .actions { display: flex; align-items: center; gap: 8px; flex: none; }
 .presence { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
 .presence-who { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 10px 0 4px; border-radius: 999px; background: var(--surface-2); color: var(--text-2); font-size: 12px; }
@@ -234,6 +237,10 @@ input[type="file"]::file-selector-button:hover { border-color: var(--accent); ba
 .scanbox.lg .input { height: 44px; font-size: 14px; }
 .checkrow { display: flex; align-items: center; gap: 10px; font-size: 14px; }
 .checkrow input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+/* A hint inside a checkbox label always sits on its own line under the label text, with the box level with line one. */
+.checkrow:has(> span > .hint, > span > .help) { align-items: flex-start; }
+.checkrow:has(> span > .hint, > span > .help) > input { margin-top: 3px; }
+.checkrow > span > .hint, .checkrow > span > .help { display: block; margin-top: 2px; font-size: 12px; color: var(--text-3); }
 /* Role pickers: grouped lists that flow into as many ~200px columns as fit, so twenty roles need no scrolling. */
 .role-groups { column-width: 200px; column-gap: 24px; }
 .role-group { break-inside: avoid; margin: 0 0 12px; padding: 0; border: 0; display: grid; gap: 6px; }

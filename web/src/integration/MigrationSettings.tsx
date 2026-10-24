@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { ApiError } from "../api/client";
-import { DataGrid, StatusBadge, type GridColumn } from "../components";
+import { DataGrid, FormActions, StatusBadge, type GridColumn } from "../components";
 import { useSession } from "../session/session";
 import { ErrorNote } from "../units/common";
 import { fmtDateTime } from "../units/format";
@@ -90,10 +90,11 @@ function MigrationSettings() {
     finally { setBusy(false); }
   };
 
-  const actions = canEdit && draft ? <>
-    <button type="button" className="btn" disabled={busy || !dirty} onClick={() => { setDraft(copy(saved!)); setServerRule(null); }}>Discard</button>
+  const commit = canEdit && draft ? <FormActions status={notice}>
     <button type="button" className="btn primary" disabled={busy || !dirty || Object.keys(linkErrors).length > 0} onClick={() => void save()}>{busy ? "Saving…" : "Save changes"}</button>
-  </> : undefined;
+    <button type="button" className="btn" disabled={busy || !dirty} onClick={() => { setDraft(copy(saved!)); setServerRule(null); }}>Discard</button>
+  </FormActions> : null;
+  const access = <p className="page-header-note"><strong>Who can change these:</strong> tenant administrators and the Migration lead. Every saved setting and upload records who made it and when.</p>;
 
   const columns = useMemo<GridColumn<LinkOverride>[]>(() => [
     { key: "document", label: "Document number", width: 23, render: row => <span className="primary">{row.sourceKey}</span> },
@@ -102,8 +103,8 @@ function MigrationSettings() {
     { key: "use", label: "Use", width: 14, render: row => row.unused ? <StatusBadge tone="warn">Unused</StatusBadge> : <StatusBadge tone="ok">In plan</StatusBadge> },
   ], []);
 
-  return <MigrationPage title="Migration settings" eyebrow="Changes apply from the next mapping run" sub="How the load fills what the source application cannot tell. Nothing here changes a unit that is already loaded: map again and run a new rehearsal to see the effect." actions={actions}>
-    <ErrorNote error={error} />{notice && <div className="note ok" role="status">{notice}</div>}
+  return <MigrationPage title="Migration settings" eyebrow="Changes apply from the next mapping run" sub="How the load fills what the source application cannot tell. Nothing here changes a unit that is already loaded: map again and run a new rehearsal to see the effect." actions={access}>
+    <ErrorNote error={error} />
     {!canEdit && <div className="note">You have read-only access. Tenant administrators and the Migration lead can change these settings.</div>}
     {!draft && !error && <p role="status">Loading migration settings…</p>}
     {draft && <div className="migration-settings-layout">
@@ -127,7 +128,6 @@ function MigrationSettings() {
           </div>
         </section>
         {upload && upload.errorTotal > 0 && <UploadErrors result={upload} fileName={uploadName} />}
-        <div className="note"><strong>Who can change these:</strong>&nbsp;tenant administrators and the Migration lead. Every saved setting and upload records who made it and when.</div>
       </div>
       <section className="card migration-overrides-table" aria-labelledby="migration-overrides-table-title">
         <div className="card-header"><h2 id="migration-overrides-table-title">Overrides</h2><label className="checkrow"><input type="checkbox" checked={unusedOnly} onChange={event => setUnusedOnly(event.target.checked)} /><span>Unused only</span></label></div>
@@ -135,6 +135,7 @@ function MigrationSettings() {
         <div className="card-footer"><span className="muted">Server-paged in document-number order · an unused override is kept for a later mapping run</span></div>
       </section>
     </div>}
+    {commit}
   </MigrationPage>;
 }
 
