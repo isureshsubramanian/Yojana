@@ -607,8 +607,8 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
             ?? throw new InvalidOperationException("DEV administrator is missing; run 'make seed' before 'make demo'.");
         actor = admin.Id.ToString();
         var currency = scope.ServiceProvider.GetRequiredService<ITenantCurrency>();
-        await currency.SetAsync("EUR", cancellationToken);
-        await currency.SetAcceptedAsync(["GBP", "INR", "USD"], cancellationToken);
+        // One home currency per company (owner, 2026-10-24); every demo amount below is in it.
+        await currency.SetAsync(DemoCurrency, cancellationToken);
         var timeZones = scope.ServiceProvider.GetRequiredService<TenantTimeZoneSettings>();
         var currentTimeZones = await timeZones.GetAsync(cancellationToken);
         var expectedOverrides = new[] { new LegalEntityTimeZoneOverride(UkLegalEntityId, "Europe/London") };
@@ -975,36 +975,36 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
         var isp = Party("C-CLOUDMERE");
         var definitions = new List<ClaimPlan>
         {
-            Claim("twin-dimm", Units("RT-N1")[0], hospital, "EUR", recoveryDimm!, ClaimLineKind.Parts, 420m, "Failed 64 GB registered DIMM", ClaimAction.Adjudicate),
-            Claim("storage-nvme", Units("SS-1110")[0], hpc, "GBP", recoveryNvme!, ClaimLineKind.Parts, 1380m, "3.84 TB NVMe media failure", ClaimAction.Adjudicate),
-            Claim("expired-vendor-psu", Units("RS-1520")[0], hospital, "INR", expiredPsu!, ClaimLineKind.Parts, 31000m, "1600 W PSU replacement", ClaimAction.Adjudicate),
-            Claim("laptop-out-of-region", Units("LB-14")[0], bank, "USD", null, ClaimLineKind.Parts, 650m, "Main board repair", ClaimAction.Adjudicate, country: "US"),
-            Claim("printer-goodwill", Units("PF-400")[0], studio, "EUR", null, ClaimLineKind.Parts, 280m, "Print-head module", ClaimAction.Adjudicate, family: "goodwill", measurements: new Dictionary<string, decimal> { ["print_hours"] = 1840 }),
-            new("accessory-proof", null, bank, "GBP", "GB", [new ClaimLineInput(ClaimLineKind.Parts, CoverageFamilyCode.Base, 74m, Description: "Replacement 65 W charger")], ClaimAction.Adjudicate,
+            Claim("twin-dimm", Units("RT-N1")[0], hospital, DemoCurrency, recoveryDimm!, ClaimLineKind.Parts, 420m, "Failed 64 GB registered DIMM", ClaimAction.Adjudicate),
+            Claim("storage-nvme", Units("SS-1110")[0], hpc, DemoCurrency, recoveryNvme!, ClaimLineKind.Parts, 1380m, "3.84 TB NVMe media failure", ClaimAction.Adjudicate),
+            Claim("expired-vendor-psu", Units("RS-1520")[0], hospital, DemoCurrency, expiredPsu!, ClaimLineKind.Parts, 375m, "1600 W PSU replacement", ClaimAction.Adjudicate),
+            Claim("laptop-out-of-region", Units("LB-14")[0], bank, DemoCurrency, null, ClaimLineKind.Parts, 650m, "Main board repair", ClaimAction.Adjudicate, country: "US"),
+            Claim("printer-goodwill", Units("PF-400")[0], studio, DemoCurrency, null, ClaimLineKind.Parts, 280m, "Print-head module", ClaimAction.Adjudicate, family: "goodwill", measurements: new Dictionary<string, decimal> { ["print_hours"] = 1840 }),
+            new("accessory-proof", null, bank, DemoCurrency, "GB", [new ClaimLineInput(ClaimLineKind.Parts, CoverageFamilyCode.Base, 74m, Description: "Replacement 65 W charger")], ClaimAction.Adjudicate,
                 UnknownIdentifier: "AC65-POP-0042", ItemId: Item("AC-65").Id, ProofRef: "POP-AC65-0042", ProofDate: today.AddDays(-90)),
-            Claim("desktop-chargeable", Units("DW-300")[0], bank, "EUR", null, ClaimLineKind.Parts, 225m, "Liquid-damaged main board", ClaimAction.Adjudicate, family: "accidental_damage"),
-            Claim("unauthorised-dimm", Units("RS-1100")[10], hpc, "EUR", null, ClaimLineKind.Parts, 390m, "Memory-channel damage", ClaimAction.ManualDeny),
-            new("client-partial", Units("LB-14")[1], bank, "GBP", "IN",
+            Claim("desktop-chargeable", Units("DW-300")[0], bank, DemoCurrency, null, ClaimLineKind.Parts, 225m, "Liquid-damaged main board", ClaimAction.Adjudicate, family: "accidental_damage"),
+            Claim("unauthorised-dimm", Units("RS-1100")[10], hpc, DemoCurrency, null, ClaimLineKind.Parts, 390m, "Memory-channel damage", ClaimAction.ManualDeny),
+            new("client-partial", Units("LB-14")[1], bank, DemoCurrency, "IN",
                 [new ClaimLineInput(ClaimLineKind.Parts, CoverageFamilyCode.Base, 120m, Description: "Display cable"), new ClaimLineInput(ClaimLineKind.Travel, CoverageFamilyCode.Base, 45m, Description: "Engineer travel")], ClaimAction.Adjudicate),
-            Claim("switch-contract", Units("NX-4850")[2], isp, "USD", null, ClaimLineKind.Labour, 180m, "On-site diagnostics", ClaimAction.Adjudicate, family: "service_contract"),
-            Claim("server-settled-closed", Units("RS-1100")[2], hpc, "EUR", null, ClaimLineKind.Labour, 160m, "Thermal remediation", ClaimAction.Close),
-            Claim("router-settled", Units("NR-220")[0], isp, "INR", null, ClaimLineKind.Parts, 24000m, "WAN module", ClaimAction.Settle),
-            Claim("printer-settled", Units("PF-400")[1], studio, "GBP", null, ClaimLineKind.Labour, 90m, "Extrusion calibration", ClaimAction.Settle),
-            Claim("server-approved", Units("RS-1100")[3], hpc, "EUR", null, ClaimLineKind.Parts, 510m, "Cooling fan module", ClaimAction.Adjudicate),
-            Claim("evidence-thermal", Units("RS-1100")[4], hpc, "EUR", null, ClaimLineKind.Labour, 155m, "Thermal shutdown investigation", ClaimAction.Evidence),
-            Claim("evidence-router", Units("NR-220")[1], isp, "GBP", null, ClaimLineKind.Parts, 210m, "Carrier trace required", ClaimAction.Evidence),
-            Claim("evidence-printer", Units("PF-400")[2], studio, "INR", null, ClaimLineKind.Labour, 8700m, "Print sample review", ClaimAction.Evidence),
-            Claim("evidence-laptop", Units("LB-14")[2], bank, "USD", null, ClaimLineKind.Parts, 340m, "Battery diagnostic", ClaimAction.Evidence),
-            Claim("evidence-switch", Units("NX-4850")[3], isp, "EUR", null, ClaimLineKind.Parts, 460m, "Optics fault", ClaimAction.Evidence),
-            Claim("submitted-server", Units("RS-1100")[5], hpc, "EUR", null, ClaimLineKind.Parts, 330m, "Power-cycle fault", ClaimAction.Submit),
-            Claim("submitted-laptop", Units("LB-14")[3], bank, "GBP", null, ClaimLineKind.Labour, 95m, "Keyboard inspection", ClaimAction.Submit),
-            Claim("submitted-desktop", Units("DW-300")[2], bank, "INR", null, ClaimLineKind.Parts, 8200m, "Display adapter", ClaimAction.Submit),
-            Claim("desktop-approved", Units("DW-300")[2], bank, "INR", null, ClaimLineKind.Labour, 7200m, "Intermittent boot diagnosis", ClaimAction.HoldForRiskReview),
-            Claim("no-fault-found", Units("DW-300")[3], bank, "EUR", null, ClaimLineKind.Labour, 80m, "Intermittent noise", ClaimAction.NoFaultDeny),
-            Claim("server-replacement", Units("RS-1100")[31], bank, "USD", null, ClaimLineKind.Parts, 890m, "Management controller replacement", ClaimAction.Adjudicate, remedy: ClaimRemedy.Replacement),
-            Claim("recall-campaign", Units("RS-1100")[0], hpc, "EUR", null, ClaimLineKind.Parts, 360m,
+            Claim("switch-contract", Units("NX-4850")[2], isp, DemoCurrency, null, ClaimLineKind.Labour, 180m, "On-site diagnostics", ClaimAction.Adjudicate, family: "service_contract"),
+            Claim("server-settled-closed", Units("RS-1100")[2], hpc, DemoCurrency, null, ClaimLineKind.Labour, 160m, "Thermal remediation", ClaimAction.Close),
+            Claim("router-settled", Units("NR-220")[0], isp, DemoCurrency, null, ClaimLineKind.Parts, 290m, "WAN module", ClaimAction.Settle),
+            Claim("printer-settled", Units("PF-400")[1], studio, DemoCurrency, null, ClaimLineKind.Labour, 90m, "Extrusion calibration", ClaimAction.Settle),
+            Claim("server-approved", Units("RS-1100")[3], hpc, DemoCurrency, null, ClaimLineKind.Parts, 510m, "Cooling fan module", ClaimAction.Adjudicate),
+            Claim("evidence-thermal", Units("RS-1100")[4], hpc, DemoCurrency, null, ClaimLineKind.Labour, 155m, "Thermal shutdown investigation", ClaimAction.Evidence),
+            Claim("evidence-router", Units("NR-220")[1], isp, DemoCurrency, null, ClaimLineKind.Parts, 210m, "Carrier trace required", ClaimAction.Evidence),
+            Claim("evidence-printer", Units("PF-400")[2], studio, DemoCurrency, null, ClaimLineKind.Labour, 105m, "Print sample review", ClaimAction.Evidence),
+            Claim("evidence-laptop", Units("LB-14")[2], bank, DemoCurrency, null, ClaimLineKind.Parts, 340m, "Battery diagnostic", ClaimAction.Evidence),
+            Claim("evidence-switch", Units("NX-4850")[3], isp, DemoCurrency, null, ClaimLineKind.Parts, 460m, "Optics fault", ClaimAction.Evidence),
+            Claim("submitted-server", Units("RS-1100")[5], hpc, DemoCurrency, null, ClaimLineKind.Parts, 330m, "Power-cycle fault", ClaimAction.Submit),
+            Claim("submitted-laptop", Units("LB-14")[3], bank, DemoCurrency, null, ClaimLineKind.Labour, 95m, "Keyboard inspection", ClaimAction.Submit),
+            Claim("submitted-desktop", Units("DW-300")[2], bank, DemoCurrency, null, ClaimLineKind.Parts, 99m, "Display adapter", ClaimAction.Submit),
+            Claim("desktop-approved", Units("DW-300")[2], bank, DemoCurrency, null, ClaimLineKind.Labour, 87m, "Intermittent boot diagnosis", ClaimAction.HoldForRiskReview),
+            Claim("no-fault-found", Units("DW-300")[3], bank, DemoCurrency, null, ClaimLineKind.Labour, 80m, "Intermittent noise", ClaimAction.NoFaultDeny),
+            Claim("server-replacement", Units("RS-1100")[31], bank, DemoCurrency, null, ClaimLineKind.Parts, 890m, "Management controller replacement", ClaimAction.Adjudicate, remedy: ClaimRemedy.Replacement),
+            Claim("recall-campaign", Units("RS-1100")[0], hpc, DemoCurrency, null, ClaimLineKind.Parts, 360m,
                 "Affected power-supply inspection", ClaimAction.Adjudicate, campaignId: activeRecallCampaignId, claimDate: today),
-            Claim("ended-goodwill-campaign", Units("RS-1100")[10], hpc, "EUR", null, ClaimLineKind.Labour, 145m,
+            Claim("ended-goodwill-campaign", Units("RS-1100")[10], hpc, DemoCurrency, null, ClaimLineKind.Labour, 145m,
                 "Management-controller firmware update", ClaimAction.Adjudicate, campaignId: endedGoodwillCampaignId, claimDate: today),
         };
 
@@ -1145,7 +1145,7 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
         var claim = await ClaimSourceAsync("server-replacement", cancellationToken);
         var shipped = await CreateAndShipReplacementAsync("server-advance", ReplacementSourceKind.Claim,
             claim.ClaimId, claim.EntitlementId, replacement, ReplacementReason.WarrantyDefect,
-            requestedAt.AddHours(3), requestedAt.AddHours(4), "USD", "IN", cancellationToken,
+            requestedAt.AddHours(3), requestedAt.AddHours(4), DemoCurrency, "IN", cancellationToken,
             returnDue: today.AddDays(28), nonReturnAmount: 2890m, returnReason: "warranty_defect");
 
         var receivedAt = DemoDates.At(today.AddDays(-1), 9);
@@ -1229,14 +1229,14 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
             VendorPartyRef: Party("V-RACKSPIRE").Id), cancellationToken);
         await InvokeAsync<RefurbishmentPartResult>(new InstallRefurbishmentPart(
             DemoIds.FromName("p5:server-controller-install"), workOrderId,
-            new ChildInput(replacementController.UnitId, Slot: "BMC-01"), 184m, "GBP",
+            new ChildInput(replacementController.UnitId, Slot: "BMC-01"), 184m, DemoCurrency,
             receivedAt.AddHours(2).AddMinutes(10), actor, LegalEntityId, RepairLocationId), cancellationToken);
         await InvokeAsync<RefurbishmentCostResult>(new RecordRefurbishmentCost(
             DemoIds.FromName("p5:server-graded-value"), workOrderId, RefurbishmentCostKind.GradedReceipt,
-            720m, "GBP", "Defective receipt value", receivedAt.AddHours(2).AddMinutes(20), actor, LegalEntityId), cancellationToken);
+            720m, DemoCurrency, "Defective receipt value", receivedAt.AddHours(2).AddMinutes(20), actor, LegalEntityId), cancellationToken);
         await InvokeAsync<RefurbishmentLabourResult>(new RecordRefurbishmentLabour(
             DemoIds.FromName("p5:server-refurb-labour"), workOrderId, operationIds[20], 3.5m, 50m,
-            "GBP", receivedAt.AddHours(3), actor, LegalEntityId), cancellationToken);
+            DemoCurrency, receivedAt.AddHours(3), actor, LegalEntityId), cancellationToken);
         await InvokeAsync<RecordSanitisationResult>(new RecordSanitisation(
             DemoIds.FromName("p5:server-sanitisation"), original.UnitId, "Asterra Compute Works", "RS-1100",
             original.Serial, "embedded configuration storage", SanitisationMethod.Clear, "Asterra service image",
@@ -1325,7 +1325,7 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
             DemoDates.At(today.AddDays(-3), 9), cancellationToken);
         await CreateAndShipReplacementAsync("doa-workstation", ReplacementSourceKind.Rma, doa.RmaId,
             doa.EntitlementId!.Value, Units("DW-300")[34], ReplacementReason.DeadOnArrival,
-            DemoDates.At(today.AddDays(-3), 10), DemoDates.At(today.AddDays(-3), 11), "EUR", "DE", cancellationToken,
+            DemoDates.At(today.AddDays(-3), 10), DemoDates.At(today.AddDays(-3), 11), DemoCurrency, "DE", cancellationToken,
             replacementPolicy: "DEMO-PRESERVE", conditionAllowed: ReplacementConditionAllowed.New,
             returnReason: "dead_on_arrival");
 
@@ -1336,7 +1336,7 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
             DemoDates.At(today.AddDays(-6), 12), CoverageFamilyCode.Base, "Wrong configuration supplied", cancellationToken);
         await CreateAndShipReplacementAsync("seller-error-exchange", ReplacementSourceKind.Claim, sellerClaim.ClaimId,
             sellerClaim.EntitlementId, Units("DW-300")[35], ReplacementReason.SellerError,
-            DemoDates.At(today.AddDays(-5), 10), DemoDates.At(today.AddDays(-4), 9), "INR", "IN", cancellationToken,
+            DemoDates.At(today.AddDays(-5), 10), DemoDates.At(today.AddDays(-4), 9), DemoCurrency, "IN", cancellationToken,
             replacementPolicy: "DEMO-PRESERVE", returnReason: "seller_error");
         await ReceiveRmaAsync("seller-error-exchange", sellerRma, sellerOriginal, ConditionGrades.New, "full_new_value",
             DemoDates.At(today.AddDays(-3), 10), ReturnOutcome.Accepted, QuarantineId, cancellationToken);
@@ -1348,7 +1348,7 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
             DemoDates.At(today.AddDays(-5), 9), "Goodwill replacement approved after cosmetic return", cancellationToken);
         await CreateAndShipReplacementAsync("goodwill-fee", ReplacementSourceKind.Claim, goodwillClaim.ClaimId,
             goodwillClaim.EntitlementId, Units("PF-400")[4], ReplacementReason.Goodwill,
-            DemoDates.At(today.AddDays(-3), 9), DemoDates.At(today.AddDays(-2), 9), "GBP", "GB", cancellationToken,
+            DemoDates.At(today.AddDays(-3), 9), DemoDates.At(today.AddDays(-2), 9), DemoCurrency, "GB", cancellationToken,
             replacementPolicy: "DEMO-REPLACE-90", returnReason: "goodwill_exchange", restockingFeeBasis: 250m);
 
         var usagePrinter = Units("PF-400")[0];
@@ -1379,15 +1379,15 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
             links.Add(await CreateAndShipReplacementAsync($"advance-overdue-{index}", ReplacementSourceKind.Rma,
                 rma.RmaId, rma.EntitlementId!.Value, Units("DW-300")[28 + index], ReplacementReason.WarrantyDefect,
                 DemoDates.At(today.AddDays(-12 + index), 9), DemoDates.At(today.AddDays(-11 + index), 9),
-                "INR", "IN", cancellationToken, returnDue: today.AddDays(-3 + index),
+                DemoCurrency, "IN", cancellationToken, returnDue: today.AddDays(-3 + index),
                 nonReturnAmount: 1240m + index * 110m, returnReason: "warranty_defect"));
         }
 
         var dueCases = new[]
         {
-            ("engineering", Units("DW-300")[15], engineering, Units("DW-300")[31], "EUR", "DE", 3),
-            ("cloudmere", Units("DW-300")[20], cloudmere, Units("DW-300")[32], "INR", "IN", 5),
-            ("hospital", Units("DW-300")[24], hospital, Units("DW-300")[33], "GBP", "GB", 7),
+            ("engineering", Units("DW-300")[15], engineering, Units("DW-300")[31], DemoCurrency, "DE", 3),
+            ("cloudmere", Units("DW-300")[20], cloudmere, Units("DW-300")[32], DemoCurrency, "IN", 5),
+            ("hospital", Units("DW-300")[24], hospital, Units("DW-300")[33], DemoCurrency, "GB", 7),
         };
         foreach (var (key, original, party, replacement, currency, country, dueDays) in dueCases)
         {
@@ -1508,7 +1508,7 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
             "Replacement unit was scanned incorrectly at shipping", cancellationToken);
         await CreateAndShipReplacementAsync("wrong-replacement-link", ReplacementSourceKind.Rma, rma.RmaId,
             rma.EntitlementId!.Value, recorded, ReplacementReason.WarrantyDefect,
-            DemoDates.At(today.AddDays(-6), 10), DemoDates.At(today.AddDays(-5), 10), "INR", "IN",
+            DemoDates.At(today.AddDays(-6), 10), DemoDates.At(today.AddDays(-5), 10), DemoCurrency, "IN",
             cancellationToken, returnReason: "warranty_defect");
         var reason = CorrectReplacementLinkReason.WrongUnitScannedAtShipping;
         await InvokeAsync<CorrectReplacementLinkResult>(new CorrectReplacementLink(correctionId, recorded.UnitId,
@@ -1526,7 +1526,7 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
     {
         var result = await InvokeAsync<RequestRmaResult>(new RequestRma(DemoIds.FromName("p5:rma-request:" + key),
             DateOnly.FromDateTime(requestedAt), party.Id, party.Id, ServiceEntityId, LegalEntityId,
-            CountryFor(party.Code), CurrencyFor(party.Code),
+            CountryFor(party.Code), DemoCurrency,
             [new RmaRequestLineInput(UnitId: unit.UnitId, CoverageFamily: coverageFamily, RequestedAmount: 500m,
                 ClaimLineKind: ClaimLineKind.Parts, Description: description)], requestedAt, actor), cancellationToken);
         return new(result.RmaId, result.LineIds.Single(), null);
@@ -1607,7 +1607,7 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
     {
         var submitted = await InvokeAsync<SubmitClaimResult>(new SubmitClaim(DemoIds.FromName("p5:claim:" + key),
             unit.UnitId, null, DateOnly.FromDateTime(submittedAt), customer.Id, customer.Id, ServiceEntityId,
-            LegalEntityId, CountryFor(customer.Code), CurrencyFor(customer.Code),
+            LegalEntityId, CountryFor(customer.Code), DemoCurrency,
             [new ClaimLineInput(ClaimLineKind.Parts, coverageFamily, 500m, Description: description)],
             [new ClaimEvidenceInput(ClaimEvidenceKind.Attachment, "DEMO-P5-" + key.ToUpperInvariant(), "Demo evidence")],
             ClaimRemedy.Replacement, "P5-CHOICE-" + key.ToUpperInvariant(), submittedAt, actor), cancellationToken);
@@ -1733,12 +1733,8 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
         _ => "GB",
     };
 
-    private static string CurrencyFor(string partyCode) => partyCode switch
-    {
-        "C-ASHVANE" or "C-CLOUDMERE" => "INR",
-        "C-NANDIRA" or "C-TORRENFOLD" => "EUR",
-        _ => "GBP",
-    };
+    private const string DemoCurrency = "USD";
+
 
     private async Task CreateCampaignsAsync(CancellationToken cancellationToken)
     {
@@ -1943,7 +1939,7 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
             title = story.Title, subtitle = story.Subtitle, reason = story.Reason, reference = story.Reference,
             fields = new Dictionary<string, object?> { ["document type"] = ManualDocumentType(story.CommandType), ["customer code"] = "C-10488", ["customer"] = story.Customer, ["posting date"] = postingDate.ToString("yyyy-MM-dd"), ["reference (paste exactly)"] = story.Reference, ["remarks"] = "Warranty service entry · " + story.Title },
             lines = new[] { new { line = 1, itemCode = "NX-4850", description = "NX-4850 48-port network switch", quantity = 1, unitPrice = story.Total, amount = story.Total, serial = "08260077" }, new { line = 2, itemCode = "SVC-ONSITE-H", description = "On-site labour, hours", quantity = 2, unitPrice = 160m, amount = story.Total == 0 ? 0 : 320m, serial = "—" } },
-            currency = "EUR", total = story.Total,
+            currency = DemoCurrency, total = story.Total,
         });
 
     private async Task PrintSummaryAsync(CancellationToken cancellationToken)
@@ -2165,27 +2161,27 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
     private IReadOnlyList<SalePlan> SalesPlan() =>
     [
         new("hpc", "DN-HPC-2601", "IN-HPC-2601", Party("C-NANDIRA"), Party("C-NANDIRA"),
-            [.. Units("RS-1100").Take(31), .. Units("SS-1110"), .. Units("NX-4850").Take(2)], "DE", "EUR", "direct", 60),
+            [.. Units("RS-1100").Take(31), .. Units("SS-1110"), .. Units("NX-4850").Take(2)], "DE", DemoCurrency, "direct", 60),
         new("hospital", "DN-HOSP-2601", "IN-HOSP-2601", Party("R-KEPLORA"), Party("C-VELMORA"),
-            [Units("RT-1200T")[0], Units("RS-1520")[0], Units("LB-14")[4], Units("LB-14")[5]], "GB", "GBP", "reseller", 55),
+            [Units("RT-1200T")[0], Units("RS-1520")[0], Units("LB-14")[4], Units("LB-14")[5]], "GB", DemoCurrency, "reseller", 55),
         new("bank", "DN-BANK-2601", "IN-BANK-2601", Party("D-GRIDLOOM"), Party("C-ASHVANE"),
-            [Units("RS-1100")[31], .. Units("SS-1112"), .. Units("DW-300").Take(6), .. Units("LB-14").Take(4)], "IN", "INR", "distributor", 50),
+            [Units("RS-1100")[31], .. Units("SS-1112"), .. Units("DW-300").Take(6), .. Units("LB-14").Take(4)], "IN", DemoCurrency, "distributor", 50),
         new("engineering", "DN-ENG-2601", "IN-ENG-2601", Party("R-CIRRAVUE"), Party("C-TORRENFOLD"),
-            [Units("RS-1520")[1], Units("RG-4800")[0], Units("DW-300")[6], Units("DW-300")[7]], "DE", "EUR", "reseller", 46),
+            [Units("RS-1520")[1], Units("RG-4800")[0], Units("DW-300")[6], Units("DW-300")[7]], "DE", DemoCurrency, "reseller", 46),
         new("studio", "DN-STUDIO-2601", "IN-STUDIO-2601", Party("C-MIREVA"), Party("C-MIREVA"),
-            [.. Units("PF-400").Take(3)], "GB", "GBP", "direct", 42),
+            [.. Units("PF-400").Take(3)], "GB", DemoCurrency, "direct", 42),
         new("isp", "DN-ISP-2601", "IN-ISP-2601", Party("C-CLOUDMERE"), Party("C-CLOUDMERE"),
-            [.. Units("NX-4850").Skip(2), .. Units("NR-220")], "IN", "INR", "direct", 38),
+            [.. Units("NX-4850").Skip(2), .. Units("NR-220")], "IN", DemoCurrency, "direct", 38),
         new("p5-bank", "DN-P5-BANK", "IN-P5-BANK", Party("C-ASHVANE"), Party("C-ASHVANE"),
-            [.. Units("DW-300").Skip(8).Take(6)], "IN", "INR", "direct", 25),
+            [.. Units("DW-300").Skip(8).Take(6)], "IN", DemoCurrency, "direct", 25),
         new("p5-engineering", "DN-P5-ENG", "IN-P5-ENG", Party("R-CIRRAVUE"), Party("C-TORRENFOLD"),
-            [.. Units("DW-300").Skip(14).Take(5)], "DE", "EUR", "reseller", 10),
+            [.. Units("DW-300").Skip(14).Take(5)], "DE", DemoCurrency, "reseller", 10),
         new("p5-cloudmere", "DN-P5-CLOUD", "IN-P5-CLOUD", Party("C-CLOUDMERE"), Party("C-CLOUDMERE"),
-            [.. Units("DW-300").Skip(19).Take(5)], "IN", "INR", "direct", 18),
+            [.. Units("DW-300").Skip(19).Take(5)], "IN", DemoCurrency, "direct", 18),
         new("p5-hospital", "DN-P5-HOSP", "IN-P5-HOSP", Party("R-KEPLORA"), Party("C-VELMORA"),
-            [.. Units("DW-300").Skip(24).Take(4)], "GB", "GBP", "reseller", 15),
+            [.. Units("DW-300").Skip(24).Take(4)], "GB", DemoCurrency, "reseller", 15),
         new("p5-goodwill", "DN-P5-GOODWILL", "IN-P5-GOODWILL", Party("C-MIREVA"), Party("C-MIREVA"),
-            [Units("PF-400")[3]], "GB", "GBP", "direct", 20),
+            [Units("PF-400")[3]], "GB", DemoCurrency, "direct", 20),
     ];
 
     private List<DocumentLine> LinesFor(IReadOnlyList<DemoUnit> saleUnits) => saleUnits.GroupBy(unit => unit.Code)
