@@ -6,6 +6,7 @@ using Yojana.Serialisation.Claims;
 using Yojana.Serialisation.Commands;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Corrections;
+using Yojana.Serialisation.Currency;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Entitlements;
@@ -19,12 +20,14 @@ public static class ConvertLoanToReplacementHandler
         IServiceDocumentQueryPort serviceDocuments, UnitResolver units, IUnitConditionQueryPort conditions, EpisodeService episodes,
         EntitlementLedger entitlementLedger, CorrectionLedger corrections, DocumentNumbers numbers, IUnitEventWriter writer,
         IJurisdictionRuleResolver jurisdictionRules, IJurisdictionRegionPort regions,
-        ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        ITenantCurrency tenantCurrency, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         if (await db.WarrantyReplacements.AsNoTracking().SingleOrDefaultAsync(row => row.TenantId == tenantId && row.CommandId == command.CommandId, cancellationToken) is { } replay)
             return await ReplayLoanAsync(db, tenantId, replay.WarrantyReplacementId, cancellationToken);
         ValidateCommon(command.CommandId, command.ReplacementReason, command.ReplacementConditionAllowed, command.ServiceCountry);
+        var currency = await tenantCurrency.GetAsync(cancellationToken)
+            ?? throw new CommandRefusedException("tenant_currency_not_set_up", "Amounts wait until the company's home currency is configured.");
         var issue = await serviceDocuments.GetLoanerIssueAsync(command.LoanerIssue, cancellationToken)
             ?? throw new CommandRefusedException("loaner_issue_unknown", $"Loaner issue {command.LoanerIssue.Id} is unavailable through the service document port.");
         if (command.ReplacementDate > DateOnly.FromDateTime(command.EventTime)) throw new CommandRefusedException("replacement_date_in_future", "The replacement date cannot be after its business event time.");
@@ -61,7 +64,7 @@ public static class ConvertLoanToReplacementHandler
                 source.StartDate ?? command.ReplacementDate, cancellationToken))
             throw new CommandRefusedException("refurbished_consent_required", "The applicable jurisdiction rule requires recorded consent before refurbished stock can ship.");
         var createShape = new CreateWarrantyReplacement(command.CommandId, ReplacementSourceKind.Loan, command.LoanerIssue.Id,
-            source.EntitlementId, command.LoanerUnitId, command.ReplacementReason, ReplacementPricePolicy.Zero, 0m, "XXX",
+            source.EntitlementId, command.LoanerUnitId, command.ReplacementReason, ReplacementPricePolicy.Zero, 0m, currency,
             command.ServiceCountry, command.ConsumerContract, command.ConsentRefurbished, command.EventTime, command.LegalEntityId,
             command.ActorRef, command.ReplacementConditionAllowed, command.ReplacementPolicyCode);
         var policy = await CreateWarrantyReplacementHandler.ResolveReplacementPolicyAsync(createShape, source, db, tenantId, cancellationToken);
@@ -76,10 +79,10 @@ public static class ConvertLoanToReplacementHandler
         var link = NewLink(tenantId, linkId, documentId, ReplacementDirection.CustomerFacing, command.ReplacementReason,
             ReplacementSourceKind.Loan, command.LoanerIssue.Id, document.SourceNumber, command.OriginalUnitId, command.LoanerUnitId,
             original.ItemId, loaner.ItemId, source, issue.CustomerPartyRef, command.ReplacementConditionAllowed, command.ConsentRefurbished,
-            command.EventTime, command.ActorRef, "XXX");
+            command.EventTime, command.ActorRef, currency);
         db.WarrantyReplacements.Add(document);
         db.ReplacementLinks.Add(link);
-        AddLine(db, tenantId, documentId, linkId, loaner.ItemId, "XXX", command.EventTime);
+        AddLine(db, tenantId, documentId, linkId, loaner.ItemId, currency, command.EventTime);
 
         var docRef = new DocumentRef("warranty_replacement", documentId, 1);
         var originalOwnership = await episodes.PrepareOwnershipOpenAsync(command.OriginalUnitId,
@@ -117,7 +120,7 @@ public static class ConvertLoanToReplacementHandler
                 original_unit_id = command.OriginalUnitId, replacement_unit_id = command.LoanerUnitId, original_item_id = original.ItemId,
                 replacement_item_id = loaner.ItemId, source_entitlement_id = source.EntitlementId, target_entitlement_id = transfer.TargetEntitlementId,
                 source_kind = ReplacementSourceKind.Loan, source_id = command.LoanerIssue.Id, source_number = document.SourceNumber,
-                customer_party_ref = link.CounterpartyPartyRef, reason = command.ReplacementReason, price_policy = ReplacementPricePolicy.Zero, difference_amount = 0m, currency = "XXX",
+                customer_party_ref = link.CounterpartyPartyRef, reason = command.ReplacementReason, price_policy = ReplacementPricePolicy.Zero, difference_amount = 0m, currency,
                 policy_applied = transfer.PolicyApplied, computed_end = transfer.ComputedEnd, replacement_condition = grade,
                 accrual_suppressed = true, restocking_fee_amount = 0m, loan_conversion = true }),
         });
@@ -240,7 +243,7 @@ public static class ReceiveVendorReplacementHandler
     public static async Task<ReceiveVendorReplacementResult> Handle(ReceiveVendorReplacement command, SerialisationDbContext db,
         IUnitConditionQueryPort conditions, EpisodeService episodes, EntitlementLedger entitlementLedger, CorrectionLedger corrections,
         DocumentNumbers numbers, IUnitEventWriter writer, IJurisdictionRuleResolver jurisdictionRules,
-        IJurisdictionRegionPort regions, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        IJurisdictionRegionPort regions, ITenantCurrency tenantCurrency, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         if (await db.WarrantyReplacements.AsNoTracking().SingleOrDefaultAsync(row => row.TenantId == tenantId && row.CommandId == command.CommandId, cancellationToken) is { } replay)
@@ -252,6 +255,7 @@ public static class ReceiveVendorReplacementHandler
                           where line.TenantId == tenantId && line.RmaLineId == command.RmaLineId
                           select new { line, rma }).SingleOrDefaultAsync(cancellationToken)
             ?? throw new CommandRefusedException("rma_line_unknown", $"RMA line {command.RmaLineId} does not exist.");
+        await HomeCurrencyGuard.RequireAsync(tenantCurrency, data.rma.Currency, cancellationToken);
         if (data.line.Disposition != RmaDisposition.ReturnToVendor || data.line.ReceivedUnitId is not { } originalUnitId)
             throw new CommandRefusedException("vendor_return_required", "A vendor replacement requires a received RMA line dispositioned return-to-vendor.");
         var vendorOwnership = await episodes.OpenAsync(originalUnitId, EpisodeKind.Ownership, cancellationToken);

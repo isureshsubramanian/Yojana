@@ -162,7 +162,7 @@ public sealed class Cx01LiveConnectorEdgeHarness : IConnectorEdgeHarness
         };
         return Acceptance(envelope, new InvoicePosted(new("invoice", logicalReference,
             DateOnly.FromDateTime(envelope.OccurredAt.UtcDateTime), logicalReference),
-            Fixture.CustomerReference, [], canonical.Payload.Lines, new(total, "GBP")));
+            Fixture.CustomerReference, [], canonical.Payload.Lines, new(total, "EUR")));
     }
 
     public async Task<HttpStatusCode> SendDeliveryNotificationAsync(ConnectorEdgeConnection connection,

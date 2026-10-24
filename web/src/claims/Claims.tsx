@@ -145,6 +145,7 @@ export function Component() {
       </div></div>
       <ClaimsTabs current="claims" />
       <ErrorNote error={error} />
+      {!!summary?.otherCurrencyClaimCount && <div className="note warn"><strong>{summary.otherCurrencyClaimCount.toLocaleString()} {summary.otherCurrencyClaimCount === 1 ? "claim" : "claims"} in other currencies are not counted.</strong>&nbsp;<Link to="/settings/currencies#currency-report">Open the currency report</Link>.</div>}
       <div className="stack" style={{ marginTop: error ? 16 : 0 }}>
         <KpiStrip label="Claim figures" kpis={[
           { label: "Open claims", value: summary?.open.toLocaleString() ?? "—", detail: summary ? `${summary.submitted} submitted · ${summary.adjudicating} adjudicating · ${summary.approvedNotSettled} approved, not settled · ${summary.deniedNotSettled} denied, not settled` : null },

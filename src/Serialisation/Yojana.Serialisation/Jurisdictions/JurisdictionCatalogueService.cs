@@ -6,6 +6,7 @@ using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Currency;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Documents;
@@ -17,7 +18,7 @@ namespace Yojana.Serialisation.Jurisdictions;
 /// then any; within that, an exact buyer, item and bounded-price qualifier wins in that order. A later effective start,
 /// then rule version and id are final stable tie-breaks. Saves reject overlaps at equal precedence and specificity.
 /// </summary>
-public sealed class JurisdictionCatalogueService(SerialisationDbContext db, ITenantContext tenant, IClock clock)
+public sealed class JurisdictionCatalogueService(SerialisationDbContext db, ITenantCurrency tenantCurrency, ITenantContext tenant, IClock clock)
     : IJurisdictionRuleResolver, IJurisdictionRegionPort, IJurisdictionLabelRulesPort, IJurisdictionCertificateTextPort
 {
     private const string StarterResourceSuffix = "Jurisdictions.StarterPacks.eu-starter.json";
@@ -410,6 +411,8 @@ public sealed class JurisdictionCatalogueService(SerialisationDbContext db, ITen
         var currency = command.Currency?.Trim().ToUpperInvariant();
         if (currency is not null && (currency.Length != 3 || !currency.All(char.IsAsciiLetterUpper)))
             throw new CommandRefusedException("jurisdiction_currency_invalid", "Currency must be a three-letter ISO code.");
+        if (currency is not null)
+            await HomeCurrencyGuard.RequireAsync(tenantCurrency, currency, cancellationToken);
         return new(command.Kind, command.Scope, country, subdivision, groupId, command.BuyerClass, itemClass,
             command.PriceMin, command.PriceMax, currency, command.DateTested, command.EffectiveFrom, command.EffectiveTo,
             command.Value.GetRawText(), citation, note, command.ConfirmedByCounsel, command.CounselConfirmedOn);

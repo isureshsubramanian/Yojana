@@ -9,7 +9,7 @@ using Yojana.Serialisation.Ledger;
 
 namespace Yojana.Serialisation.Claims;
 
-public sealed class ClaimQueries(SerialisationDbContext db, ICampaignCoverPort campaigns, ITenantContext tenant) : IWarrantyClaimsPort
+public sealed class ClaimQueries(SerialisationDbContext db, ICampaignCoverPort campaigns, ITenantCurrency currency, ITenantContext tenant) : IWarrantyClaimsPort
 {
     private static readonly string[] Settled = [ClaimStatus.Settled, ClaimStatus.Closed];
     private static readonly string[] Decided = [ClaimStatus.Approved, ClaimStatus.PartiallyApproved, ClaimStatus.Denied, ClaimStatus.Settled, ClaimStatus.Closed];
@@ -97,6 +97,7 @@ public sealed class ClaimQueries(SerialisationDbContext db, ICampaignCoverPort c
     public async Task<ClaimSummary> SummaryAsync(DateOnly asOf, int targetWorkingDays, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
+        var homeCurrency = await currency.GetAsync(cancellationToken);
         var claims = db.Claims.AsNoTracking().Where(c => c.TenantId == tenantId);
         var open = await claims.Where(c => !Settled.Contains(c.Status))
             .Select(c => new
@@ -125,8 +126,11 @@ public sealed class ClaimQueries(SerialisationDbContext db, ICampaignCoverPort c
         var buckets = new int[AgeBucketBounds.Length + 1];
         foreach (var claim in open) buckets[Bucket(AgeDays(claim.SubmittedAt, asOf))]++;
         var oldest = open.OrderBy(c => c.SubmittedAt).ThenBy(c => c.ClaimId).FirstOrDefault();
-        var approvedThisMonth = decided.Where(d => d.Status is ClaimStatus.Approved or ClaimStatus.PartiallyApproved or ClaimStatus.Settled or ClaimStatus.Closed && d.Approved > 0).ToList();
+        var approvedThisMonth = decided.Where(d => d.Currency == homeCurrency
+            && d.Status is (ClaimStatus.Approved or ClaimStatus.PartiallyApproved or ClaimStatus.Settled or ClaimStatus.Closed)
+            && d.Approved > 0).ToList();
         var deniedThisMonth = decided.Where(d => d.Status == ClaimStatus.Denied || (d.Approved == 0 && d.DenialReason is not null)).ToList();
+        var otherCurrencyClaimCount = homeCurrency is null ? 0 : await claims.CountAsync(c => c.Currency != homeCurrency, cancellationToken);
         return new ClaimSummary(asOf, open.Count,
             open.Count(c => c.Status == ClaimStatus.Submitted), open.Count(c => c.Status == ClaimStatus.Adjudicating),
             open.Count(c => c.Status is ClaimStatus.Approved or ClaimStatus.PartiallyApproved), open.Count(c => c.Status == ClaimStatus.Denied),
@@ -134,9 +138,11 @@ public sealed class ClaimQueries(SerialisationDbContext db, ICampaignCoverPort c
             approvedThisMonth.Count, approvedThisMonth.Count(d => d.Status == ClaimStatus.PartiallyApproved || d.DenialReason == "partially_uncovered"),
             deniedThisMonth.Count,
             deniedThisMonth.GroupBy(d => d.DenialReason ?? "no_applicable_coverage").Select(g => new ReasonCount(g.Key, g.Count())).OrderByDescending(r => r.Count).ToList(),
-            recoveries.Select(r => new MoneyTotal(r.Currency, r.Amount)).OrderByDescending(m => m.Amount).ToList(), recoveries.Sum(r => r.Count), vendors,
+            recoveries.Where(r => r.Currency == homeCurrency).Select(r => new MoneyTotal(r.Currency, r.Amount)).OrderByDescending(m => m.Amount).ToList(),
+            recoveries.Where(r => r.Currency == homeCurrency).Sum(r => r.Count), vendors,
             oldest?.ClaimNumber, oldest?.ClaimId, oldest is null ? null : AgeDays(oldest.SubmittedAt, asOf), oldest?.Status,
-            oldest?.LastEvidenceKind == ClaimEvidenceKind.EvidenceRequested, buckets, targetWorkingDays, sources, countries, all);
+            oldest?.LastEvidenceKind == ClaimEvidenceKind.EvidenceRequested, buckets, targetWorkingDays, sources, countries, all,
+            otherCurrencyClaimCount);
     }
 
     public async Task<ClaimDetail?> DetailAsync(Guid claimId, CancellationToken cancellationToken)

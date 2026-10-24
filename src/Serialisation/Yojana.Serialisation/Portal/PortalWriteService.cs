@@ -150,7 +150,7 @@ public sealed class PortalWriteService(
                 "The selected coverage family is not live for this unit.");
         var tenantCurrency = await currency.GetAsync(cancellationToken)
             ?? throw new CommandRefusedException("tenant_currency_required",
-                "The tenant working currency must be configured before portal return intake.");
+                "The company's home currency must be configured before portal return intake.");
         var result = await bus.InvokeAsync<RequestRmaResult>(new RequestRma(
                 request.CommandId,
                 request.RequestDate,

@@ -158,7 +158,7 @@ public sealed class Cx02ConnectorEdgeHarness : IConnectorEdgeHarness
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(Acceptance(connection, "invoice", logicalReference, nameof(InvoicePosted),
             new InvoicePosted(new("invoice", logicalReference, new(2026, 9, 1), logicalReference),
-                "FIC-CUSTOMER", [], Lines(), new(total, "GBP"))));
+                "FIC-CUSTOMER", [], Lines(), new(total, "EUR"))));
     }
 
     public async Task<HttpStatusCode> SendDeliveryNotificationAsync(ConnectorEdgeConnection connection,

@@ -560,10 +560,10 @@ public sealed class CorrectionEdgeCaseScenarioTests(SerialisationHostFixture fix
         Documents.Add(pod);
         await InvokeAsync<ConsumedEventResult>(tenant, new SalesDeliveryConfirmed(Envelope(pod.DeliveredAt), pod.Document));
         var wrongInvoice = new InvoiceDocument(new("invoice", Guid.NewGuid()), wrongOrder, customer, Entity,
-            At.AddDays(2), [new InvoiceLine(1, Guid.NewGuid(), 1, 10m, "GBP", "warranty_service",
+            At.AddDays(2), [new InvoiceLine(1, Guid.NewGuid(), 1, 10m, "EUR", "warranty_service",
                 PolicyVersionId: oldPolicy, Target: new(WarrantyTargetRule.SameOrder))], "PO-WRONG", "GB");
         var correctedInvoice = new InvoiceDocument(new("invoice", Guid.NewGuid()), correctedOrder, customer, Entity,
-            At.AddDays(3), [new InvoiceLine(1, Guid.NewGuid(), 1, 10m, "GBP", "warranty_service",
+            At.AddDays(3), [new InvoiceLine(1, Guid.NewGuid(), 1, 10m, "EUR", "warranty_service",
                 PolicyVersionId: correctedPolicy, Target: new(WarrantyTargetRule.SameOrder))], "PO-CORRECT", "GB");
         Documents.Add(wrongInvoice);
         Documents.Add(correctedInvoice);

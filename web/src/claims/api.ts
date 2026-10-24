@@ -4,6 +4,7 @@ import type {
   ClaimRiskFlagDecisionResult, ClaimRiskFlagPage, ClaimRiskFlagReportRow, ClaimRiskFlagRow, ClaimRiskReviewPage,
   ClaimRiskReviewSummary, ClaimRiskRulesPolicy,
   ClaimSummary, CoverageFamily, CurrencyInfo, SubmitClaim, SubmitClaimResult, TenantCurrency,
+  CurrencyUsageReport,
 } from "./types";
 
 export interface ClaimFilters {
@@ -34,7 +35,8 @@ export const claimsApi = {
   close: (claimId: string) => api<ClaimChangeResult>(`/api/claims/${claimId}/close`, { method: "POST", body: { commandId: crypto.randomUUID(), claimId, eventTime: new Date().toISOString() } }),
   currency: (signal?: AbortSignal) => api<TenantCurrency>("/api/tenant/currency", { signal }),
   currencyCatalogue: (signal?: AbortSignal) => api<CurrencyInfo[]>("/api/tenant/currency/catalogue", { signal }),
-  saveCurrency: (currency: string, accepted: string[]) => api<TenantCurrency>("/api/tenant/currency", { method: "PUT", body: { currency, accepted } }),
+  saveCurrency: (currency: string) => api<TenantCurrency>("/api/tenant/currency", { method: "PUT", body: { currency } }),
+  currencyReport: (signal?: AbortSignal) => api<CurrencyUsageReport>("/api/tenant/currency/report", { signal }),
   coverageFamilies: (signal?: AbortSignal) => api<CoverageFamily[]>("/api/warranty-reference/coverage-families", { signal }),
   riskRules: (signal?: AbortSignal) => api<ClaimRiskRulesPolicy>("/api/claims/risk-rules", { signal }),
   saveRiskRules: (body: ClaimRiskRulesPolicy) => api<ClaimRiskRulesPolicy>("/api/claims/risk-rules", { method: "PUT", body }),

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Currency;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
@@ -22,6 +23,8 @@ public sealed class PolicyStore(SerialisationDbContext db, ITenantContext tenant
 
     public async Task WriteTermsAsync(WarrantyPolicyVersion row, PolicyTerms terms, CancellationToken cancellationToken)
     {
+        if (terms.AmendmentValue is { } amount)
+            await HomeCurrencyGuard.RequireAsync(currency, amount.Currency, cancellationToken);
         // Policy region tokens are coupled to tenant region-group codes through this explicit port. Saving an unknown
         // token would otherwise look valid here and silently match no country in PolicyResolver.
         foreach (var scopeCode in terms.RegionScope.Concat(terms.Refurbished.Select(item => item.Region))

@@ -16,7 +16,7 @@ import { ErrorNote, Kv, Section } from "../units/common";
 import { claimsApi } from "./api";
 import { COUNTRY_CODES, countryName } from "../reference/countries";
 import { LINE_KINDS, REMEDIES, campaignCoverTerms, campaignOptionHint, humanise, money, overlayFlagsText } from "./format";
-import type { CampaignCoverageSource, ClaimCampaignOption, ClaimEvidenceInput, CoverageFamily, CurrencyInfo, SubmitClaim, TenantCurrency } from "./types";
+import type { CampaignCoverageSource, ClaimCampaignOption, ClaimEvidenceInput, CoverageFamily, CurrencyInfo, SubmitClaim } from "./types";
 import "./claims.css";
 
 type IntakeMode = "unit" | "proof" | "no_record";
@@ -65,7 +65,6 @@ export function Component() {
   const [serviceCountry, setServiceCountry] = useState("GB");
   const [claimDate, setClaimDate] = useState(TODAY);
   const [currency, setCurrency] = useState("");
-  const [currencySettings, setCurrencySettings] = useState<TenantCurrency | null>(null);
   const [catalogue, setCatalogue] = useState<CurrencyInfo[]>([]);
   const [families, setFamilies] = useState<CoverageFamily[]>([]);
   const [lines, setLines] = useState<DraftLine[]>([draftLine()]);
@@ -84,8 +83,8 @@ export function Component() {
     const controller = new AbortController();
     Promise.all([claimsApi.currency(controller.signal), claimsApi.currencyCatalogue(controller.signal), claimsApi.coverageFamilies(controller.signal)])
       .then(([settings, nextCatalogue, nextFamilies]) => {
-        setCurrencySettings(settings); setCatalogue(nextCatalogue); setFamilies(nextFamilies.filter((family) => family.active));
-        setCurrency(settings.currency ?? settings.accepted[0] ?? "");
+        setCatalogue(nextCatalogue); setFamilies(nextFamilies.filter((family) => family.active));
+        setCurrency(settings.currency ?? "");
         setLines((current) => current.map((line, index) => index === 0 && !line.coverageFamily ? { ...line, coverageFamily: defaultFamily(nextFamilies) } : line));
       }).catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); });
     return () => controller.abort();
@@ -142,7 +141,6 @@ export function Component() {
   const selectedCampaigns = askedSource === "Recall" || askedSource === "Goodwill" ? coveringCampaigns(askedSource.toLowerCase() as CampaignCoverageSource) : [];
   const selectedCampaign = selectedCampaigns.find((option) => option.campaignId === selectedCampaignId) ?? null;
   const campaignChosen = askedSource !== "Recall" && askedSource !== "Goodwill" || !!selectedCampaign;
-  const currencyChoices = currencySettings?.accepted ?? [];
   const canSubmit = !!claimDate && !!currency && !!claimant && !!settlement && !!serviceCountry && !!choiceEvidence.trim() && lines.length > 0 && lines.every((line) => line.description.trim() && line.coverageFamily && line.requestedAmount !== "" && Number(line.requestedAmount) >= 0)
     && campaignChosen && (mode === "unit" ? !!unit : !!identifier.trim() && !!itemId && !!proofRef.trim() && !!proofDate);
 
@@ -185,7 +183,7 @@ export function Component() {
       }} />
       {guidance && guidance.grants.length > 1 && <p className="hint">Several covers grant this cause. Choose the coverage family on each line.</p>}
       <ErrorNote error={error} />
-      {!currencyChoices.length && <div className="note warn"><strong>No accepted currencies are configured.</strong>&nbsp;Set a working currency and accepted claim currencies in <Link to="/settings/currencies">Currencies settings</Link>. Claim submission is disabled until then.</div>}
+      {!currency && <div className="note warn"><strong>No home currency is configured.</strong>&nbsp;Set it in <Link to="/settings/currencies">Currencies settings</Link>. Claim submission is disabled until then.</div>}
       <div className="cols-3-2">
         <div className="stack">
           <section className="card" aria-labelledby="claim-unit"><div className="card-header"><h2 id="claim-unit">Unit <span className="meta">{unit ? `resolved from ${hit?.identifierType ?? "identifier"}` : mode === "unit" ? "waiting for an identifier" : "will be reconstructed"}</span></h2>{unit && <Link className="btn ghost sm" to={`/units/${unit.unitId}`}>Open unit</Link>}</div><div className="card-body">
@@ -213,7 +211,7 @@ export function Component() {
             <div className="span"><PartyField id="claim-claimant" label="Claimant" value={claimant} onChange={setClaimant} hint="Who reported it · defaults to the current owner" /></div>
             <div className="span"><PartyField id="claim-settlement" label="Settles with" value={settlement} onChange={setSettlement} hint="Who is credited; this may differ from the claimant" /></div>
             <div className="field"><label htmlFor="claim-country">Service country</label><select id="claim-country" className="select" value={serviceCountry} onChange={(event) => setServiceCountry(event.target.value)}>{COUNTRY_CODES.map((code) => <option key={code} value={code}>{code} · {countryName(code)}</option>)}</select></div>
-            <div className="field"><label htmlFor="claim-currency">Currency</label><select id="claim-currency" className="select" value={currency} disabled={!currencyChoices.length} onChange={(event) => setCurrency(event.target.value)}>{currencyChoices.map((code) => <option key={code} value={code}>{code}{code === currencySettings?.currency ? " · working currency" : ""}</option>)}</select></div>
+            <div className="field"><span className="label">Home currency</span><div className="reference-selected"><strong>{currency || "Not configured"}</strong></div><span className="help">All company amounts use this currency.</span></div>
             <div className="field"><label htmlFor="claim-date">Claim date</label><input id="claim-date" className="input" type="date" value={claimDate} onChange={(event) => setClaimDate(event.target.value)} /></div>
             <div className="field span"><label>Service entity</label><div className="reference-selected"><span>{names.party(DEFAULT_LEGAL_ENTITY)}</span></div><span className="help">The tenant’s legal entity; read-only.</span></div>
             <div className="field span"><label>Obligor entity</label><div className="reference-selected"><span>{names.party(DEFAULT_LEGAL_ENTITY)}</span></div><span className="help">Adjudication records the obligor on the event.</span></div>

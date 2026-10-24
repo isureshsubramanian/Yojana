@@ -1,39 +1,46 @@
-using System.Text.Json;
 using Yojana.Platform.Contracts.Tenancy;
 
 namespace Yojana.Platform.Tenancy;
 
-/// <summary>The tenant's working and accepted currencies over <see cref="ITenantSettings"/>, validated against the catalogue.</summary>
-public sealed class TenantCurrency(ITenantSettings settings, ICurrencyCatalogue catalogue) : ITenantCurrency
+/// <summary>The tenant's home currency over <see cref="ITenantSettings"/>, validated against the catalogue and module usage ports.</summary>
+public sealed class TenantCurrency(ITenantSettings settings, ICurrencyCatalogue catalogue, IEnumerable<ICurrencyUsage> usages) : ITenantCurrency
 {
     public async Task<string?> GetAsync(CancellationToken cancellationToken) => ITenantCurrency.Normalise(await settings.GetAsync(ITenantCurrency.Key, cancellationToken));
 
     public async Task<string> SetAsync(string code, CancellationToken cancellationToken)
     {
         var known = catalogue.Find(code) ?? throw new ArgumentException($"'{code}' is not an ISO 4217 currency in the catalogue.", nameof(code));
-        if (await GetAsync(cancellationToken) is { } current)
+        var current = await GetAsync(cancellationToken);
+        if (current == known.Code) return current;
+        if (current is not null)
         {
-            return current == known.Code ? current : throw new TenantCurrencyLockedException(current, known.Code);
+            var recorded = await UsageAsync(cancellationToken);
+            if (recorded.Count > 0) throw new TenantCurrencyLockedException(current, known.Code, recorded);
         }
 
-        await settings.SetAsync(ITenantCurrency.Key, known.Code, cancellationToken);
+        // The version check is the Platform side of the currency/first-amount race. Money writers re-read the home
+        // currency immediately before recording; separating either side permits a concurrent change to relabel an amount.
+        var versioned = await settings.GetVersionedAsync(ITenantCurrency.Key, cancellationToken);
+        var recordedInsideWrite = await UsageAsync(cancellationToken);
+        if (current is not null && recordedInsideWrite.Count > 0)
+            throw new TenantCurrencyLockedException(current, known.Code, recordedInsideWrite);
+        await settings.SetAsync(ITenantCurrency.Key, known.Code, versioned?.Version ?? ITenantSettings.MissingVersion,
+            cancellationToken);
         return known.Code;
     }
 
-    public async Task<IReadOnlyList<string>> GetAcceptedAsync(CancellationToken cancellationToken)
+    public async Task<TenantCurrencyStatus> GetStatusAsync(CancellationToken cancellationToken)
     {
-        var working = await GetAsync(cancellationToken);
-        if (working is null) return [];
-        var text = await settings.GetAsync(ITenantCurrency.AcceptedKey, cancellationToken);
-        var others = text is null ? [] : JsonSerializer.Deserialize<List<string>>(text) ?? [];
-        return [working, .. others.Select(ITenantCurrency.Normalise).OfType<string>().Where(c => c != working).Distinct().Order(StringComparer.Ordinal)];
+        var currency = await GetAsync(cancellationToken);
+        var usage = await UsageAsync(cancellationToken);
+        return new(currency, usage.Count == 0, usage);
     }
 
-    public async Task<IReadOnlyList<string>> SetAcceptedAsync(IReadOnlyList<string> codes, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<CurrencyUsage>> UsageAsync(CancellationToken cancellationToken)
     {
-        var known = codes.Select(code => catalogue.Find(code)?.Code ?? throw new ArgumentException($"'{code}' is not an ISO 4217 currency in the catalogue.", nameof(codes)))
-            .Distinct().Order(StringComparer.Ordinal).ToList();
-        await settings.SetAsync(ITenantCurrency.AcceptedKey, JsonSerializer.Serialize(known), cancellationToken);
-        return await GetAcceptedAsync(cancellationToken);
+        var result = new List<CurrencyUsage>();
+        foreach (var usage in usages)
+            result.AddRange(await usage.CountAsync(cancellationToken));
+        return result.Where(value => value.Count > 0).OrderBy(value => value.Kind, StringComparer.Ordinal).ToList();
     }
 }

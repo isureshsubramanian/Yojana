@@ -204,23 +204,14 @@ public sealed class ClaimTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
-    public async Task Claims_are_written_only_in_currencies_the_tenant_accepts()
+    public async Task Claims_are_written_only_in_the_home_currency()
     {
         var setup = await SetUpAsync("cur", 1);
         var gbp = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<SubmitClaimResult>(setup.Tenant, new SubmitClaim(Guid.NewGuid(), setup.Units[0], null,
             new DateOnly(2025, 9, 1), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "GB", "GBP", [new ClaimLineInput(ClaimLineKind.Parts, CoverageFamilyCode.Base, 100m)],
             [], ClaimRemedy.Repair, "choice", new DateTime(2025, 9, 1, 9, 0, 0, DateTimeKind.Utc), "desk")));
-        Assert.Equal("claim_currency_not_accepted", gbp.Rule);
-
-        using (var scope = fixture.ScopeFor(setup.Tenant))
-        {
-            Assert.Equal(["EUR", "GBP"], await scope.ServiceProvider.GetRequiredService<ITenantCurrency>().SetAcceptedAsync(["gbp"], CancellationToken.None));
-        }
-
-        var accepted = await InvokeAsync<SubmitClaimResult>(setup.Tenant, new SubmitClaim(Guid.NewGuid(), setup.Units[0], null,
-            new DateOnly(2025, 9, 1), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "GB", "GBP", [new ClaimLineInput(ClaimLineKind.Parts, CoverageFamilyCode.Base, 100m)],
-            [], ClaimRemedy.Repair, "choice", new DateTime(2025, 9, 1, 9, 5, 0, DateTimeKind.Utc), "desk"));
-        Assert.Equal(ClaimStatus.Submitted, accepted.Status);
+        Assert.Equal("currency_not_home", gbp.Rule);
+        Assert.Equal("Amounts in this company are in EUR.", gbp.Message);
     }
 
     [DatabaseFact]
@@ -471,16 +462,20 @@ public sealed class ClaimTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
-    public async Task Working_currency_cannot_change_after_it_is_set()
+    public async Task Home_currency_changes_before_an_amount_and_locks_after_the_first_claim()
     {
-        var tenant = await fixture.NewTenantAsync("currency-lock", "EUR");
-        using var scope = fixture.ScopeFor(tenant);
+        var setup = await SetUpAsync("currency-lock", 1);
+        using var scope = fixture.ScopeFor(setup.Tenant);
         var currency = scope.ServiceProvider.GetRequiredService<ITenantCurrency>();
 
-        var refusal = await Assert.ThrowsAsync<TenantCurrencyLockedException>(() => currency.SetAsync("USD", CancellationToken.None));
+        Assert.Equal("USD", await currency.SetAsync("USD", CancellationToken.None));
+        await SubmitAsync(setup.Tenant, setup.Units[0], new DateOnly(2026, 9, 1),
+            new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc), ClaimRemedy.Repair, currency: "USD");
+        var refusal = await Assert.ThrowsAsync<TenantCurrencyLockedException>(() => currency.SetAsync("EUR", CancellationToken.None));
 
-        Assert.Equal("EUR", refusal.Current);
-        Assert.Equal("EUR", await currency.GetAsync(CancellationToken.None));
+        Assert.Equal("USD", refusal.Current);
+        Assert.Contains(refusal.Usage, usage => usage.Kind == "claims" && usage.Count == 1);
+        Assert.Equal("USD", await currency.GetAsync(CancellationToken.None));
     }
 
     [DatabaseFact]
@@ -565,8 +560,8 @@ public sealed class ClaimTests(SerialisationHostFixture fixture)
     }
 
     private async Task<SubmitClaimResult> SubmitAsync(TenantId tenant, Guid unitId, DateOnly claimDate, DateTime at, string remedy,
-        string lineKind = ClaimLineKind.Parts, Guid? lineUnitId = null) =>
-        await InvokeAsync<SubmitClaimResult>(tenant, new SubmitClaim(Guid.NewGuid(), unitId, null, claimDate, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "DE", "EUR",
+        string lineKind = ClaimLineKind.Parts, Guid? lineUnitId = null, string currency = "EUR") =>
+        await InvokeAsync<SubmitClaimResult>(tenant, new SubmitClaim(Guid.NewGuid(), unitId, null, claimDate, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "DE", currency,
             [new ClaimLineInput(lineKind, CoverageFamilyCode.Base, 100m, lineUnitId)], [new ClaimEvidenceInput(ClaimEvidenceKind.Attachment, "DEFECT-PHOTO")], remedy, "CHOICE-RECORDED", at, "service.desk", "INVOICE-1"));
 
     private async Task<ClaimSetup> SetUpAsync(string prefix, int count)

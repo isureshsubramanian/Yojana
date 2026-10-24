@@ -168,20 +168,39 @@ app.MapYojanaUserManagementEndpoints();
 app.MapYojanaInvitationEndpoints();
 app.MapYojanaMailEndpoints();
 
-// The tenant's currencies: the working currency (every configured amount, approval thresholds and policy values, is
-// in it) and the other currencies documents may be written in, both chosen from the ISO 4217 catalogue at setup. The
-// working currency is set once per tenant and never changed; accepted currencies may be added or removed later.
+// The tenant's home currency. Modules contribute their own usage probes through Platform contracts; this host composes
+// the status and legacy report without Platform reading a module's tables.
 app.MapGet("/api/tenant/currency", async (ITenantCurrency currency, CancellationToken ct) =>
-    Results.Ok(new { currency = await currency.GetAsync(ct), accepted = await currency.GetAcceptedAsync(ct) }))
+    Results.Ok(await currency.GetStatusAsync(ct)))
     .RequireAuthorization(YojanaPolicy.TenantMember);
 app.MapGet("/api/tenant/currency/catalogue", (ICurrencyCatalogue catalogue) => Results.Ok(catalogue.All)).RequireAuthorization(YojanaPolicy.TenantMember);
-app.MapPut("/api/tenant/currency", async (TenantCurrencyRequest request, ITenantCurrency currency, CancellationToken ct) =>
+app.MapGet("/api/tenant/currency/report", async (ITenantCurrency currency, IEnumerable<ICurrencyUsageReport> reports,
+    CancellationToken ct) =>
+{
+    var home = await currency.GetAsync(ct);
+    if (home is null) return Results.Ok(new CurrencyUsageReportResponse(null, []));
+    var rows = new List<OtherCurrencyUsage>();
+    foreach (var report in reports) rows.AddRange(await report.CountOtherAsync(home, ct));
+    return Results.Ok(new CurrencyUsageReportResponse(home, rows.OrderBy(row => row.Kind, StringComparer.Ordinal)
+        .ThenBy(row => row.Currency, StringComparer.Ordinal).ToList()));
+}).RequireAuthorization(YojanaPolicy.TenantMember);
+app.MapPut("/api/tenant/currency", async (TenantCurrencyRequest request, ITenantCurrency currency,
+    SecurityEventWriter events, PlatformDbContext db, ITenantContext tenant, HttpContext http, CancellationToken ct) =>
 {
     try
     {
-        var working = await currency.SetAsync(request.Currency, ct);
-        var accepted = request.Accepted is { } others ? await currency.SetAcceptedAsync(others, ct) : await currency.GetAcceptedAsync(ct);
-        return Results.Ok(new { currency = working, accepted });
+        var before = await currency.GetAsync(ct);
+        await currency.SetAsync(request.Currency, ct);
+        var status = await currency.GetStatusAsync(ct);
+        if (!string.Equals(before, status.Currency, StringComparison.Ordinal))
+        {
+            var actor = Guid.Parse(http.User.FindFirst(YojanaClaim.UserId)!.Value);
+            events.Add(SecurityEventKind.SettingsChanged, actor, tenant.TenantId, actor,
+                new SecurityRequestContext(http.Connection.RemoteIpAddress?.ToString(), http.Request.Headers.UserAgent),
+                $"tenant.currency:{before ?? "unset"}->{status.Currency}");
+            await db.SaveChangesAsync(ct);
+        }
+        return Results.Ok(status);
     }
     catch (ArgumentException ex)
     {
@@ -190,7 +209,7 @@ app.MapPut("/api/tenant/currency", async (TenantCurrencyRequest request, ITenant
     catch (TenantCurrencyLockedException ex)
     {
         return Results.Problem(title: TenantCurrencyLockedException.Rule, detail: ex.Message, statusCode: StatusCodes.Status409Conflict,
-            extensions: new Dictionary<string, object?> { ["rule"] = TenantCurrencyLockedException.Rule, ["unblockingStep"] = $"keep {ex.Current} as the working currency; add other currencies as accepted currencies" });
+            extensions: new Dictionary<string, object?> { ["rule"] = TenantCurrencyLockedException.Rule, ["unblockingStep"] = $"keep {ex.Current} as the home currency; amounts are never converted" });
     }
 }).RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
 
@@ -245,6 +264,8 @@ namespace Yojana.Web
     public sealed record PingRequest(string Note);
 
     public sealed record TenantCurrencyRequest(string Currency, IReadOnlyList<string>? Accepted = null);
+
+    public sealed record CurrencyUsageReportResponse(string? Currency, IReadOnlyList<OtherCurrencyUsage> Rows);
 
     public sealed record PeopleNamesRequest(IReadOnlyList<string> References);
 

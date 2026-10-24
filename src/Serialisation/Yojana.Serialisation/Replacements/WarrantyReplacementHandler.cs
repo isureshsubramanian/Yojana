@@ -6,6 +6,7 @@ using Yojana.Serialisation.Claims;
 using Yojana.Serialisation.Commands;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Corrections;
+using Yojana.Serialisation.Currency;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Entitlements;
@@ -23,6 +24,7 @@ public static class CreateWarrantyReplacementHandler
         PolicyResolver policies,
         DocumentNumbers numbers,
         IJurisdictionRuleResolver jurisdictionRules,
+        ITenantCurrency currency,
         ITenantContext tenant,
         IClock clock,
         CancellationToken cancellationToken)
@@ -32,6 +34,7 @@ public static class CreateWarrantyReplacementHandler
             return new(await WarrantyReplacementQueries.DetailAsync(db, tenantId, replay.WarrantyReplacementId, jurisdictionRules, cancellationToken), true);
 
         Validate(command);
+        await HomeCurrencyGuard.RequireAsync(currency, command.Currency, cancellationToken);
         var source = await sources.ResolveAsync(command.SourceKind, command.SourceId, command.SourceEntitlementId, cancellationToken)
             ?? throw new CommandRefusedException("replacement_source_unknown", $"{command.SourceKind} source {command.SourceId} does not resolve to entitlement {command.SourceEntitlementId}.",
                 command.SourceKind == ReplacementSourceKind.Rma ? "wire the RMA replacement-source port, or select an existing RMA" : "select the adjudicated entitlement recorded on the claim");

@@ -6,6 +6,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Commands;
 using Yojana.Serialisation.Claims.Risk;
+using Yojana.Serialisation.Currency;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
@@ -42,17 +43,7 @@ public static class SubmitClaimHandler
         await causes.ValidateReportedAsync(command.ReportedCauseCode, cancellationToken);
         if (command.ReportedDescription?.Length > 4000)
             throw new CommandRefusedException("claim_description_too_long", "The customer description is at most 4,000 characters.");
-        var accepted = await currencies.GetAcceptedAsync(cancellationToken);
-        if (accepted.Count == 0)
-        {
-            throw new CommandRefusedException("tenant_currency_not_set_up", "Claims wait for the tenant's currencies to be set up.", "a tenant administrator chooses the working currency under Settings › Currencies");
-        }
-
-        if (!accepted.Contains(command.Currency.Trim().ToUpperInvariant()))
-        {
-            throw new CommandRefusedException("claim_currency_not_accepted", $"'{command.Currency}' is not a currency this tenant accepts ({string.Join(", ", accepted)}).",
-                "a tenant administrator adds it under Settings › Currencies");
-        }
+        await HomeCurrencyGuard.RequireAsync(currencies, command.Currency, cancellationToken);
 
         var unitId = command.UnitId;
         if (unitId is null && command.Identifier is { } identifier)
@@ -155,10 +146,11 @@ public static class AdjudicateClaimHandler
     public static async Task<AdjudicateClaimResult> Handle(AdjudicateClaim command, SerialisationDbContext db, ClaimLedger ledger, ClaimUnitFacts facts,
         ClaimLineDecider decider, IItemQueryPort items, IEntitlementRecoveryQuery recoveries, ClaimReviewSettings reviewSettings,
         RecoverySettings recoverySettings, DocumentNumbers numbers, ICampaignCoverPort campaigns, ClaimRiskEvaluator risk,
-        ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        ITenantCurrency currency, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var claim = await ledger.LoadAsync(command.ClaimId, cancellationToken);
+        await HomeCurrencyGuard.RequireAsync(currency, claim.Currency, cancellationToken);
         var key = ClaimLedger.Key(command.CommandId, claim.UnitId, ClaimEventType.Adjudicated, command.EventTime);
         if (await ledger.ReplayedAsync(key, command.EventTime, cancellationToken) is { } replayed)
         {
@@ -395,13 +387,14 @@ public static class AdjudicateClaimHandler
 public static class ApproveRecoveryClaimHandler
 {
     public static async Task<RecoveryClaimChangeResult> Handle(ApproveRecoveryClaim command, SerialisationDbContext db, ClaimLedger ledger,
-        ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        ITenantCurrency currency, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
         var recovery = await db.RecoveryClaims.FirstOrDefaultAsync(r => r.TenantId == tenantId && r.RecoveryClaimId == command.RecoveryClaimId, cancellationToken)
             ?? throw new CommandRefusedException("recovery_claim_unknown", $"Recovery claim {command.RecoveryClaimId} does not exist.");
         var key = ClaimLedger.Key(command.CommandId, recovery.RecoveryClaimId, ClaimEventType.RecoveryApproved, command.EventTime);
         if (await ledger.ReplayedAsync(key, command.EventTime, cancellationToken) is { } replayed) return new(recovery.RecoveryClaimId, recovery.Status, recovery.RequestedAmount, recovery.ApprovedAmount, replayed.EventId, true, recovery.VendorReference, recovery.VendorNote);
+        await HomeCurrencyGuard.RequireAsync(currency, recovery.Currency, cancellationToken);
         if (recovery.Status != RecoveryClaimStatus.Raised) throw new CommandRefusedException("recovery_claim_transition_not_allowed", $"Recovery claim {recovery.RecoveryClaimId} is {recovery.Status}; only raised claims can be approved.");
         if (command.ApprovedAmount < 0 || command.ApprovedAmount > recovery.RequestedAmount) throw new CommandRefusedException("recovery_amount_invalid", "The approved recovery amount must be between zero and the requested amount.");
         var vendorReference = string.IsNullOrWhiteSpace(command.VendorReference) ? null : command.VendorReference.Trim();

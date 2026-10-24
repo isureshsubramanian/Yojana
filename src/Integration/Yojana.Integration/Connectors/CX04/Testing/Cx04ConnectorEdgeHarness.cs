@@ -151,7 +151,7 @@ public sealed class Cx04ConnectorEdgeHarness : IConnectorEdgeHarness
     public Task<InboundAcceptance> InvoiceAsync(ConnectorEdgeConnection connection, string logicalReference,
         decimal total, CancellationToken cancellationToken) => Task.FromResult(Acceptance(connection,
         logicalReference, new InvoicePosted(new("invoice", logicalReference, new(2026, 9, 1), logicalReference),
-            "FIC-CUSTOMER", [], Lines(), new(total, "GBP")), nameof(InvoicePosted),
+            "FIC-CUSTOMER", [], Lines(), new(total, "EUR")), nameof(InvoicePosted),
         new(2026, 9, 1, 8, 2, 0, TimeSpan.Zero)));
 
     public async Task<HttpStatusCode> SendDeliveryNotificationAsync(ConnectorEdgeConnection connection, Uri receiverBaseUri,

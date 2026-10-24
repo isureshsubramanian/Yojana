@@ -220,7 +220,13 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         return scope;
     }
 
-    public async Task<TenantId> NewTenantAsync(string prefix, bool importJurisdictionStarter = true)
+    public Task<TenantId> NewTenantAsync(string prefix, bool importJurisdictionStarter = true) =>
+        NewTenantCoreAsync(prefix, "EUR", importJurisdictionStarter);
+
+    public Task<TenantId> NewTenantWithoutCurrencyAsync(string prefix, bool importJurisdictionStarter = true) =>
+        NewTenantCoreAsync(prefix, null, importJurisdictionStarter);
+
+    private async Task<TenantId> NewTenantCoreAsync(string prefix, string? currency, bool importJurisdictionStarter)
     {
         var id = new TenantId(Guid.NewGuid());
         using (var scope = ScopeFor(null))
@@ -230,6 +236,13 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
             var stem = prefix.Length > 12 ? prefix[..12] : prefix;
             db.Tenants.Add(new Tenant { Id = id, Code = stem + Guid.NewGuid().ToString("N")[..(20 - stem.Length)], Name = "test " + prefix, CreatedAt = DateTime.UtcNow });
             await db.SaveChangesAsync();
+        }
+        // Existing scenarios record EUR amounts. Configure their home currency before importing priced jurisdiction
+        // rules; tests that exercise pre-configuration explicitly use NewTenantWithoutCurrencyAsync.
+        if (currency is not null)
+        {
+            using var scope = ScopeFor(id);
+            await scope.ServiceProvider.GetRequiredService<ITenantCurrency>().SetAsync(currency, CancellationToken.None);
         }
         // Existing scenarios use EU-scoped policies and therefore opt into the starter through their common tenant
         // arrangement. Jurisdiction catalogue tests pass false when they need to prove a genuinely neutral tenant.
@@ -254,16 +267,14 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         return id;
     }
 
-    /// <summary>A tenant set up with its working currency and the other currencies it accepts on documents.</summary>
-    public async Task<TenantId> NewTenantAsync(string prefix, string currency, params string[] accepted)
+    /// <summary>A tenant set up with its home currency. The trailing values are tolerated for old fixture callers.</summary>
+    public async Task<TenantId> NewTenantAsync(string prefix, string currency, params string[] _)
     {
-        var id = await NewTenantAsync(prefix);
-        using var scope = ScopeFor(id);
-        var currencies = scope.ServiceProvider.GetRequiredService<ITenantCurrency>();
-        await currencies.SetAsync(currency, CancellationToken.None);
-        await currencies.SetAcceptedAsync(accepted, CancellationToken.None);
-        return id;
+        return await NewTenantCoreAsync(prefix, currency, true);
     }
+
+    public Task<TenantId> NewTenantAsync(string prefix, string currency, bool importJurisdictionStarter) =>
+        NewTenantCoreAsync(prefix, currency, importJurisdictionStarter);
 
     /// <summary>Opt-in to the P6 baseline pack for arrangements that intentionally exercise the former EU behaviour.</summary>
     public async Task ImportEuStarterAsync(TenantId tenant)

@@ -8,6 +8,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Corrections;
+using Yojana.Serialisation.Currency;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
@@ -51,6 +52,7 @@ public static class SalesInvoicePostedHandler
         WarrantyReferenceSettings reference, AmendmentApprovalSettings approvals, IWarrantyClaimsPort claims, IWarrantyCertificatePort certificates,
         ITenantCurrency currency, ITenantContext tenant, IClock clock, CorrectionLedger corrections, CancellationToken cancellationToken)
     {
+        await HomeCurrencyGuard.RequireAsync(currency, line.Currency, cancellationToken);
         var target = line.Target
             ?? throw new CommandRefusedException("target_rule_missing", "A warranty-service line needs a target rule.");
         var resolvedLine = await ResolveLineAsync(invoice, line, db, store, reference, tenant, cancellationToken);
@@ -91,7 +93,7 @@ public static class SalesInvoicePostedHandler
                 await AttachExtendedWarrantyHandler.Handle(new AttachExtendedWarranty(commandId, unitId, version.CoverageFamily, contractDate, invoice.ObligorEntityId, invoice.PostedAt,
                     line.Price / Math.Max(1, line.Quantity), line.Currency, sourceDocument, invoice.PostedAt, envelope.Source, version.PolicyVersionId,
                     invoice.CustomerPartyRef, PartyType.Customer, invoice.CustomerPartyRef, PartyType.Customer, invoice.Country, invoice.SiteLocationId, invoice.CustomerPoRef),
-                    db, ledger, resolver, store, zones, tenant, clock, corrections, cancellationToken);
+                    db, ledger, resolver, store, zones, currency, tenant, clock, corrections, cancellationToken);
             }
             else if (live is null)
             {

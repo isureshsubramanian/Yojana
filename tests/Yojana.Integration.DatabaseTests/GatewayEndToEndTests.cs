@@ -98,6 +98,29 @@ public sealed class GatewayEndToEndTests(IntegrationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Foreign_invoice_without_a_local_amount_waits_for_a_person()
+    {
+        var tenant = await fixture.NewTenantAsync("fxamount");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        var item = "HW-STORAGE-" + Guid.NewGuid().ToString("N")[..6];
+        var invoice = new InvoicePosted(Doc("invoice", "INV-FX-1"), "CUSTOMER-1", [],
+            [new CanonicalLine(1, "1", item, 1m, "EA", [], [], Price: 120m, Currency: "USD")],
+            new Money(120m, "USD"));
+        var accepted = await Accept(tenant, connection, "invoice", "INV-FX-1", "001", invoice);
+        await WaitForStatusAsync(tenant, accepted.InboundMessageId, InboundTranslationStatus.NeedsAttention);
+
+        using var check = fixture.ScopeFor(tenant);
+        var row = await check.ServiceProvider.GetRequiredService<IntegrationDbContext>().InboundMessages
+            .SingleAsync(value => value.InboundMessageId == accepted.InboundMessageId);
+        Assert.Equal(InboundTranslationStatus.NeedsAttention, row.TranslationStatus);
+        Assert.Equal("currency_not_home", row.AttentionReasonCode);
+        Assert.Contains("amount in USD; the ERP's EUR amount is needed", row.LastTranslationError);
+        Assert.True(await check.ServiceProvider.GetRequiredService<IntegrationDbContext>().ExceptionTasks
+            .AnyAsync(value => value.InboundMessageId == accepted.InboundMessageId
+                && value.Kind == "currency_not_home"));
+    }
+
+    [DatabaseFact]
     public async Task Published_replacement_event_stages_one_idempotent_canonical_command()
     {
         var tenant = await fixture.NewTenantAsync("outbound");

@@ -7,6 +7,7 @@ using Yojana.Platform.Contracts.Time;
 using Yojana.Platform.Scheduling;
 using Yojana.Platform.Tenancy;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Currency;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Ledger;
@@ -65,7 +66,7 @@ public static class ExtendReturnDueHandler
 public static class BillNonReturnHandler
 {
     public static async Task<BillNonReturnResult> Handle(BillNonReturn command, SerialisationDbContext db, IUnitEventWriter writer,
-        ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
+        ITenantCurrency currency, ITenantContext tenant, IClock clock, CancellationToken cancellationToken)
     {
         var link = await db.ReplacementLinks.SingleOrDefaultAsync(row => row.TenantId == tenant.TenantId && row.ReplacementLinkId == command.ReplacementLinkId, cancellationToken)
             ?? throw new CommandRefusedException("replacement_link_unknown", $"Replacement link {command.ReplacementLinkId} does not exist.");
@@ -77,6 +78,7 @@ public static class BillNonReturnHandler
         }
         if (link.State != ReplacementLinkState.AwaitingReturn)
             throw new CommandRefusedException("replacement_not_awaiting_return", "Only an advance replacement awaiting return can be billed for non-return.");
+        await HomeCurrencyGuard.RequireAsync(currency, link.Currency, cancellationToken);
         if (string.IsNullOrWhiteSpace(command.Reason))
             throw new CommandRefusedException("non_return_billing_reason_required", "Billing a non-return needs a reason.");
         if (!NonReturnPriceBasis.All.Contains(command.PriceBasis)) throw new CommandRefusedException("non_return_price_basis_unknown", $"'{command.PriceBasis}' is not a non-return price basis.");

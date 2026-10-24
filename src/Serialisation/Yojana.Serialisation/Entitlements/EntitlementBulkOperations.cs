@@ -134,7 +134,7 @@ public sealed class BulkCreateEntitlementOperation(SerialisationDbContext db, En
 }
 
 public sealed class BulkAttachExtendedOperation(SerialisationDbContext db, EntitlementLedger ledger, PolicyResolver resolver, PolicyStore store,
-    ITimeZonePort zones, ITenantContext tenant, IClock clock, CorrectionLedger corrections, IServiceScopeFactory scopes) : EntitlementBulkOperation(db, tenant, scopes)
+    ITimeZonePort zones, ITenantCurrency currency, ITenantContext tenant, IClock clock, CorrectionLedger corrections, IServiceScopeFactory scopes) : EntitlementBulkOperation(db, tenant, scopes)
 {
     public override string Name => "entitlement.attach_extended";
     protected override async Task<UnitOutcome> PrecheckAsync(Guid unitId, string? serial, BulkOperationArguments arguments, CancellationToken cancellationToken)
@@ -149,7 +149,7 @@ public sealed class BulkAttachExtendedOperation(SerialisationDbContext db, Entit
         var x = EntitlementBulkArguments.Parse(arguments);
         await AttachExtendedWarrantyHandler.Handle(new(commandId, unitId, x.Family, x.ContractDate!.Value, x.ObligorEntityId!.Value, arguments.EventTime,
             x.Price!.Value, x.Currency!, arguments.SourceDocument, arguments.EventTime, arguments.ActorRef, x.PolicyVersionId, x.PayerPartyRef, x.PayerPartyType,
-            x.OwnerPartyRef, x.OwnerPartyType, x.Country, x.SiteLocationId, Correction: Correction(commandId, arguments.Reason!, arguments)), Db, ledger, resolver, store, zones, Tenant, clock, corrections, cancellationToken);
+            x.OwnerPartyRef, x.OwnerPartyType, x.Country, x.SiteLocationId, Correction: Correction(commandId, arguments.Reason!, arguments)), Db, ledger, resolver, store, zones, currency, Tenant, clock, corrections, cancellationToken);
     }
 }
 
