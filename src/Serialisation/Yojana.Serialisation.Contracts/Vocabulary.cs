@@ -15,10 +15,12 @@ public static class LifecycleStatus
     public const string ScrappedPreRelease = "scrapped_pre_release";
     public const string Scrapped = "scrapped";
     public const string Decommissioned = "decommissioned";
+    /// <summary>A receipt-created unit removed because its source document was cancelled.</summary>
+    public const string Reversed = "reversed";
     /// <summary>Alias left behind by MergeUnits; every row of the absorbed unit points at the survivor.</summary>
     public const string Merged = "merged";
 
-    public static readonly IReadOnlyList<string> All = [PendingIdentifier, PreRelease, Void, Released, Dormant, ScrappedPreRelease, Scrapped, Decommissioned, Merged];
+    public static readonly IReadOnlyList<string> All = [PendingIdentifier, PreRelease, Void, Released, Dormant, ScrappedPreRelease, Scrapped, Decommissioned, Reversed, Merged];
 }
 
 /// <summary>Overlay flags; any status may carry them and they block entitlement evaluation (cases 30, 31, 67, 76).</summary>
@@ -270,6 +272,7 @@ public static class UnitEventType
     public const string UsageRecorded = "unit.usage_recorded";
     public const string Shipped = "unit.shipped";
     public const string ShipmentReversed = "unit.shipment_reversed";
+    public const string ReceiptReversed = "unit.receipt_reversed";
     public const string Delivered = "unit.delivered";
     public const string CustodyChanged = "custody.changed";
     public const string OwnershipOpened = "ownership.opened";
@@ -437,6 +440,7 @@ public static class SerialReuseOutcome
     public const string NeverReuse = "never_reuse";
     public const string EligibleForReuse = "eligible_for_reuse";
     public const string ReusedFromVoidedUnit = "reused_from_voided_unit";
+    public const string ReusedFromReversedReceipt = "reused_from_reversed_receipt";
     public const string VoidReversed = "void_reversed";
 }
 

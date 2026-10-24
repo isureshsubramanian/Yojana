@@ -21,6 +21,7 @@ public static class UnitLifecycle
         (LifecycleStatus.Released, UnitEventType.Disassembled) => LifecycleStatus.Dormant,
         (LifecycleStatus.Dormant, UnitEventType.Reassembled) => LifecycleStatus.Released,
         (LifecycleStatus.Released, UnitEventType.Scrapped) => LifecycleStatus.Scrapped,
+        (LifecycleStatus.Released, UnitEventType.ReceiptReversed) => LifecycleStatus.Reversed,
         (LifecycleStatus.Released or LifecycleStatus.Dormant, UnitEventType.Decommissioned) => LifecycleStatus.Decommissioned,
         _ => null,
     };
@@ -41,8 +42,13 @@ public static class UnitLifecycle
     /// <summary>Statuses in which a unit is considered to exist for identifier uniqueness (Identity rule 6: all of them).</summary>
     public static bool Exists(string status) => status is not LifecycleStatus.Merged;
 
-    /// <summary>A scrapped unit whose item allows scrap-and-reuse may lend its serial to a new unit (case 13).</summary>
-    public static bool IsScrapped(string status) => status is LifecycleStatus.Scrapped or LifecycleStatus.ScrappedPreRelease;
+    /// <summary>A terminal unit that can lend its serial to a new unit under case 13; reversed receipts need no item policy.</summary>
+    public static bool IsScrapped(string status) => status is LifecycleStatus.Scrapped or LifecycleStatus.ScrappedPreRelease or LifecycleStatus.Reversed;
+
+    /// <summary>A completed lifecycle that cannot accept new operational facts.</summary>
+    public static bool IsTerminal(string status) => status is LifecycleStatus.Void or LifecycleStatus.Scrapped
+        or LifecycleStatus.ScrappedPreRelease or LifecycleStatus.Decommissioned or LifecycleStatus.Reversed
+        or LifecycleStatus.Merged;
 
     /// <summary>CBV disposition that accompanies a status in <c>unit_current</c>.</summary>
     public static string DispositionFor(string status) => status switch
@@ -51,7 +57,7 @@ public static class UnitLifecycle
         LifecycleStatus.Released => UnitDisposition.Active,
         LifecycleStatus.Dormant => UnitDisposition.Inactive,
         LifecycleStatus.Scrapped or LifecycleStatus.ScrappedPreRelease => UnitDisposition.Destroyed,
-        LifecycleStatus.Decommissioned or LifecycleStatus.Void => UnitDisposition.Inactive,
+        LifecycleStatus.Decommissioned or LifecycleStatus.Void or LifecycleStatus.Reversed => UnitDisposition.Inactive,
         _ => UnitDisposition.Inactive,
     };
 }

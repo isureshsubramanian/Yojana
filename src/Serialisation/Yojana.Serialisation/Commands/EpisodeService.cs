@@ -321,6 +321,28 @@ public sealed class EpisodeService(SerialisationDbContext db, ITenantContext ten
         return (draft, open);
     }
 
+    /// <summary>Closes only still-open receipt episodes created by the named document; the caller records one compensating fact.</summary>
+    public async Task<IReadOnlyList<CustodyEpisode>> CloseReceiptEpisodesAsync(Guid unitId, DocumentRef document,
+        DateTime at, Guid closingEventId, CancellationToken cancellationToken)
+    {
+        var rows = await db.Episodes.Where(e => e.TenantId == tenant.TenantId && e.UnitId == unitId
+            && e.ValidTo == null && e.OpeningDocumentType == document.Type && e.OpeningDocumentId == document.Id
+            && e.Source == EpisodeSource.Receipt).ToListAsync(cancellationToken);
+        foreach (var row in rows)
+        {
+            if (at < row.ValidFrom)
+                throw new CommandRefusedException("effective_before_current",
+                    $"The receipt reversal is dated before the {row.Kind} episode started ({row.ValidFrom:O}).");
+            row.ValidTo = at;
+            row.ClosingEventId = closingEventId;
+            row.ClosingDocumentType = document.Type;
+            row.ClosingDocumentId = document.Id;
+            row.ClosingDocumentLine = document.Line;
+            Track(unitId, row.Kind, null);
+        }
+        return rows;
+    }
+
     public Task<CustodyEpisode?> OpenAsync(Guid unitId, string kind, CancellationToken cancellationToken)
     {
         if (open.TryGetValue((unitId, kind), out var preloaded)) return Task.FromResult(preloaded);

@@ -233,7 +233,7 @@ public sealed class Cx01NativeWarrantyWriter(IntegrationDbContext db, ITenantCon
 
     private static string LegacyStatus(string moduleStatus) => moduleStatus switch
     {
-        LifecycleStatus.Void or LifecycleStatus.ScrappedPreRelease or LifecycleStatus.Scrapped
+        LifecycleStatus.Void or LifecycleStatus.Reversed or LifecycleStatus.ScrappedPreRelease or LifecycleStatus.Scrapped
             or LifecycleStatus.Decommissioned or LifecycleStatus.Merged => NativeWarrantyCardStatus.Terminated,
         LifecycleStatus.PendingIdentifier or LifecycleStatus.PreRelease or LifecycleStatus.Released
             or LifecycleStatus.Dormant => NativeWarrantyCardStatus.Active,

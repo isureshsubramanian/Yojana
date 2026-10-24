@@ -76,7 +76,7 @@ public static class SerialisedOnHandCustodyPolicy
     // Included regardless of disposition: warehouse/bin stock plus units physically held in quarantine (including
     // awaiting inspection), internal repair, or a stock-holding 3PL. Excluded custody is customer_site (including
     // loaner out), vendor/at_subcontractor (supplier custody), in_transit/returning, scrapped, or no location. Terminal
-    // lifecycle rows (void, scrapped, decommissioned and merged aliases) and children consumed into an open assembly
+    // lifecycle rows (void, reversed, scrapped, decommissioned and merged aliases) and children consumed into an open assembly
     // are excluded separately by the query. Keep both lists explicit so a new custody kind cannot silently become stock.
     public static readonly IReadOnlyList<string> IncludedLocationKinds =
         [LocationKind.Warehouse, LocationKind.Bin, LocationKind.Quarantine, LocationKind.InRepair, LocationKind.At3pl];
@@ -86,7 +86,7 @@ public static class SerialisedOnHandCustodyPolicy
             LocationKind.Returning, LocationKind.Scrapped];
 
     public static readonly IReadOnlyList<string> ExcludedLifecycleStatuses =
-        [LifecycleStatus.Void, LifecycleStatus.ScrappedPreRelease, LifecycleStatus.Scrapped,
+        [LifecycleStatus.Void, LifecycleStatus.Reversed, LifecycleStatus.ScrappedPreRelease, LifecycleStatus.Scrapped,
             LifecycleStatus.Decommissioned, LifecycleStatus.Merged];
 }
 

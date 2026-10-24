@@ -1,23 +1,82 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Wolverine;
 using Yojana.Integration.Connectors.CX01;
 using Yojana.Integration.Connectors.CX01.Testing;
 using Yojana.Integration.Contracts;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Inbox;
+using Yojana.Integration.Gateway;
 using Yojana.Integration.Notifications;
 using Yojana.Integration.Outbox;
 using Yojana.Integration.Security.Cryptography;
 using Yojana.Integration.Security.Workers;
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Data;
 
 namespace Yojana.Integration.DatabaseTests;
 
 [Collection("integration host")]
 public sealed class Cx01SimulatorDatabaseTests(IntegrationHostFixture fixture)
 {
+    [DatabaseFact]
+    public async Task Simulator_receipt_then_cancellation_leaves_its_serialised_unit_reversed()
+    {
+        await using var simulator = new Cx01Simulator();
+        var tenant = await fixture.NewTenantAsync("cxrc");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.CreateVersion7());
+        using (var configure = fixture.ScopeFor(tenant))
+            await ConfigureAsync(configure.ServiceProvider, tenant, connection, simulator, webhooks: false);
+
+        async Task TranslateAsync(InboundAcceptance acceptance)
+        {
+            using var translate = fixture.ScopeFor(tenant);
+            var accepted = await translate.ServiceProvider.GetRequiredService<InboundMessageStore>()
+                .Accept(acceptance, CancellationToken.None);
+            var result = await translate.ServiceProvider.GetRequiredService<IMessageBus>()
+                .InvokeAsync<GatewayTranslationResult>(new TranslateInboundMessage(accepted.InboundMessageId),
+                    new DeliveryOptions { TenantId = tenant.ToString() });
+            if (result.Translated) return;
+            for (var attempt = 0; attempt < 100; attempt++)
+            {
+                using var statusScope = fixture.ScopeFor(tenant);
+                var status = await statusScope.ServiceProvider.GetRequiredService<IntegrationDbContext>()
+                    .InboundMessages.AsNoTracking().Where(x => x.InboundMessageId == accepted.InboundMessageId)
+                    .Select(x => x.TranslationStatus).SingleAsync();
+                if (status == InboundTranslationStatus.Completed) return;
+                await Task.Delay(20);
+            }
+            Assert.Fail($"{accepted.InboundMessageId:N} did not complete translation.");
+        }
+
+        using (var capture = fixture.ScopeFor(tenant))
+        {
+            var adapter = capture.ServiceProvider.GetRequiredService<Cx01Adapter>();
+            await TranslateAsync((await adapter.CaptureKeyAsync(connection, "Items", "HW-EDGE-100",
+                CancellationToken.None))!.Acceptance);
+            await TranslateAsync((await adapter.CaptureKeyAsync(connection, "PurchaseDeliveryNotes", "3101",
+                CancellationToken.None))!.Acceptance);
+            using var response = await capture.ServiceProvider.GetRequiredService<Cx01Client>().SendJsonAsync(connection,
+                HttpMethod.Post, Cx01Protocol.Root + "PurchaseDeliveryNotes(3101)/Cancel", new { }, true,
+                CancellationToken.None);
+            var cancellation = await adapter.CaptureKeyAsync(connection, "PurchaseDeliveryNotes", "3102",
+                CancellationToken.None);
+            Assert.Equal(nameof(DocumentCancelled), cancellation!.Acceptance.MessageType);
+            await TranslateAsync(cancellation.Acceptance);
+        }
+
+        using var check = fixture.ScopeFor(tenant);
+        var db = check.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var unit = await db.Identifiers.Where(x => x.RawValue == "FICTIONAL-RECEIPT-SN-1001")
+            .Select(x => x.UnitId).SingleAsync();
+        Assert.Equal(LifecycleStatus.Reversed, (await db.Current.SingleAsync(x => x.UnitId == unit)).LifecycleStatus);
+        Assert.Equal(1, await db.Events.CountAsync(x => x.UnitId == unit
+            && x.EventType == UnitEventType.ReceiptReversed));
+    }
+
     [DatabaseFact]
     public async Task Webhook_then_poll_accepts_one_document_change_and_duplicate_event_id_is_processed_once()
     {

@@ -12,7 +12,7 @@ import { documentLabel, fmtDateTime, humanise, matchSpan, parseDocumentParam, se
 
 const PAGE = 50;
 const TYPES = ["internal_serial", "manufacturer_serial", "vendor_serial", "customer_serial", "imei", "mac", "udi_di", "sgtin", "giai", "vin", "customer_asset_tag", "channel_order_ref", "provisional"];
-const STATUSES = ["pending_identifier", "pre_release", "released", "dormant", "scrapped_pre_release", "scrapped", "void", "decommissioned"];
+const STATUSES = ["pending_identifier", "pre_release", "released", "dormant", "scrapped_pre_release", "scrapped", "void", "decommissioned", "reversed"];
 
 function Highlight({ value, q }: { value: string; q: string }) {
   const span = matchSpan(value, q);

@@ -7,6 +7,7 @@ using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Corrections;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
+using Yojana.Serialisation.Identity;
 using Yojana.Serialisation.Ledger;
 
 namespace Yojana.Serialisation.Commands;
@@ -312,7 +313,7 @@ public sealed class CorrectAsBuiltPlanner(SerialisationDbContext db, UnitResolve
             if (target.Changes.Count == 0) throw new CommandRefusedException("nothing_to_correct", "Every parent needs at least one link change.");
             var parent = await ResolveAsync(target.Parent, "parent", cancellationToken);
             if (!seenParents.Add(parent.UnitId)) throw new CommandRefusedException("parent_repeated", $"Parent {parent.UnitId} appears more than once; group its component changes under one target.");
-            if (parent.LifecycleStatus is LifecycleStatus.Void or LifecycleStatus.Scrapped or LifecycleStatus.ScrappedPreRelease or LifecycleStatus.Decommissioned or LifecycleStatus.Merged)
+            if (UnitLifecycle.IsTerminal(parent.LifecycleStatus))
                 throw new CommandRefusedException("parent_not_correctable", $"Parent unit {parent.UnitId} is {parent.LifecycleStatus}.");
 
             var changes = new List<PlannedAsBuiltChange>();
@@ -367,7 +368,7 @@ public sealed class CorrectAsBuiltPlanner(SerialisationDbContext db, UnitResolve
 
         var child = await ResolveAsync(input.Unit!, "component", cancellationToken);
         if (child.UnitId == parentId) throw new CommandRefusedException("assembly_cycle", $"Unit {parentId} cannot contain itself.", "check the parent and component serials");
-        if (child.LifecycleStatus is LifecycleStatus.Void or LifecycleStatus.Scrapped or LifecycleStatus.ScrappedPreRelease or LifecycleStatus.Decommissioned or LifecycleStatus.Merged)
+        if (UnitLifecycle.IsTerminal(child.LifecycleStatus))
             throw new CommandRefusedException("child_not_installable", $"Child unit {child.UnitId} is {child.LifecycleStatus}.");
         return new(child.UnitId, null, null, null, input.Relation, input.Slot, input.ThroughPhantomItemId, input.ReleaseStatus ?? ReleaseStatus.New, input.ReleaseDocRef, input.EffectiveUntil);
     }

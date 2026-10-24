@@ -135,12 +135,18 @@ public static class CommissionUnitsHandler
                 var hits = ids.Where(id => conflicts.ContainsKey((id.Policy.Scheme, id.ScopeKey, id.Normalised))).ToList();
                 if (hits.Count == 0) continue;
                 var holderUnits = hits.Select(h => conflicts[(h.Policy.Scheme, h.ScopeKey, h.Normalised)]).Distinct().ToList();
-                var reusable = profile.SerialReusePolicy == ItemSerialisationProfile.ReusePolicies.AfterScrap && holderUnits.Count == 1 && holders.TryGetValue(holderUnits[0], out var status) && UnitLifecycle.IsScrapped(status);
+                var status = holderUnits.Count == 1 ? holders.GetValueOrDefault(holderUnits[0]) : null;
+                var reusable = status is not null
+                    && (status == LifecycleStatus.Reversed
+                        || profile.SerialReusePolicy == ItemSerialisationProfile.ReusePolicies.AfterScrap
+                        && UnitLifecycle.IsScrapped(status));
                 if (reusable)
                 {
-                    var scrapped = holderUnits[0];
-                    var toClose = await db.Identifiers.Where(x => x.TenantId == tenantId && x.UnitId == scrapped && x.ValidTo == null).Select(x => x.IdentifierId).ToListAsync(cancellationToken);
-                    reuseFrom[index] = (scrapped, toClose, "reused_after_scrap");
+                    var previous = holderUnits[0];
+                    var toClose = await db.Identifiers.Where(x => x.TenantId == tenantId && x.UnitId == previous && x.ValidTo == null).Select(x => x.IdentifierId).ToListAsync(cancellationToken);
+                    reuseFrom[index] = (previous, toClose, status == LifecycleStatus.Reversed
+                        ? SerialReuseOutcome.ReusedFromReversedReceipt
+                        : "reused_after_scrap");
                 }
                 else
                 {
@@ -186,6 +192,11 @@ public static class CommissionUnitsHandler
                 if (hits.Count == 0) continue;
                 var sources = hits.Select(i => i.UnitId).Distinct().ToList();
                 var source = sources.Count == 1 ? sources[0] : Guid.Empty;
+                if (source != Guid.Empty && holderStatuses.GetValueOrDefault(source) == LifecycleStatus.Reversed)
+                {
+                    reuseFrom[index] = (source, [], SerialReuseOutcome.ReusedFromReversedReceipt);
+                    continue;
+                }
                 var voided = source != Guid.Empty && holderStatuses.GetValueOrDefault(source) == LifecycleStatus.Void
                     && hits.All(i => i.CorrectionReason is not null && VoidUnitReason.All.Contains(i.CorrectionReason));
                 // Only a voided unit's serial is governed by OD-07 here. Other closed rows (a value corrected away from
@@ -300,12 +311,17 @@ public static class CommissionUnitsHandler
             results[index] = new CommissionLineResult(index, line.ClientReference, unitId, pending ? CommissionLineResult.Pending : CommissionLineResult.Commissioned, []);
         }
 
-        // Scrap-and-reuse: the scrapped unit's identifiers close now (Identity rule 6), in the same unit of work.
+        // Reuse from a terminal unit closes any still-open identifiers in the same unit of work (Identity rule 6).
         if (reuseFrom.Count > 0)
         {
-            var closing = reuseFrom.Values.SelectMany(v => v.IdentifiersToClose).ToList();
-            if (closing.Count > 0)
-                await db.Identifiers.Where(i => i.TenantId == tenantId && closing.Contains(i.IdentifierId)).ForEachAsync(i => { i.ValidTo = command.EventTime; i.CorrectionReason = "reused_after_scrap"; }, cancellationToken);
+            foreach (var reuse in reuseFrom.Values.Where(value => value.IdentifiersToClose.Count > 0))
+                await db.Identifiers.Where(i => i.TenantId == tenantId && reuse.IdentifiersToClose.Contains(i.IdentifierId)).ForEachAsync(i =>
+                {
+                    i.ValidTo = command.EventTime;
+                    i.CorrectionReason = reuse.Outcome == SerialReuseOutcome.ReusedFromReversedReceipt
+                        ? EpisodeReason.DocumentCorrection
+                        : "reused_after_scrap";
+                }, cancellationToken);
         }
 
         if (prepared.Count >= BulkThreshold)

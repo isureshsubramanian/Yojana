@@ -26,7 +26,7 @@ public static class NativeWarrantyCardStatusDerivation
 {
     private static readonly HashSet<string> TerminalLifecycleStatuses =
     [
-        LifecycleStatus.Void, LifecycleStatus.ScrappedPreRelease, LifecycleStatus.Scrapped,
+        LifecycleStatus.Void, LifecycleStatus.Reversed, LifecycleStatus.ScrappedPreRelease, LifecycleStatus.Scrapped,
         LifecycleStatus.Decommissioned, LifecycleStatus.Merged,
     ];
 

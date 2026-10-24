@@ -80,6 +80,7 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     public bool RateLimitNextRequest { get; set; }
     public bool SameWarehouseReturnPosted { get; set; }
     public bool DeliveryCancelled { get; set; }
+    public bool ReceiptCancelled { get; set; }
     public bool SubscriptionStopped { get; set; }
     public List<string> DeletedSubscriptionPaths { get; } = [];
     public bool WebhookSubscriptionCreated { get; private set; }
@@ -318,6 +319,58 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                 });
                 return;
             }
+            if (path is var receiptPath && (receiptPath == Cx01Protocol.Root + "PurchaseDeliveryNotes(3101)"
+                || receiptPath == Cx01Protocol.Root + "PurchaseDeliveryNotes(3102)"))
+            {
+                var cancellation = receiptPath.EndsWith("(3102)", StringComparison.Ordinal);
+                await JsonAsync(response, new
+                {
+                    DocEntry = cancellation ? 3102 : 3101,
+                    DocNum = cancellation ? 710032 : 710031,
+                    DocDate = "2026-09-01",
+                    UpdateDate = "2026-09-01",
+                    UpdateTime = cancellation ? "084500" : "081000",
+                    DocObjectCode = "oPurchaseDeliveryNotes",
+                    CardCode = "V-FICTIONAL-01",
+                    Cancelled = ReceiptCancelled && !cancellation ? "tYES" : "tNO",
+                    CancelStatus = cancellation ? "csCancellation" : ReceiptCancelled ? "csYes" : "csNo",
+                    DocumentLines = cancellation
+                        ? new object[]
+                        {
+                            new
+                            {
+                                LineNum = 0, ItemCode = "HW-EDGE-100", Quantity = 1m, UoMCode = "EA",
+                                WarehouseCode = "WH-A", BaseType = 20, BaseEntry = 3101, BaseLine = 0,
+                                SerialNumbers = Array.Empty<object>(),
+                            },
+                        }
+                        : new object[]
+                        {
+                            new
+                            {
+                                LineNum = 0, ItemCode = "HW-EDGE-100", Quantity = 1m, UoMCode = "EA",
+                                WarehouseCode = "WH-A", BaseType = (int?)null, BaseEntry = (int?)null, BaseLine = (int?)null,
+                                SerialNumbers = new[]
+                                {
+                                    new { InternalSerialNumber = "FICTIONAL-RECEIPT-SN-1001", SystemSerialNumber = 8101, Quantity = 1m },
+                                },
+                            },
+                        },
+                });
+                return;
+            }
+            if (path == Cx01Protocol.Root + "PurchaseDeliveryNotes")
+            {
+                var rows = ReceiptCancelled
+                    ? new[]
+                    {
+                        new { DocEntry = 3101, UpdateDate = "2026-09-01", UpdateTime = "081000" },
+                        new { DocEntry = 3102, UpdateDate = "2026-09-01", UpdateTime = "084500" },
+                    }
+                    : new[] { new { DocEntry = 3101, UpdateDate = "2026-09-01", UpdateTime = "081000" } };
+                await JsonAsync(response, new { value = rows });
+                return;
+            }
             if (path is var deliveryPath && (deliveryPath == Cx01Protocol.Root + "DeliveryNotes(4101)"
                 || deliveryPath == Cx01Protocol.Root + "DeliveryNotes(4102)"
                 || deliveryPath == Cx01Protocol.Root + "DeliveryNotes(4103)"))
@@ -524,6 +577,13 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                 response.Close();
                 return;
             }
+            if (path == Cx01Protocol.Root + "PurchaseDeliveryNotes(3101)/Cancel" && request.HttpMethod == "POST")
+            {
+                ReceiptCancelled = true;
+                response.StatusCode = (int)HttpStatusCode.NoContent;
+                response.Close();
+                return;
+            }
             if (path == Cx01Protocol.Root + "CustomerEquipmentCards" && request.HttpMethod == "GET")
             {
                 var query = System.Web.HttpUtility.ParseQueryString(request.Url?.Query ?? "");
@@ -604,7 +664,7 @@ internal sealed class Cx01Simulator : IAsyncDisposable
             }
             if (new[]
                 {
-                    "Items", "BusinessPartners", "Invoices", "PurchaseDeliveryNotes",
+                    "Items", "BusinessPartners", "Invoices",
                     "InventoryGenEntries", "StockTransfers", "InventoryGenExits",
                 }.Any(collection => path == Cx01Protocol.Root + collection))
             {

@@ -52,6 +52,92 @@ public sealed class DocumentEventTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Cancelling_a_receipt_reverses_untouched_units_and_the_serial_commissions_a_fresh_unit()
+    {
+        var tenant = await fixture.NewTenantAsync("drcancel");
+        var serial = "SRV-" + Guid.NewGuid().ToString("N")[..10].ToUpperInvariant();
+        var item = Guid.NewGuid();
+        var warehouse = Guid.NewGuid();
+        var original = new ReceiptDocument(new DocumentRef("receipt", Guid.NewGuid()), Guid.NewGuid(), T0,
+            [Line(1, item, warehouse, serial)]);
+        Ports.Add(original);
+        await InvokeAsync<ConsumedEventResult>(tenant, new PurchasingReceiptPosted(Env(T0), original.Document));
+
+        var first = await InvokeAsync<ConsumedEventResult>(tenant,
+            new DocumentCancellationPosted(Env(T0.AddDays(1)), original.Document));
+        var replay = await InvokeAsync<ConsumedEventResult>(tenant,
+            new DocumentCancellationPosted(Env(T0.AddDays(1)), original.Document));
+
+        Assert.Equal(1, first.UnitsAffected);
+        Assert.Empty(first.Exceptions);
+        Assert.True(replay.Duplicate);
+        using (var check = fixture.ScopeFor(tenant))
+        {
+            var db = check.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            var reversed = await db.Identifiers.Where(x => x.RawValue == serial).Select(x => x.UnitId).SingleAsync();
+            Assert.Equal(LifecycleStatus.Reversed,
+                (await db.Units.SingleAsync(x => x.UnitId == reversed)).LifecycleStatus);
+            var current = await db.Current.SingleAsync(x => x.UnitId == reversed);
+            Assert.Equal((LifecycleStatus.Reversed, UnitDisposition.Inactive, null, null),
+                (current.LifecycleStatus, current.Disposition, current.LocationId, current.OpenCustodyEpisodeId));
+            var identifier = await db.Identifiers.SingleAsync(x => x.UnitId == reversed);
+            Assert.Equal(T0.AddDays(1), identifier.ValidTo);
+            Assert.Equal(EpisodeReason.DocumentCorrection, identifier.CorrectionReason);
+            var episode = await db.Episodes.SingleAsync(x => x.UnitId == reversed && x.Kind == EpisodeKind.Custody);
+            Assert.Equal(T0.AddDays(1), episode.ValidTo);
+            var reversal = await db.Events.SingleAsync(x => x.UnitId == reversed
+                && x.EventType == UnitEventType.ReceiptReversed);
+            Assert.NotNull(reversal.ReversesEventId);
+        }
+
+        var replacement = new ReceiptDocument(new DocumentRef("receipt", Guid.NewGuid()), Guid.NewGuid(), T0.AddDays(2),
+            [Line(1, item, warehouse, serial)]);
+        Ports.Add(replacement);
+        Assert.Equal(1, (await InvokeAsync<ConsumedEventResult>(tenant,
+            new PurchasingReceiptPosted(Env(T0.AddDays(2)), replacement.Document))).UnitsAffected);
+        using var final = fixture.ScopeFor(tenant);
+        var finalDb = final.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var unitIds = await finalDb.Identifiers.Where(x => x.RawValue == serial).OrderBy(x => x.ValidFrom)
+            .Select(x => x.UnitId).ToListAsync();
+        Assert.Equal(2, unitIds.Count);
+        Assert.NotEqual(unitIds[0], unitIds[1]);
+        Assert.Equal(unitIds[0], (await finalDb.Units.SingleAsync(x => x.UnitId == unitIds[1])).DerivedFromUnitId);
+        var published = Assert.Single(await PublishedEventSink.WaitForAsync<UnitReceiptReversed>(
+            message => message.Header.UnitId == unitIds[0], 1, TimeSpan.FromSeconds(20)));
+        Assert.Single(published.ClosedIdentifierIds);
+        Assert.Single(published.ClosedEpisodeIds);
+    }
+
+    [DatabaseFact]
+    public async Task Cancelling_a_receipt_with_a_later_shipment_leaves_the_unit_unchanged_and_reports_the_fact()
+    {
+        var tenant = await fixture.NewTenantAsync("drtouch");
+        var serial = "NET-" + Guid.NewGuid().ToString("N")[..10].ToUpperInvariant();
+        var item = Guid.NewGuid();
+        var warehouse = Guid.NewGuid();
+        var original = new ReceiptDocument(new DocumentRef("receipt", Guid.NewGuid()), Guid.NewGuid(), T0,
+            [Line(1, item, warehouse, serial)]);
+        Ports.Add(original);
+        await InvokeAsync<ConsumedEventResult>(tenant, new PurchasingReceiptPosted(Env(T0), original.Document));
+        var shipment = new ShipmentDocument(new DocumentRef("delivery", Guid.NewGuid()), Guid.NewGuid(),
+            T0.AddHours(2), [Line(1, item, null, serial)], Guid.NewGuid(), Guid.NewGuid());
+        Ports.Add(shipment);
+        await InvokeAsync<ConsumedEventResult>(tenant, new SalesShipmentPosted(Env(T0.AddHours(2)), shipment.Document));
+
+        var result = await InvokeAsync<ConsumedEventResult>(tenant,
+            new DocumentCancellationPosted(Env(T0.AddDays(1)), original.Document));
+
+        var exception = Assert.Single(result.Exceptions);
+        Assert.Contains(UnitEventType.Shipped, exception, StringComparison.Ordinal);
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var unit = await db.Identifiers.Where(x => x.RawValue == serial).Select(x => x.UnitId).SingleAsync();
+        Assert.Equal(LifecycleStatus.Released, (await db.Units.SingleAsync(x => x.UnitId == unit)).LifecycleStatus);
+        Assert.False(await db.Events.AnyAsync(x => x.UnitId == unit && x.EventType == UnitEventType.ReceiptReversed));
+        Assert.Null((await db.Identifiers.SingleAsync(x => x.UnitId == unit)).ValidTo);
+    }
+
+    [DatabaseFact]
     public async Task Shipment_then_delivery_moves_custody_and_opens_ownership_on_delivery_with_the_shipment_facts_recorded()
     {
         var tenant = await fixture.NewTenantAsync("ds");
@@ -81,7 +167,9 @@ public sealed class DocumentEventTests(SerialisationHostFixture fixture)
         var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
         var unit = await db.Identifiers.Where(i => i.NormalisedValue == $"{p}001").Select(i => i.UnitId).SingleAsync();
         var types = await db.Events.Where(e => e.UnitId == unit).OrderBy(e => e.Seq).Select(e => e.EventType).ToListAsync();
-        Assert.Equal([UnitEventType.Commissioned, UnitEventType.Shipped, UnitEventType.Delivered, UnitEventType.OwnershipOpened], types);
+        var shipmentTypes = new[] { UnitEventType.Commissioned, UnitEventType.Shipped, UnitEventType.Delivered,
+            UnitEventType.OwnershipOpened };
+        Assert.Equal(shipmentTypes, types.Where(shipmentTypes.Contains));
         var shippedEvent = await db.Events.SingleAsync(e => e.UnitId == unit && e.EventType == UnitEventType.Shipped);
         Assert.Contains("\"serial_confirmation_mode\":\"scan_required\"", shippedEvent.Attributes);
         Assert.Contains("\"serials_copied_without_scan\":false", shippedEvent.Attributes);

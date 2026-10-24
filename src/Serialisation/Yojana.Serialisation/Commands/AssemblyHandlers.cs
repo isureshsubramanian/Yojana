@@ -38,7 +38,7 @@ public static class RecordAssemblyHandler
                 "reverse the void with a later correction before issuing components");
         }
 
-        if (parent.LifecycleStatus is LifecycleStatus.Void or LifecycleStatus.Scrapped or LifecycleStatus.ScrappedPreRelease or LifecycleStatus.Decommissioned or LifecycleStatus.Merged)
+        if (UnitLifecycle.IsTerminal(parent.LifecycleStatus))
         {
             throw new CommandRefusedException("parent_not_assemblable", $"Parent unit {parent.UnitId} is {parent.LifecycleStatus}.", "a scrapped, voided or decommissioned unit takes no components");
         }
@@ -75,7 +75,7 @@ public static class RecordAssemblyHandler
 
                 var childUnit = await db.Units.AsNoTracking().FirstOrDefaultAsync(u => u.TenantId == tenantId && u.UnitId == childUnitId, cancellationToken)
                     ?? throw new CommandRefusedException("child_unknown", $"Child unit {childUnitId} does not exist.", "commission the component first (or AssignIdentifiers in P3 for vendor lists)");
-                if (childUnit.LifecycleStatus is LifecycleStatus.Void or LifecycleStatus.Scrapped or LifecycleStatus.ScrappedPreRelease or LifecycleStatus.Decommissioned or LifecycleStatus.Merged)
+                if (UnitLifecycle.IsTerminal(childUnit.LifecycleStatus))
                 {
                     throw new CommandRefusedException("child_not_installable", $"Child unit {childUnitId} is {childUnit.LifecycleStatus}.");
                 }

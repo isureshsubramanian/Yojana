@@ -17,6 +17,7 @@ export function statusLabel(status: string | null | undefined): string {
     case "pre_release": return "Pre-release";
     case "pending_identifier": return "Pending identifier";
     case "scrapped_pre_release": return "Scrapped pre-release";
+    case "reversed": return "Reversed";
     default: return sentence(status) || "—";
   }
 }
@@ -25,10 +26,16 @@ export function statusTone(status: string | null | undefined): Tone {
   switch (status) {
     case "released": return "ok";
     case "pending_identifier": return "warn";
-    case "void": case "scrapped": case "scrapped_pre_release": return "bad";
+    case "void": case "reversed": case "scrapped": case "scrapped_pre_release": return "bad";
     case "dormant": case "decommissioned": case "merged": case "pre_release": return "neutral";
     default: return "neutral";
   }
+}
+
+export function eventTitle(code: string): string {
+  if (code === "unit.receipt_reversed") return "Receipt reversed (document cancelled)";
+  const tail = code.split(".").pop() ?? code;
+  return sentence(tail);
 }
 
 export function outcomeTone(outcome: string): Tone {

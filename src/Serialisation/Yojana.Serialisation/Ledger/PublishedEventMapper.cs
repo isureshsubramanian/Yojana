@@ -136,6 +136,10 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
 
             case UnitEventType.Released:
                 return new UnitReleased(Header(UnitReleased.Schema, UnitReleased.Version), GuidOrNull(a, "item_id") ?? Guid.Empty, GuidOrNull(a, "build_record_id") ?? Guid.Empty, a?.TryGetProperty("build_record_version", out var v) == true ? v.GetInt32() : 0, Str(a, "payload_hash") ?? "", Identifiers(a));
+            case UnitEventType.ReceiptReversed:
+                return new UnitReceiptReversed(Header(UnitReceiptReversed.Schema, UnitReceiptReversed.Version),
+                    GuidOrNull(a, "commissioned_event_id") ?? Guid.Empty,
+                    Guids(a!.Value, "closed_identifier_ids"), Guids(a.Value, "closed_episode_ids"));
             case UnitEventType.Graded:
                 return new UnitGraded(Header(UnitGraded.Schema, UnitGraded.Version), Str(a, "grade") ?? "", Str(a, "f_code"), Str(a, "c_code"), Str(a, "valuation_rule") ?? "");
             case UnitEventType.IdentifierCorrected:
