@@ -489,8 +489,7 @@ public sealed class Cx01WebhookMaintenance(
             if (examined >= WatchdogRunCap || rows.Count == 0
                 || !log.RootElement.TryGetProperty("@odata.nextLink", out var next)
                 || string.IsNullOrWhiteSpace(next.GetString())) break;
-            path = new Uri(next.GetString()!, UriKind.RelativeOrAbsolute).IsAbsoluteUri
-                ? new Uri(next.GetString()!).PathAndQuery : next.GetString()!;
+            path = Cx01Protocol.NextPage(next.GetString())!;
         }
         if (newestCreateDate is { } observedDate)
             await events.SetWatermarkAsync(connectionId, observedDate, cancellationToken);

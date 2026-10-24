@@ -383,8 +383,8 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                 var start = int.TryParse(skip, out var parsed) ? parsed : 0;
                 var page = rows.Skip(start).Take(PageSize).ToList();
                 var next = start + page.Count < rows.Count
-                    ? new Uri(BaseUri, Cx01Protocol.Root.TrimStart('/') + "DeliveryNotes?$skiptoken="
-                        + (start + page.Count)).ToString() : null;
+                    // The live service links the next page relative to its root, not as an absolute URL.
+                    ? "DeliveryNotes?$skiptoken=" + (start + page.Count) : null;
                 await JsonAsync(response, new Dictionary<string, object?>
                 {
                     ["value"] = page,
@@ -708,8 +708,7 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                             LastSentDate = item.CreateDate, LastSentTime = item.CreateTime }],
                 }).ToList();
                 var next = skip + page.Count < filtered.Count
-                    ? new Uri(BaseUri, Cx01Protocol.Root.TrimStart('/') + Cx01Protocol.EventNotifications
-                        + "?$skip=" + (skip + page.Count)).ToString() : null;
+                    ? Cx01Protocol.EventNotifications + "?$skip=" + (skip + page.Count) : null;
                 await JsonAsync(response, new Dictionary<string, object?>
                 {
                     ["value"] = page,

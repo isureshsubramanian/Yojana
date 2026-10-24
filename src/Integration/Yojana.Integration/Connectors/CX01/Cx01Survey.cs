@@ -177,11 +177,8 @@ public sealed class Cx01SurveyProbe(ICx01SurveyRemotePort remote, IClock clock)
                     result.Add(new(Int(row, "Code") ?? 0, Text(row, "Name") ?? "",
                         Text(row, "IsActive") is "tYES" or "Y", documents));
                 }
-                path = response.RootElement.TryGetProperty("@odata.nextLink", out var next)
-                    && !string.IsNullOrWhiteSpace(next.GetString())
-                    ? new Uri(next.GetString()!, UriKind.RelativeOrAbsolute).IsAbsoluteUri
-                        ? new Uri(next.GetString()!).PathAndQuery : next.GetString()
-                    : null;
+                path = Cx01Protocol.NextPage(response.RootElement.TryGetProperty("@odata.nextLink", out var next)
+                    ? next.GetString() : null);
             }
         }
         catch (Cx01RemoteException exception) when (exception.IsBusinessRejection)
@@ -201,11 +198,8 @@ public sealed class Cx01SurveyProbe(ICx01SurveyRemotePort remote, IClock clock)
         {
             using var response = await remote.GetAsync(connectionId, path, cancellationToken);
             count += Values(response.RootElement).Count;
-            path = response.RootElement.TryGetProperty("@odata.nextLink", out var next)
-                && !string.IsNullOrWhiteSpace(next.GetString())
-                ? new Uri(next.GetString()!, UriKind.RelativeOrAbsolute).IsAbsoluteUri
-                    ? new Uri(next.GetString()!).PathAndQuery : next.GetString()
-                : null;
+            path = Cx01Protocol.NextPage(response.RootElement.TryGetProperty("@odata.nextLink", out var next)
+                ? next.GetString() : null);
         }
         return count;
     }
@@ -232,11 +226,8 @@ public sealed class Cx01SurveyProbe(ICx01SurveyRemotePort remote, IClock clock)
                     mandatory, defaultValue, mandatory is "tYES" or "Y"
                     && string.IsNullOrWhiteSpace(defaultValue), written.Contains(table), Int(row, "Size")));
             }
-            path = response.RootElement.TryGetProperty("@odata.nextLink", out var next)
-                && !string.IsNullOrWhiteSpace(next.GetString())
-                ? new Uri(next.GetString()!, UriKind.RelativeOrAbsolute).IsAbsoluteUri
-                    ? new Uri(next.GetString()!).PathAndQuery : next.GetString()
-                : null;
+            path = Cx01Protocol.NextPage(response.RootElement.TryGetProperty("@odata.nextLink", out var next)
+                ? next.GetString() : null);
         }
         return result;
     }

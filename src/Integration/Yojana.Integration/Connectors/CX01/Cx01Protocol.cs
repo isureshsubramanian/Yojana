@@ -30,6 +30,16 @@ internal static class Cx01Protocol
     public const string ApprovalTemplates = "ApprovalTemplates";
     public const string Drafts = "Drafts";
 
+    /// <summary>
+    /// The request path for a page link. The live service returns <c>@odata.nextLink</c> relative to the service
+    /// root ("Items?$skip=20"); requests resolve against the host, so a bare link must be put back under Root.
+    /// </summary>
+    public static string? NextPage(string? link) =>
+        string.IsNullOrWhiteSpace(link) ? null
+        : Uri.TryCreate(link, UriKind.Absolute, out var absolute) && absolute.Scheme is "http" or "https"
+            ? absolute.PathAndQuery
+        : link.StartsWith('/') ? link : Root + link;
+
     public static readonly IReadOnlyDictionary<string, Cx01EntityDefinition> Entities =
         new Dictionary<string, Cx01EntityDefinition>(StringComparer.Ordinal)
         {

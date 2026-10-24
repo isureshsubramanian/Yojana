@@ -450,8 +450,7 @@ public sealed class Cx01Adapter(
             }
             if (result.Count == maximum || !response.RootElement.TryGetProperty("@odata.nextLink", out var next)
                 || string.IsNullOrWhiteSpace(next.GetString())) break;
-            path = new Uri(next.GetString()!, UriKind.RelativeOrAbsolute).IsAbsoluteUri
-                ? new Uri(next.GetString()!).PathAndQuery : next.GetString()!;
+            path = Cx01Protocol.NextPage(next.GetString())!;
         }
         return result;
     }

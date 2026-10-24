@@ -18,6 +18,15 @@ namespace Yojana.Integration.Tests;
 
 public sealed class Cx01AdapterTests
 {
+    [Theory]
+    [InlineData("Items?$top=80&$skip=20", "/b1s/v2/Items?$top=80&$skip=20")]
+    [InlineData("/b1s/v2/Items?$skip=20", "/b1s/v2/Items?$skip=20")]
+    [InlineData("https://erp.example.invalid:50000/b1s/v2/Items?$skip=20", "/b1s/v2/Items?$skip=20")]
+    [InlineData("", null)]
+    [InlineData(null, null)]
+    public void A_page_link_relative_to_the_service_root_stays_under_it(string? link, string? expected) =>
+        Assert.Equal(expected, Cx01Protocol.NextPage(link));
+
     [Fact]
     public async Task Session_carries_both_cookies_relogs_after_expiry_and_retries_throttling()
     {

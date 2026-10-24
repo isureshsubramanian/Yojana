@@ -279,8 +279,7 @@ public sealed class Cx01DocumentPoster(Cx01Settings settings, Cx01SurveyService 
                 var code = Cx01ReviewKey.Text(row, "DocObjectCode");
                 if (code == target.DraftObjectCode || code == objectCode) return Cx01ReviewKey.Text(row, "DocEntry");
             }
-            path = Cx01ReviewKey.Text(response.RootElement, "@odata.nextLink");
-            if (path is not null && Uri.TryCreate(path, UriKind.Absolute, out var next)) path = next.PathAndQuery;
+            path = Cx01Protocol.NextPage(Cx01ReviewKey.Text(response.RootElement, "@odata.nextLink"));
         }
         return null;
     }
