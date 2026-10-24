@@ -132,7 +132,9 @@ public sealed record InternalServiceCost(
     DateTime RecordedAt,
     string? InternalNote,
     decimal? Cost,
-    string? Currency);
+    string? Currency,
+    // The claim, RMA or work order id, so screens can open the record by its opaque id.
+    Guid? RecordId = null);
 
 public sealed record InternalUnitLookup(
     string Serial,

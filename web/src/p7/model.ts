@@ -39,3 +39,10 @@ export const publicLookupFields = ["itemCode", "itemName", "condition", "manufac
 export const portalUnitSections = ["coverage", "service history", "certificates", "registration", "fault report"] as const;
 export function internalSections(lookup: { ownership: unknown[]; serviceHistory: unknown[] }): number { return lookup.ownership.length + (lookup.serviceHistory.length ? 1 : 0); }
 export function tone(value: string): "ok" | "warn" | "bad" | "info" | "neutral" { const v = value.toLowerCase(); if (["active", "applied", "found", "verified", "current", "issued", "archived"].some((x) => v.includes(x))) return "ok"; if (["invalid", "rejected", "expired", "collision", "not_found"].some((x) => v.includes(x))) return "bad"; if (["pending", "flag", "another", "inbox", "mapped"].some((x) => v.includes(x))) return "warn"; return "neutral"; }
+
+/** The detail screen of a service-history record, by its opaque id; null when the kind has no screen or no id. */
+export function serviceRecordPath(kind: string, recordId: string | null | undefined): string | null {
+  if (!recordId) return null;
+  const base = ({ claim: "/claims", rma: "/returns", refurbishment: "/refurbishments" } as Record<string, string | undefined>)[kind];
+  return base ? `${base}/${recordId}` : null;
+}

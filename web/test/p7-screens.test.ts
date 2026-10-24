@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { acceptedImportFormats, acceptsImportFile, actionOptions, coverageLabel, disclosureLocked, human, internalSections, portalUnitSections, publicLookupFields, reconciliationKpis, splitValues, xrefIndent } from "../src/p7/model.ts";
+import { acceptedImportFormats, acceptsImportFile, actionOptions, serviceRecordPath, coverageLabel, disclosureLocked, human, internalSections, portalUnitSections, publicLookupFields, reconciliationKpis, splitValues, xrefIndent } from "../src/p7/model.ts";
 import { countryName } from "../src/reference/countries.ts";
 
 test("import job accepts every approved spreadsheet format and rejects unrelated files", () => {
@@ -107,4 +107,12 @@ test("an internal lookup that matches no unit says so in the results instead of 
   const screen = screens.slice(screens.indexOf("export function InternalLookupScreen"), screens.indexOf("export function XrefScreen"));
   assert.ok(screen.includes("reason instanceof ApiError && reason.status === 404) setMissing(value.trim()); else setError(reason)"), "404 is a result");
   assert.ok(screen.includes("No unit matches “${missing}”"), "named in the empty state");
+});
+
+test("service-history references open their claim, RMA or work order by opaque id", () => {
+  assert.equal(serviceRecordPath("claim", "0f1e"), "/claims/0f1e");
+  assert.equal(serviceRecordPath("rma", "0f1e"), "/returns/0f1e");
+  assert.equal(serviceRecordPath("refurbishment", "0f1e"), "/refurbishments/0f1e");
+  assert.equal(serviceRecordPath("claim", null), null);
+  assert.equal(serviceRecordPath("unknown_kind", "0f1e"), null);
 });

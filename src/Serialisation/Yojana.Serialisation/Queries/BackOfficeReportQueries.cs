@@ -364,20 +364,20 @@ public sealed class BackOfficeReportQueries(
                             join claim in db.Claims.AsNoTracking() on new { line.TenantId, line.ClaimId } equals new { claim.TenantId, claim.ClaimId }
                             where line.TenantId == tenant.TenantId && line.UnitId == unitId
                             select new InternalServiceCost("claim", claim.ClaimNumber, claim.Status, claim.SubmittedAt,
-                                line.Description, line.ApprovedAmount != 0 ? line.ApprovedAmount : line.RequestedAmount, claim.Currency))
+                                line.Description, line.ApprovedAmount != 0 ? line.ApprovedAmount : line.RequestedAmount, claim.Currency, claim.ClaimId))
             .ToListAsync(cancellationToken);
         var rmas = await (from line in db.RmaLines.AsNoTracking()
                           join rma in db.Rmas.AsNoTracking() on new { line.TenantId, line.RmaId } equals new { rma.TenantId, rma.RmaId }
                           where line.TenantId == tenant.TenantId && (line.RequestedUnitId == unitId || line.AuthorisedUnitId == unitId
                               || line.ReceivedUnitId == unitId || line.ProvisionalUnitId == unitId)
                           select new InternalServiceCost("rma", rma.RmaNumber ?? "RMA PENDING", rma.Stage, rma.RequestedAt,
-                              line.Description, line.ApprovedAmount, rma.Currency)).ToListAsync(cancellationToken);
+                              line.Description, line.ApprovedAmount, rma.Currency, rma.RmaId)).ToListAsync(cancellationToken);
         var refurbishment = await (from cost in db.RefurbishmentCosts.AsNoTracking()
                                    join work in db.RefurbishmentWorkOrders.AsNoTracking()
                                        on new { cost.TenantId, cost.WorkOrderId } equals new { work.TenantId, work.WorkOrderId }
                                    where cost.TenantId == tenant.TenantId && work.TargetUnitId == unitId
                                    select new InternalServiceCost("refurbishment", work.WorkOrderNumber, work.Status, cost.PostedAt,
-                                       cost.Description, cost.Amount, cost.Currency)).ToListAsync(cancellationToken);
+                                       cost.Description, cost.Amount, cost.Currency, work.WorkOrderId)).ToListAsync(cancellationToken);
         return claims.Concat(rmas).Concat(refurbishment).OrderByDescending(row => row.RecordedAt).ToList();
     }
 
