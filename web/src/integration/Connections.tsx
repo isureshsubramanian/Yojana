@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useBlocker } from "react-router";
-import { FormActions, type GridColumn } from "../components";
+import { Link, useBlocker, useSearchParams } from "react-router";
+import { ActionDialog, FormActions, type GridColumn } from "../components";
+import { Icon } from "../shell/Icons";
 import { useSession } from "../session/session";
 import { ErrorNote, Kv } from "../units/common";
 import { degradationLabel, human, recordLabel } from "./model";
@@ -11,7 +12,8 @@ import type { ArchiveResult, ChecklistItem, CoexistenceSettings, Connection, Con
 
 export function Component() { return <RoleAccess><ConnectionsScreen /></RoleAccess>; }
 function ConnectionsScreen() {
-  const admin = useSession().roles.includes("tenant_administrator"); const [archived, setArchived] = useState(false); const [selected, setSelected] = useState<string | null>(null); const [register, setRegister] = useState(false);
+  const admin = useSession().roles.includes("tenant_administrator"); const [params, setParams] = useSearchParams(); const [archived, setArchived] = useState(false); const [selected, setSelectedState] = useState<string | null>(() => params.get("connection")); const [register, setRegister] = useState(false);
+  const setSelected = (id: string | null) => { setSelectedState(id); setParams(id ? { connection: id } : {}); };
   const [relayLocked, setRelayLocked] = useState(false);
   const blocker = useBlocker(relayLocked);
   useEffect(() => {
@@ -63,17 +65,22 @@ function CertificateDetails({ value }: { value: ServiceCertificate | null }) {
   return value ? <Kv rows={[["Subject", value.subject], ["Issuer", value.issuer], ["Valid from", date(value.validFrom)], ["Valid to", date(value.validTo)], ["SHA-256 fingerprint", value.sha256Fingerprint]]} /> : null;
 }
 function ConnectionPanels({ id, admin, changed, relayRegistrationAllowed, onOneTimeChange }: { id: string; admin: boolean; changed: () => void; relayRegistrationAllowed: boolean; onOneTimeChange: (value: boolean) => void }) {
-  const [detail, setDetail] = useState<ConnectionDetail | null>(null); const [error, setError] = useState<unknown>(null); const [revision, setRevision] = useState(0); const [report, setReport] = useState<ArchiveResult | null>(null); const [reason, setReason] = useState(""); const action = useAction();
+  const [detail, setDetail] = useState<ConnectionDetail | null>(null); const [error, setError] = useState<unknown>(null); const [revision, setRevision] = useState(0); const [report, setReport] = useState<ArchiveResult | null>(null); const [reason, setReason] = useState(""); const [syncDialog, setSyncDialog] = useState<"stop" | "resume" | null>(null); const [stopReason, setStopReason] = useState(""); const [resumeNote, setResumeNote] = useState(""); const action = useAction(); const syncAction = useAction();
   useEffect(() => { const controller = new AbortController(); setError(null); adminApi.detail(id, controller.signal).then(setDetail).catch(reason => { if (!controller.signal.aborted) setError(reason); }); return () => controller.abort(); }, [id, revision]);
   const refresh = () => { setRevision(x => x + 1); changed(); };
   if (!detail) return <><ErrorNote error={error} /><p role="status">{error ? "Connection details could not be loaded." : "Loading connection…"}</p><button className="btn" onClick={refresh}>Retry</button></>;
   const isArchived = detail.connection.status === "archived" || detail.archivedAt !== null;
   const active = detail.lifecycleStatus === "active";
   return <><ErrorNote error={error} /><Panel title={detail.connection.connectionName} actions={<State value={detail.connection.status} />}>
-    <Kv rows={[["Connector", detail.connection.connectorName], ["Registered", date(detail.createdAt)], ["Archived", date(detail.archivedAt)], ["What we write", human(detail.settings.outboundMode)], ["ERP warranty fields", human(detail.settings.nativeWarrantyObjectMode)], ["Warranty contracts are maintained in", detail.settings.warrantyContractsMaintainedIn === "module" ? "Module" : "The incumbent until cutover"], ["Ordering wait", `${detail.settings.orderingWaitMinutes} minutes`]]} />
+    <Kv rows={[["Connector", detail.connection.connectorName], ["Registered", date(detail.createdAt)], ["Archived", date(detail.archivedAt)], ["Sync", syncLabel(detail.sync)], ["Outbound messages waiting", detail.sync.waitingOutbound.toLocaleString()], ["Remote notifications", `${human(detail.sync.notifications)}${detail.sync.notificationFailureCode ? ` · ${human(detail.sync.notificationFailureCode)}` : ""}`], ["What we write", human(detail.settings.outboundMode)], ["ERP warranty fields", human(detail.settings.nativeWarrantyObjectMode)], ["Warranty contracts are maintained in", detail.settings.warrantyContractsMaintainedIn === "module" ? "Module" : "The incumbent until cutover"], ["Ordering wait", `${detail.settings.orderingWaitMinutes} minutes`]]} />
+    {detail.sync.catchingUp && <div className="note" role="status">Catching up since {date(detail.sync.resumedAt)}.</div>}
     {!isArchived && <div className="toolbar">{detail.features.tenantSideExtension && <Link className="btn" to={`/integration/connections/${id}/extension`}>Extension</Link>}<Link className="btn" to={`/integration/connections/${id}/verification`}>Verification record</Link><button className="btn" disabled={action.busy || !active} onClick={() => void action.run(async () => { await adminApi.smoke(id); refresh(); }, "Smoke-read finished. Review health and onboarding results.")}>Re-run smoke-read</button><button className="btn" disabled={action.busy} onClick={() => void action.run(async () => { const result = await adminApi.archive(id); setReport(result); refresh(); }, "Archive request checked.")}>Archive connection</button></div>}
+    {admin && !isArchived && <FormActions>{detail.sync.state === "running" ? <button type="button" className="btn" disabled={syncAction.busy} onClick={() => setSyncDialog("stop")}><Icon name="x" />Stop sync</button> : <button type="button" className="btn primary" disabled={syncAction.busy} onClick={() => setSyncDialog("resume")}><Icon name="cycle" />Resume sync</button>}</FormActions>}
     {report && <div className="stack"><h3>{report.archived ? "Connection archived" : "Archive preconditions"}</h3><Kv rows={[["Waiting to send", report.preconditions.waitingOutbox], ["Messages needing attention", report.preconditions.openDeadLetters], ["Running history loads", report.preconditions.runningBackfills], ["Open hand entries", report.preconditions.openManualTasks]]} />{report.cleanupErrorCode && <div className="note warn">Remote cleanup needs review. Check connection events before continuing.</div>}{!report.archived && admin && <form className="stack" onSubmit={e => { e.preventDefault(); void action.run(async () => { setReport(await adminApi.archive(id, true, reason.trim())); refresh(); }, "Forced archive recorded."); }}><div className="note warn">Force archives despite pending work. Existing records remain available for review.</div><label className="field"><span className="lbl">Mandatory force-archive reason</span><input className="input" required value={reason} onChange={e => setReason(e.target.value)} /></label><button className="btn" disabled={action.busy || !reason.trim()}>Force archive with reason</button></form>}</div>}{action.feedback}
   </Panel>
+  {syncDialog === "stop" && <ActionDialog title="Stop sync" onCancel={() => setSyncDialog(null)} actions={<button type="submit" form="stop-sync-form" className="btn primary" disabled={syncAction.busy || !stopReason.trim()}>Stop sync</button>}><form id="stop-sync-form" className="stack" onSubmit={event => { event.preventDefault(); if (!stopReason.trim()) return; void syncAction.run(async () => { await adminApi.stopSync(id, stopReason.trim()); setSyncDialog(null); setStopReason(""); refresh(); }, "Sync stopped. Remote notifications will be held in the background."); }}><p className="muted">Polling and outbound delivery stop immediately. Waiting messages stay queued.</p><label className="field"><span className="lbl">Reason</span><textarea className="input" required maxLength={2000} value={stopReason} onChange={event => setStopReason(event.target.value)} /></label></form></ActionDialog>}
+  {syncDialog === "resume" && <ActionDialog title="Resume sync" onCancel={() => setSyncDialog(null)} actions={<button type="submit" form="resume-sync-form" className="btn primary" disabled={syncAction.busy}>Resume sync</button>}><form id="resume-sync-form" className="stack" onSubmit={event => { event.preventDefault(); void syncAction.run(async () => { await adminApi.resumeSync(id, resumeNote); setSyncDialog(null); setResumeNote(""); refresh(); }, "Sync resumed. Polling is catching up from where it stopped."); }}><p className="muted">Polling resumes straight away and catches up from where it stopped. Nothing is lost.</p><label className="field"><span className="lbl">Note (optional)</span><textarea className="input" maxLength={2000} value={resumeNote} onChange={event => setResumeNote(event.target.value)} /></label></form></ActionDialog>}
+  {syncAction.feedback}
   <Panel title="Sign-in secrets"><p className="muted">Set / not set and dates only. Stored secrets cannot be viewed.</p>{detail.credentials.length ? detail.credentials.map(x => <div key={x.purpose}><h3>{human(x.purpose)}</h3><State value={x.isSet ? "set" : "not_set"} /><Kv rows={[["Created", date(x.createdAt)], ["Expires", date(x.expiresAt)], ["Replace by", date(x.replaceBy)], ["Retired", date(x.retiredAt)]]} /></div>) : <p>No stored credentials. Site credentials remain at the customer site.</p>}</Panel>
   <Panel title="Getting live"><div className="note">{detail.checklist.customerCostDisclosure}</div>{detail.checklist.items.map(item => <ChecklistRow key={item.code} id={id} item={item} admin={admin && !isArchived} refresh={refresh} />)}</Panel>
   <WarrantyContractMaintenance id={id} admin={admin} changed={refresh} />
@@ -86,6 +93,12 @@ function ConnectionPanels({ id, admin, changed, relayRegistrationAllowed, onOneT
   {!relayRegistrationAllowed && <p className="help">Close connection registration before registering a site relay.</p>}
   <SiteRelays id={id} admin={admin && !isArchived} canRegister={active && relayRegistrationAllowed} onOneTimeChange={onOneTimeChange} />
   </>;
+}
+
+function syncLabel(sync: ConnectionDetail["sync"]) {
+  if (sync.state === "running") return "Running";
+  if (!sync.stoppedAt) return "Stopped";
+  return `Stopped since ${date(sync.stoppedAt)} by ${sync.stoppedByName ?? "Unknown user"}: ${sync.stopReason ?? "Reason unavailable"}`;
 }
 function OnboardingSettings({ id, detail, admin, changed }: { id: string; detail: ConnectionDetail; admin: boolean; changed: () => void }) {
   const initial = detail.settings.syncStart ?? { mode: "today" as const, date: null, masterDataFull: true };

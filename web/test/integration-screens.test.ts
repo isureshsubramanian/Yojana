@@ -143,6 +143,33 @@ test("connection onboarding exposes start modes, certificate confirmation and gu
     assert.ok(adminApi.includes(path), path);
 });
 
+test("connection stop and resume dialogs are administrator-only and keep their server contracts", () => {
+  assert.match(connections, /admin && !isArchived && <FormActions>/);
+  assert.match(connections, /detail\.sync\.state === "running"/);
+  for (const label of ["Stop sync", "Resume sync", "Reason", "Note (optional)", "Outbound messages waiting", "Remote notifications"])
+    assert.match(connections, new RegExp(label.replace(/[()]/g, "\\$&")));
+  assert.match(connections, /syncDialog === "stop" && <ActionDialog title="Stop sync"/);
+  assert.match(connections, /disabled=\{syncAction\.busy \|\| !stopReason\.trim\(\)\}/);
+  assert.match(connections, /required maxLength=\{2000\}/);
+  assert.match(connections, /syncDialog === "resume" && <ActionDialog title="Resume sync"/);
+  assert.match(connections, /maxLength=\{2000\} value=\{resumeNote\}/);
+  assert.match(connections, /<Icon name="x" \/>Stop sync/);
+  assert.match(connections, /<Icon name="cycle" \/>Resume sync/);
+  assert.match(adminApi, /stopSync:.*\/stop-sync.*body: \{ reason \}/);
+  assert.match(adminApi, /resumeSync:.*\/resume-sync.*note: note\?\.trim\(\) \|\| null/);
+  assert.doesNotMatch(adminApi, /actor|stoppedBy|resumedBy/i);
+});
+
+test("connection detail and health render running stopped and catching-up states with detail links", () => {
+  for (const screen of [connections, health]) {
+    assert.match(screen, /sync\.state === "running"/);
+    assert.match(screen, /Stopped since/);
+    assert.match(screen, /Catching up since/);
+  }
+  assert.match(health, /to=\{`\/integration\/connections\?connection=\$\{x\.connectionId\}`\}/g);
+  assert.match(health, /syncLabel\(x\.sync\)/g);
+});
+
 test("connection health shows classified failures for the connection and each entity", () => {
   assert.match(health, /health\.lastErrorCode/);
   assert.match(health, /x\.lastErrorCode/);

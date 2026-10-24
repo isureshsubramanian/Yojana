@@ -261,8 +261,9 @@ export interface MigrationLoadHandOver {
 export interface MigrationSyncControlResult {
   connectionId: string;
   syncState: string;
-  notificationsHeld: boolean;
+  notifications: "pending" | "held" | "not_held" | "not_supported";
   waitingOutbound: number;
+  failureCode: string | null;
   warning: string | null;
 }
 

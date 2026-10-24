@@ -113,6 +113,9 @@ public sealed class Cx04ConnectionLifecycleAdapter(IntegrationDbContext db, Cx04
         await client.SignOutCurrentAsync(connectionId, ct);
     }
 
+    public async Task<bool> SupportsNotificationControlAsync(Guid connectionId, CancellationToken ct) =>
+        !string.IsNullOrWhiteSpace((await settings.GetAsync(connectionId, ct)).NotificationSecretSha256);
+
     public Task SuspendNotificationsAsync(Guid connectionId, CancellationToken ct) =>
         db.ConnectionNotificationSources.Where(row => row.ConnectionId == connectionId)
             .ExecuteUpdateAsync(update => update.SetProperty(row => row.Enabled, false), ct);

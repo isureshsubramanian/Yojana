@@ -72,7 +72,11 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
         var healthColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'connection_health'").ToListAsync();
         AssertSuperset(healthColumns, "tenant_id", "inbound_count_date_utc", "completed_inbound_days_json");
         var connectionColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'connection'").ToListAsync();
-        AssertSuperset(connectionColumns, "last_smoke_read_failure_code", "last_smoke_read_failure_detail");
+        AssertSuperset(connectionColumns, "last_smoke_read_failure_code", "last_smoke_read_failure_detail",
+            "sync_stopped_at", "sync_stopped_by", "sync_stop_reason", "sync_resumed_at",
+            "notification_control_state", "notification_control_failure_code", "notification_control_action",
+            "notification_control_next_attempt_at", "notification_control_attempt_count",
+            "notification_control_revision");
         var gatewayColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'connection_gateway_setting'").ToListAsync();
         AssertSuperset(gatewayColumns, "sync_start_mode", "sync_start_date", "sync_start_configured_at",
             "master_data_full", "service_certificate_sha256");

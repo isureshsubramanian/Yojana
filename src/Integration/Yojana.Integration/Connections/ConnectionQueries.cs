@@ -7,6 +7,7 @@ using Yojana.Integration.Contracts;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Gateway;
+using Yojana.Integration.Notifications;
 using Yojana.Integration.Reconciliation;
 using Yojana.Integration.Security.Workers;
 using Yojana.Platform.Contracts.Security;
@@ -56,14 +57,18 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
             .Select(x => x.ConnectionId).Distinct().ToListAsync(ct);
         var catalogue = await db.ConnectorCatalogue.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
             && codes.Contains(x.ConnectorCode)).ToDictionaryAsync(x => x.ConnectorCode, x => x.DisplayName, ct);
+        var sync = await SyncStatesAsync(rows.Take(take).ToList(), health.ToDictionary(x => x.Key,
+            x => x.Value.OutboxDepth), ct);
         var views = rows.Take(take).Select(connection =>
         {
             var state = health.GetValueOrDefault(connection.ConnectionId) ?? Missing(connection);
             var configured = gateway.GetValueOrDefault(connection.ConnectionId);
             return new ConnectionSummary(connection.ConnectionId, connection.DisplayLabel, connection.ConnectorCode,
                 catalogue.GetValueOrDefault(connection.ConnectorCode) ?? connection.ConnectorCode,
-                state.Status, state.IsLive, configured?.OutboundMode ?? "none", configured?.ReadOnly ?? true,
-                View(state), accepted.Contains(connection.ConnectionId));
+                connection.Status == ConnectionStatus.Paused ? "paused" : state.Status,
+                connection.Status == ConnectionStatus.Active && state.IsLive,
+                configured?.OutboundMode ?? "none", configured?.ReadOnly ?? true,
+                View(state), accepted.Contains(connection.ConnectionId), sync[connection.ConnectionId]);
         }).ToList();
         return new(views, rows.Count > take ? views[^1].ConnectionId.ToString("D") : null, await KpisAsync(ct));
     }
@@ -73,7 +78,8 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
         var page = await ListAsync(cursor, take, false, ct);
         return new(page.Items.Select(row => new TenantConnectionStatus(row.ConnectionId, row.ConnectionName,
             row.Status, row.IsLive, row.Health.CheckedUpTo, row.Health.WaitingToSend, row.Health.OpenDeadLetters,
-            row.Health.OpenManualTasks, row.Status is "down" or "degraded" ? 1 : 0, row.Health.UpdatedAt)).ToList(), page.NextCursor, page.Kpis);
+            row.Health.OpenManualTasks, row.Status is "down" or "degraded" ? 1 : 0, row.Health.UpdatedAt,
+            row.Sync)).ToList(), page.NextCursor, page.Kpis);
     }
 
     public async Task<ConnectionDetail> DetailAsync(Guid id, CancellationToken ct)
@@ -108,8 +114,14 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
         var acceptancePassed = await db.ConnectorAcceptanceRuns.AsNoTracking().AnyAsync(x =>
             x.TenantId == tenant.TenantId && x.ConnectionId == id
             && x.Status == ConnectorAcceptanceRunStatus.Passed, ct);
-        return new(new(id, connection.DisplayLabel, connection.ConnectorCode, name, health.Status, health.IsLive,
-                gateway.OutboundMode, gateway.ReadOnly, View(health), acceptancePassed), connection.CreatedAt,
+        var sync = (await SyncStatesAsync([connection], new Dictionary<Guid, int>
+        {
+            [id] = health.OutboxDepth,
+        }, ct))[id];
+        return new(new(id, connection.DisplayLabel, connection.ConnectorCode, name,
+                connection.Status == ConnectionStatus.Paused ? "paused" : health.Status,
+                connection.Status == ConnectionStatus.Active && health.IsLive,
+                gateway.OutboundMode, gateway.ReadOnly, View(health), acceptancePassed, sync), connection.CreatedAt,
             connection.ArchivedAt,
             capabilities, new(gateway.OutboundMode, gateway.ReadOnly, gateway.NativeWarrantyObjectMode,
                 (await warrantyContracts.GetAsync(ct)).MaintainedIn,
@@ -120,7 +132,7 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
             await checklist.GenerateAsync(id, ct), connection.Status,
             await reconciliationSettings.WindowDaysAsync(id, ct), await reconciliationDay.TodayAsync(id, ct),
             adapter is null ? null : await adapter.AuthorisationAsync(id, ct),
-            adapter?.Features ?? ConnectionFeatures.None);
+            adapter?.Features ?? ConnectionFeatures.None, sync);
     }
 
     public async Task<ConnectionHealthDetail> HealthAsync(Guid id, CancellationToken ct)
@@ -128,13 +140,22 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
         var connection = await ConnectionAsync(id, ct);
         var row = await db.ConnectionHealth.AsNoTracking().SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
             && x.ConnectionId == id, ct) ?? Missing(connection);
+        if (connection.Status == ConnectionStatus.Paused)
+        {
+            row.Status = "paused";
+            row.IsLive = false;
+        }
         // A stopped connection may be waiting on the final migration load's hand-over (OD-60); a running one is not.
         var notes = services.GetService(typeof(IConnectionHandOverNotes)) as IConnectionHandOverNotes;
         var handOver = connection.Status == ConnectionStatus.Active || notes is null ? null
             : await notes.ForAsync(id, ct);
+        var sync = (await SyncStatesAsync([connection], new Dictionary<Guid, int>
+        {
+            [id] = row.OutboxDepth,
+        }, ct))[id];
         return new(id, connection.DisplayLabel, View(row),
             JsonSerializer.Deserialize<List<RecordTypeHealth>>(row.RecordTypesJson, IntegrationContracts.Json) ?? [],
-            handOver);
+            handOver, sync);
     }
 
     public async Task<ConnectionEventPage> EventsAsync(Guid id, string? cursor, int take, CancellationToken ct)
@@ -153,6 +174,38 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
         return new(rows.Take(take).Select(x => new ConnectionEventView(x.SequenceNo, x.EventType, x.OccurredAt,
                 names.GetValueOrDefault(x.ActorRef) ?? (x.ActorRef.StartsWith("system:", StringComparison.Ordinal)
                     ? "System" : "Unknown user"), EventSummary(x.EventType))).ToList(), rows.Count > take ? rows[take - 1].SequenceNo.ToString(CultureInfo.InvariantCulture) : null);
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, ConnectionSyncState>> SyncStatesAsync(
+        List<Connection> connections, IReadOnlyDictionary<Guid, int> waiting, CancellationToken ct)
+    {
+        if (connections.Count == 0) return new Dictionary<Guid, ConnectionSyncState>();
+        var ids = connections.Select(x => x.ConnectionId).ToList();
+        var watermarks = await db.ConnectionPollWatermarks.AsNoTracking()
+            .Where(x => x.TenantId == tenant.TenantId && ids.Contains(x.ConnectionId))
+            .Select(x => new { x.ConnectionId, x.Watermark }).ToListAsync(ct);
+        var actorRefs = connections.Where(x => !string.IsNullOrWhiteSpace(x.SyncStoppedBy))
+            .Select(x => x.SyncStoppedBy!).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var names = actorRefs.Count == 0
+            ? new Dictionary<string, string>()
+            : await people.DisplayNamesAsync(actorRefs, ct);
+        return connections.ToDictionary(connection => connection.ConnectionId, connection =>
+        {
+            var resumedAt = connection.SyncResumedAt;
+            var rows = watermarks.Where(x => x.ConnectionId == connection.ConnectionId).ToList();
+            var seed = services.GetKeyedService<IConnectorWatermarkSeed>(connection.ConnectorCode);
+            var catchingUp = connection.Status == ConnectionStatus.Active && resumedAt is not null
+                && rows.Count > 0 && (seed is null || rows.Any(row => row.Watermark is not { Length: > 0 } value
+                    || seed.InstantOf(value) is not { } instant || instant <= resumedAt));
+            string? stoppedByName = null;
+            if (connection.SyncStoppedBy is { Length: > 0 } actor)
+                stoppedByName = names.GetValueOrDefault(actor) ?? (actor.StartsWith(IUserDirectory.AutomaticActorPrefix,
+                    StringComparison.Ordinal) ? "System" : "Unknown user");
+            return new ConnectionSyncState(connection.Status == ConnectionStatus.Paused ? "stopped" : "running",
+                connection.SyncStoppedAt, stoppedByName, connection.SyncStopReason, resumedAt, catchingUp,
+                connection.NotificationControlState, connection.NotificationControlFailureCode,
+                waiting.GetValueOrDefault(connection.ConnectionId));
+        });
     }
 
     private async Task<ConnectionKpis> KpisAsync(CancellationToken ct)
@@ -204,6 +257,8 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
         "ExtensionChecked" => "Tenant-side extension checked",
         "ConnectionSyncBaselined" => "Connection reading re-baselined",
         "ConnectionCertificatePinned" => "Server certificate pin changed",
+        "SyncStopped" => "Sync stopped",
+        "SyncResumed" => "Sync resumed",
         _ => "Connection activity recorded",
     };
 

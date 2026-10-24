@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
@@ -10,10 +11,20 @@ namespace Yojana.Integration.Tests;
 public sealed class CoexistenceTests
 {
     [Fact]
-    public void Coexistence_endpoints_need_integration_operations_and_settings_and_planning_need_an_administrator()
+    public async Task Coexistence_endpoints_need_integration_operations_and_stop_resume_settings_and_planning_need_an_administrator()
     {
         var builder = WebApplication.CreateBuilder();
-        builder.Services.AddAuthorization();
+        builder.Services.AddAuthorization(options =>
+        {
+            options.AddPolicy(YojanaPolicy.IntegrationOperations, policy => policy.RequireAuthenticatedUser()
+                .RequireClaim(YojanaClaim.TenantId)
+                .RequireClaim(YojanaClaim.Role, YojanaRole.TenantAdministrator,
+                    YojanaRole.IntegrationOperator));
+            options.AddPolicy(YojanaPolicy.TenantAdministrator, policy => policy.RequireAuthenticatedUser()
+                .RequireClaim(YojanaClaim.TenantId)
+                .RequireClaim(YojanaClaim.Role, YojanaRole.TenantAdministrator));
+            options.AddPolicy(YojanaPolicy.ParallelRunRead, policy => policy.RequireAuthenticatedUser());
+        });
         builder.Services.AddScoped<CoexistenceSettings>();
         builder.Services.AddScoped<WarrantyContractMaintenanceSettings>();
         builder.Services.AddScoped<CoexistenceDriftService>();
@@ -44,11 +55,25 @@ public sealed class CoexistenceTests
             "/api/integration/connections/{connectionId:guid}/parallel-run/handover/{kind}/confirm POST",
             "/api/integration/connections/{connectionId:guid}/parallel-run/handover/{kind}/plan PUT",
             "/api/integration/connections/{connectionId:guid}/parallel-run/month-end-close PUT",
+            "/api/integration/connections/{connectionId:guid}/resume-sync POST",
+            "/api/integration/connections/{connectionId:guid}/stop-sync POST",
             "/api/integration/connections/{connectionId:guid}/warranty-contracts PUT",
         ], administrator);
-        // Stopping must stay available to the integration operator: rollback cannot wait for an administrator.
-        Assert.DoesNotContain(endpoints.Single(endpoint => endpoint.RoutePattern.RawText!.EndsWith("/stop-sync", StringComparison.Ordinal))
-            .Metadata.GetOrderedMetadata<IAuthorizeData>(), policy => policy.Policy == YojanaPolicy.TenantAdministrator);
+        foreach (var route in new[] { "/stop-sync", "/resume-sync" })
+            Assert.Contains(endpoints.Single(endpoint => endpoint.RoutePattern.RawText!.EndsWith(route,
+                    StringComparison.Ordinal)).Metadata.GetOrderedMetadata<IAuthorizeData>(),
+                policy => policy.Policy == YojanaPolicy.TenantAdministrator);
+        var authorisation = app.Services.GetRequiredService<IAuthorizationService>();
+        ClaimsPrincipal Principal(string role) => new(new ClaimsIdentity([
+            new Claim(YojanaClaim.TenantId, Guid.NewGuid().ToString("D")),
+            new Claim(YojanaClaim.Role, role),
+        ], "test"));
+        Assert.True((await authorisation.AuthorizeAsync(Principal(YojanaRole.TenantAdministrator), null,
+            YojanaPolicy.TenantAdministrator)).Succeeded);
+        Assert.False((await authorisation.AuthorizeAsync(Principal(YojanaRole.IntegrationOperator), null,
+            YojanaPolicy.TenantAdministrator)).Succeeded);
+        Assert.False((await authorisation.AuthorizeAsync(Principal(YojanaRole.ServiceManager), null,
+            YojanaPolicy.TenantAdministrator)).Succeeded);
         foreach (var type in new[] { typeof(StopSync), typeof(ResumeSync), typeof(ResolveCoexistenceConflict),
                      typeof(UpdateCoexistenceSettings), typeof(UpdateWarrantyContractMaintenance),
                      typeof(StartParallelRun), typeof(ConfirmParallelRunItem), typeof(SetMonthEndClose),
