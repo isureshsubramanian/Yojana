@@ -27,7 +27,7 @@ export interface CorrectionKpiReport { from: string; to: string; breakdown: stri
 
 export interface ReassignAllocation {
   commandId: string; fromProductionOrder: DocumentRef; toProductionOrder: DocumentRef; mode: string; fromSerials: SelectionSource;
-  toSerials: SelectionSource | null; reason: string; eventTime: string; actorRef: string; legalEntityId: string; note: string | null;
+  toSerials: SelectionSource | null; reason: string; eventTime: string; actorRef: string; legalEntityId?: string; note: string | null;
 }
 export interface ReassignAllocationResult { correctionId: string; eventId: string | null; preview: CorrectionPreview; replayed: boolean }
 
@@ -35,11 +35,11 @@ export interface CorrectionApprovalDecision { status: string; commitRoles: strin
 export interface MergeUnitsAlternative { resolution: string; available: boolean; summary: string; refusal: CommandRefusal | null }
 export interface PreviewMergeUnits { firstUnitId: string; secondUnitId: string; eventTime: string; survivorUnitId: string | null }
 export interface MergeUnitsPreviewResult { recommendedSurvivorUnitId: string; survivorUnitId: string; absorbedUnitId: string; preview: CorrectionPreview; approval: CorrectionApprovalDecision; alternatives: MergeUnitsAlternative[] }
-export interface MergeUnits { commandId: string; survivorUnitId: string; absorbedUnitId: string; reason: string; eventTime: string; actorRef: string; legalEntityId: string; resolution: string; vendorSerialValue: string | null; note: string | null }
+export interface MergeUnits { commandId: string; survivorUnitId: string; absorbedUnitId: string; reason: string; eventTime: string; actorRef: string; legalEntityId?: string; resolution: string; vendorSerialValue: string | null; note: string | null }
 export interface MergeUnitsResult { survivorUnitId: string; absorbedUnitId: string; resolution: string; correctionId: string; rowsRepointed: number; reversed: boolean; replayed: boolean }
 
 export interface IdentifierAssignmentInput { value: string; unitId?: string | null }
-export interface AssignIdentifiers { commandId: string; productionOrder: DocumentRef; mode: string; lines: IdentifierAssignmentInput[]; reason: string; eventTime: string; actorRef: string; legalEntityId: string; issuerPartyRef: string | null; qualifier: string | null; note: string | null }
+export interface AssignIdentifiers { commandId: string; productionOrder: DocumentRef; mode: string; lines: IdentifierAssignmentInput[]; reason: string; eventTime: string; actorRef: string; legalEntityId?: string; issuerPartyRef: string | null; qualifier: string | null; note: string | null }
 export interface IdentifierAssignmentLineResult { index: number; requestedUnitId: string | null; unitId: string | null; rawValue: string; normalisedValue: string | null; outcome: string; reason: string | null; conflictingUnitId: string | null; identifierId: string | null; warnings: string[] | null }
 export interface AssignIdentifiersPreview { preview: CorrectionPreview; lines: IdentifierAssignmentLineResult[]; remainingCount: number; awaitingVendorSerialUnitIds: string[]; reversal: boolean }
 export interface AssignIdentifiersResult { correctionId: string; assigned: number; lines: IdentifierAssignmentLineResult[]; remainingCount: number; awaitingVendorSerialUnitIds: string[]; replayed: boolean; reversal: boolean }

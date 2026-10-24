@@ -43,6 +43,7 @@ builder.AddYojanaPlatform();
 builder.AddSerialisationModule();
 builder.AddIntegrationModule();
 builder.AddKnowledgeModule();
+builder.Services.AddScoped<ScreenCommandLegalEntityFilter>();
 
 var app = builder.Build();
 
@@ -117,10 +118,14 @@ app.UseStaticFiles(new StaticFileOptions
 app.UseYojanaPlatform();
 app.UseSerialisationInteractiveReads();
 app.MapPresenceEndpoints();
-app.MapSerialisationEndpoints();
-app.MapIntegrationEndpoints();
+// Tight coupling: these two module endpoint groups must stay behind ScreenCommandLegalEntityFilter because the filter
+// stamps their public *LegalEntityId contract members. Mapping either group elsewhere would restore browser ownership.
+var screenEndpoints = app.MapGroup(string.Empty).AddEndpointFilter<ScreenCommandLegalEntityFilter>();
+screenEndpoints.MapSerialisationEndpoints();
+screenEndpoints.MapIntegrationEndpoints();
 app.MapKnowledgeEndpoints();
 app.MapSettingsSummaryEndpoints();
+app.MapYojanaLegalEntityEndpoints();
 
 app.MapGet("/health", async (PlatformDbContext db, CancellationToken ct) =>
 {

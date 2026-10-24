@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { ranges, toPage, DEFAULT_LEGAL_ENTITY, newCommandId, now, type AllocateSerialRangeResult, type SerialRangeList, type SerialRangeRow, type SerialSchemeRow } from "../api/units";
+import { ranges, toPage, newCommandId, now, type AllocateSerialRangeResult, type SerialRangeList, type SerialRangeRow, type SerialSchemeRow } from "../api/units";
+import { LegalEntityPicker, useLegalEntities } from "../api/legalEntities";
 import { DataGrid, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
 import { DocumentField, ItemField, useReferenceNames, type DocumentValue } from "../corrections/ReferenceFields";
 import { openDrawer } from "../shell/drawerStore";
@@ -18,6 +19,9 @@ function rangeTone(status: string) { return status === "exhausted" ? "ok" : stat
 
 export function Component() {
   const actor = useActor();
+  const { value: legalEntities } = useLegalEntities();
+  const [legalEntityId, setLegalEntityId] = useState("");
+  useEffect(() => { if (legalEntities?.defaultId) setLegalEntityId((current) => current || legalEntities.defaultId!); }, [legalEntities?.defaultId]);
   const [schemes, setSchemes] = useState<SerialSchemeRow[]>([]);
   const [scheme, setScheme] = useState("");
   const [status, setStatus] = useState<string | null>(null);
@@ -56,12 +60,12 @@ export function Component() {
   }, [scheme, status, page, version]);
 
   const definition = schemes.find((s) => s.code === scheme);
-  const ready = scheme && quantity > 0 && !!allocatedTo && GUID.test(allocatedTo.id) && !busy;
+  const ready = scheme && quantity > 0 && !!allocatedTo && GUID.test(allocatedTo.id) && (legalEntities?.entities.length !== 1 ? !!legalEntityId : true) && !busy;
 
   const allocate = async () => {
     setBusy(true); setError(null); setResult(null);
     try {
-      const r = await ranges.allocate({ commandId: newCommandId(), scheme, quantity, allocatedTo: allocatedTo!, eventTime: now(), actorRef: actor, legalEntityId: DEFAULT_LEGAL_ENTITY, requestedStart: start || null, randomised, itemId, note: note || null });
+      const r = await ranges.allocate({ commandId: newCommandId(), scheme, quantity, allocatedTo: allocatedTo!, eventTime: now(), actorRef: actor, ...(legalEntities && legalEntities.entities.length > 1 ? { legalEntityId } : {}), requestedStart: start || null, randomised, itemId, note: note || null });
       setResult(r);
       setVersion((v) => v + 1);
     } catch (e) { setError(e); } finally { setBusy(false); }
@@ -106,6 +110,7 @@ export function Component() {
             <div className="card-header"><h2 id="h-alloc">Allocation</h2><span className="meta">reservation, not identity</span></div>
             <div className="card-body">
               <div className="form-grid">
+                {legalEntities && legalEntities.entities.length > 1 && <LegalEntityPicker id="range-legal-entity" label="Legal entity" value={legalEntityId} entities={legalEntities.entities} onChange={setLegalEntityId} hint="the company reserving this range" />}
                 <div className="field"><label htmlFor="a-scheme">Scheme</label><select id="a-scheme" className="select" value={scheme} onChange={(e) => { setScheme(e.target.value); setPage(1); }}>{schemes.map((s) => <option key={s.code} value={s.code}>{s.code} · {humanise(s.identifierType)} · {s.example}</option>)}</select></div>
                 <ItemField id="a-item" label="Item" value={itemId} onChange={setItemId} optional hint="Leave empty when the range may be used across items" />
                 <DocumentField id="a-document" label="Allocated to" types={["production_order"]} value={allocatedTo} onChange={setAllocatedTo} hint="Search by production-order number" />

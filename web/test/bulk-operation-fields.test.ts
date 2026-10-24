@@ -7,7 +7,7 @@ const referenceFields = readFileSync(new URL("../src/corrections/ReferenceFields
 
 test("bulk operation asks for records by number, code or name, never by a typed id", () => {
   assert.doesNotMatch(screen, /placeholder="UUID/);
-  for (const field of ["DocumentField id=\"bulk-doc\"", "PartyField id=\"bulk-party\"", "ItemField id=\"bulk-item\"", "DocumentField id=\"bulk-source\"", "LegalEntityField id=\"bulk-obligor\"", "LegalEntityField id=\"bulk-backfill-obligor\""])
+  for (const field of ["DocumentField id=\"bulk-doc\"", "PartyField id=\"bulk-party\"", "ItemField id=\"bulk-item\"", "DocumentField id=\"bulk-source\"", "LegalEntityPicker id=\"bulk-obligor\"", "LegalEntityPicker id=\"bulk-backfill-obligor\""])
     assert.ok(screen.includes(`<${field}`), field);
   assert.match(screen, /<select id="bulk-reason"/);
   assert.match(screen, /<select id="bulk-scheme"/);

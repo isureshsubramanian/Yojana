@@ -9,7 +9,7 @@ import {
   buildLateSerializationArguments,
 } from "../src/corrections/workbenchForms.ts";
 
-const context = { legalEntityId: "10000000-0000-0000-0000-000000000001", eventTime: "2026-10-17T08:30:00.000Z" };
+const context = { eventTime: "2026-10-17T08:30:00.000Z" };
 
 test("CorrectAsBuilt arguments match the T17 command's nested target and link-change shape", () => {
   assert.deepEqual(buildCorrectAsBuiltArguments({
@@ -35,7 +35,6 @@ test("CorrectAsBuilt arguments match the T17 command's nested target and link-ch
     }],
     reason: "",
     actor_ref: "",
-    legal_entity_id: context.legalEntityId,
   });
 });
 
@@ -63,7 +62,6 @@ test("LateSerialization arguments match the T17 stock commissioning shape", () =
     effective_at: "2026-10-16T09:00:00.000Z",
     reason: "",
     actor_ref: "",
-    legal_entity_id: context.legalEntityId,
     source_document: source,
     stock: [{
       commission_command_id: "60000000-0000-0000-0000-000000000001",
@@ -91,7 +89,6 @@ test("CorrectDocumentSerials arguments match the T17 document and two-selection 
     reason: "",
     event_time: context.eventTime,
     actor_ref: "",
-    legal_entity_id: context.legalEntityId,
   });
 });
 
@@ -108,7 +105,6 @@ test("CorrectSourceDocument arguments match the T17 selection and before/after d
     reason: "",
     event_time: context.eventTime,
     actor_ref: "",
-    legal_entity_id: context.legalEntityId,
   });
 });
 
@@ -123,6 +119,5 @@ test("CorrectReplacementLink arguments keep the recorded and actual units distin
     reason: "",
     event_time: context.eventTime,
     actor_ref: "",
-    legal_entity_id: context.legalEntityId,
   });
 });

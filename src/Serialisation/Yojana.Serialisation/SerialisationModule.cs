@@ -423,6 +423,13 @@ public static class SerialisationModule
         builder.Services.TryAddSingleton<IPartyContactPort>(sp => sp.GetRequiredService<InMemoryPartyContactPort>());
         builder.Services.AddSingleton<InMemoryPartyNamePort>();
         builder.Services.TryAddSingleton<IPartyNamePort>(sp => sp.GetRequiredService<InMemoryPartyNamePort>());
+        // A factory keeps PlatformDbContext (behind ITenantSettings) out of Wolverine handler graphs while adapting
+        // only the existing party-name contract; screen command stamping is owned by the HTTP composition root.
+        builder.Services.AddScoped<IActingLegalEntity>(sp => new ActingLegalEntity(
+            sp.GetRequiredService<IPartyNamePort>(),
+            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+        builder.Services.AddScoped<Yojana.Platform.Contracts.Settings.ISettingsSummaryContributor,
+            LegalEntitySettingsSummaryContributor>();
         builder.Services.AddSingleton<InMemoryLocationNameRegistry>();
         builder.Services.AddScoped<IRecordedLocationReferenceQuery, RecordedLocationReferenceQuery>();
         // Inventory owns the location master later; this default decorates its development catalogue with only the

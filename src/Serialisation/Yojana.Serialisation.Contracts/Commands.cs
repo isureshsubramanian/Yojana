@@ -284,7 +284,8 @@ public sealed record AllocateSerialRange(
     string? EnterpriseIdentifier = null,
     DocumentRef? AllocatedTo = null,
     Guid? AllocatedToPartyRef = null,
-    string? Note = null);
+    string? Note = null,
+    Guid LegalEntityId = default);
 
 public sealed record AllocateSerialRangeResult(Guid RangeId, string Scheme, string? StartValue, string? EndValue, int Count, bool Randomised, IReadOnlyList<string> Serials, bool StartMoved, string? RequestedStart);
 

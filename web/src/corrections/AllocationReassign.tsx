@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { DataGrid, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
-import { DEFAULT_LEGAL_ENTITY, newCommandId, now } from "../api/units";
+import { newCommandId, now } from "../api/units";
 import { Rail } from "../shell/Drawer";
 import { openDrawer } from "../shell/drawerStore";
 import { opaqueParam } from "../shell/handoff";
@@ -44,7 +44,7 @@ export function Component() {
     const from = serialSelection(fromSerials, scheme);
     const to = mode === "pairwise_exchange" ? serialSelection(toSerials, scheme) : null;
     if (!GUID.test(fromOrder) || !GUID.test(toOrder) || !from || (mode === "pairwise_exchange" && !to)) return null;
-    return { commandId, fromProductionOrder: { type: "production_order", id: fromOrder }, toProductionOrder: { type: "production_order", id: toOrder }, mode, fromSerials: from, toSerials: to, reason, eventTime: now(), actorRef: "", legalEntityId: DEFAULT_LEGAL_ENTITY, note: note || null };
+    return { commandId, fromProductionOrder: { type: "production_order", id: fromOrder }, toProductionOrder: { type: "production_order", id: toOrder }, mode, fromSerials: from, toSerials: to, reason, eventTime: now(), actorRef: "", note: note || null };
   }, [commandId, fromOrder, toOrder, mode, fromSerials, toSerials, scheme, reason, note]);
 
   const runPreview = async () => { if (!command) return; setBusy(true); setError(null); setCommitted(null); try { const result = await correctionsApi.previewReassignment(command); setPreview(result); setPage(1); } catch (reason) { setError(reason); } finally { setBusy(false); } };

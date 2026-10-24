@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import type { BulkExecutionResult, BulkOperationArguments, BulkPreviewResult, SelectionSource, UnitOutcome } from "../api/units";
-import { DEFAULT_LEGAL_ENTITY, newCommandId, now, ranges, type SerialSchemeRow } from "../api/units";
-import { DocumentField, ItemField, LegalEntityField, PartyField, useReferenceNames } from "../corrections/ReferenceFields";
+import { newCommandId, now, ranges, type SerialSchemeRow } from "../api/units";
+import { LegalEntityPicker, useLegalEntities } from "../api/legalEntities";
+import { DocumentField, ItemField, PartyField, useReferenceNames } from "../corrections/ReferenceFields";
 import { DataGrid, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
@@ -32,6 +33,7 @@ export const BULK_REASONS = [
 
 export function Component() {
   const actor = useActor();
+  const { value: legalEntities } = useLegalEntities();
   const [params] = useSearchParams();
   // ?approval=<requestId>: the approver's view of a stored request (P2-T21). Its arguments are fixed; the preview is judged with the approver's roles.
   const requestId = params.get("approval");
@@ -59,7 +61,8 @@ export function Component() {
   const [policyCode, setPolicyCode] = useState("");
   const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().slice(0, 10));
   const [contractDate, setContractDate] = useState(new Date().toISOString().slice(0, 10));
-  const [obligorEntityId, setObligorEntityId] = useState(DEFAULT_LEGAL_ENTITY);
+  const [obligorEntityId, setObligorEntityId] = useState("");
+  useEffect(() => { if (legalEntities?.defaultId) setObligorEntityId((current) => current || legalEntities.defaultId!); }, [legalEntities?.defaultId]);
   const [newEnd, setNewEnd] = useState("");
   const [termValue, setTermValue] = useState("");
   const [termUnit, setTermUnit] = useState("months");
@@ -136,7 +139,10 @@ export function Component() {
     if (enteredValue) values.entered_value = enteredValue;
     return values;
   }, [family, policyCode, effectiveDate, contractDate, obligorEntityId, newEnd, termValue, termUnit, price, currency, evidence, notification, financeReview, enteredValue]);
-  const formArgs = useMemo<BulkOperationArguments | null>(() => GUID.test(sourceId) ? { eventTime: now(), actorRef: actor, legalEntityId: DEFAULT_LEGAL_ENTITY, sourceDocument: { type: sourceType, id: sourceId }, reason, note: note || null, extra } : null, [sourceId, actor, sourceType, reason, note, extra]);
+  const needsObligor = ["entitlement.create", "entitlement.attach_extended", "entitlement.backfill"].includes(operation);
+  const formArgs = useMemo<BulkOperationArguments | null>(() => GUID.test(sourceId) && (!needsObligor || !!obligorEntityId)
+    ? { eventTime: now(), actorRef: actor, sourceDocument: { type: sourceType, id: sourceId }, reason, note: note || null, extra }
+    : null, [sourceId, actor, sourceType, reason, note, extra, needsObligor, obligorEntityId]);
   // A stored request executes its own arguments, never the form's.
   const args = request ? request.arguments : formArgs;
   const pending = request?.status === "pending";
@@ -226,11 +232,11 @@ export function Component() {
           {selectionId && <div className="span note ok"><strong>{request ? "Requested selection." : "Resolved."}</strong>&nbsp;{resolvedCount} units are frozen in selection {shortId(selectionId)}.</div>}
           <div className="field"><label htmlFor="bulk-family">Coverage family</label><select id="bulk-family" className="select" value={family} onChange={(event) => setFamily(event.target.value)}>{families.map((row) => <option value={row.familyCode} key={row.familyCode}>{row.name}</option>)}</select></div>
           {(operation === "entitlement.create" || operation === "entitlement.supersede" || operation === "entitlement.attach_extended") && <div className="field"><label htmlFor="bulk-policy">Policy</label><select id="bulk-policy" className="select" value={policyCode} onChange={(event) => setPolicyCode(event.target.value)}><option value="">Latest applicable policy</option>{policies.filter((row) => row.coverageFamily === family).map((row) => <option value={row.policyCode} key={row.policyCode}>{row.name}</option>)}</select></div>}
-          {["entitlement.create", "entitlement.attach_extended"].includes(operation) && <><Field label="Contract date" id="bulk-contract" value={contractDate} onChange={setContractDate} type="date" /><LegalEntityField id="bulk-obligor" label="Obligor legal entity" value={obligorEntityId || null} onChange={(value) => setObligorEntityId(value ?? "")} hint="the company that owes the warranty" /></>}
+          {["entitlement.create", "entitlement.attach_extended"].includes(operation) && <><Field label="Contract date" id="bulk-contract" value={contractDate} onChange={setContractDate} type="date" /><LegalEntityPicker id="bulk-obligor" label="Obligor legal entity" value={obligorEntityId} entities={legalEntities?.entities ?? []} onChange={setObligorEntityId} hint="the company that owes the warranty" /></>}
           {["entitlement.supersede", "entitlement.void", "entitlement.close"].includes(operation) && <Field label="Effective date" id="bulk-effective" value={effectiveDate} onChange={setEffectiveDate} type="date" />}
           {operation === "entitlement.amend" && <><Field label="New end date" id="bulk-end" value={newEnd} onChange={setNewEnd} type="date" /><Field label="New term value" id="bulk-term" value={termValue} onChange={setTermValue} type="number" /><div className="field"><label htmlFor="bulk-term-unit">Term unit</label><select id="bulk-term-unit" className="select" value={termUnit} onChange={(event) => setTermUnit(event.target.value)}><option value="months">months</option><option value="days">days</option></select></div><Field label="Entered amendment value" id="bulk-entered-value" value={enteredValue} onChange={setEnteredValue} type="number" /></>}
           {operation === "entitlement.attach_extended" && <><Field label="Price per unit" id="bulk-price" value={price} onChange={setPrice} type="number" /><Field label="Currency" id="bulk-currency" value={currency} onChange={setCurrency} /></>}
-          {operation === "entitlement.backfill" && <LegalEntityField id="bulk-backfill-obligor" label="Obligor legal entity" value={obligorEntityId || null} onChange={(value) => setObligorEntityId(value ?? "")} hint="the company that owes the warranty" />}
+          {operation === "entitlement.backfill" && <LegalEntityPicker id="bulk-backfill-obligor" label="Obligor legal entity" value={obligorEntityId} entities={legalEntities?.entities ?? []} onChange={setObligorEntityId} hint="the company that owes the warranty" />}
           {["entitlement.backfill", "entitlement.void"].includes(operation) && <Field label="Evidence references" id="bulk-evidence" value={evidence} onChange={setEvidence} placeholder="Your document or case numbers, comma-separated" span />}
           <div className="field"><label htmlFor="bulk-reason">Reason</label><select id="bulk-reason" className="select" value={reason} onChange={(event) => setReason(event.target.value)}>{!BULK_REASONS.some(([code]) => code === reason) && <option value={reason}>{humanise(reason)}</option>}{BULK_REASONS.map(([code, label]) => <option value={code} key={code}>{label}</option>)}</select></div>
           <div className="span"><DocumentField id="bulk-source" label="Source document" types={SOURCE_DOCUMENTS} value={sourceId ? { type: sourceType, id: sourceId } : null} onChange={(value) => { if (value) setSourceType(value.type); setSourceId(value?.id ?? ""); }} hint="the document that justifies this change · required for preview" /></div>

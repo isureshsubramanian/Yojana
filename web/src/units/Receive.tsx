@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { units, DEFAULT_LEGAL_ENTITY, newCommandId, now, type CommissionLineResult, type CommissionUnitsResult, type ScanResult } from "../api/units";
+import { units, newCommandId, now, type CommissionLineResult, type CommissionUnitsResult, type ScanResult } from "../api/units";
+import { LegalEntityPicker, useLegalEntities } from "../api/legalEntities";
 import { DataGrid, ScanInput, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
 import { isUrlScanFormat } from "../components/scan";
 import { openDrawer } from "../shell/drawerStore";
@@ -19,6 +20,9 @@ const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Receive and commission (P1 screen 3): scan-first capture, GS1 parsing on the server, vendor serial pairing, one set-based commit. */
 export function Component() {
   const actor = useActor();
+  const { value: legalEntities } = useLegalEntities();
+  const [legalEntityId, setLegalEntityId] = useState("");
+  useEffect(() => { if (legalEntities?.defaultId) setLegalEntityId((current) => current || legalEntities.defaultId!); }, [legalEntities?.defaultId]);
   const person = usePeople([actor]);
   const [mode, setMode] = useState<"scan" | "paste">("scan");
   const [itemId, setItemId] = useState("");
@@ -84,7 +88,7 @@ export function Component() {
   const shown = facet === "valid" ? valid : facet === "decide" ? decide : rows;
   const PAGE = 50;
   const grid = { rows: shown.slice((page - 1) * PAGE, page * PAGE), total: shown.length, page, pageSize: PAGE, continuation: null };
-  const ready = GUID.test(itemId) && (valid.length + pending) > 0 && !busy;
+  const ready = GUID.test(itemId) && (valid.length + pending) > 0 && (legalEntities?.entities.length !== 1 ? !!legalEntityId : true) && !busy;
 
   const commit = async () => {
     setBusy(true); setError(null);
@@ -93,7 +97,8 @@ export function Component() {
       const lines = ordered.map((r) => ({ identifiers: [{ type: "internal_serial", rawValue: r.serial }, ...(r.vendor ? [{ type: "vendor_serial", rawValue: r.vendor }] : [])], clientReference: String(r.n), lotId: GUID.test(r.lot ?? "") ? r.lot : null }));
       for (let i = 0; i < pending; i++) lines.push({ identifiers: [], clientReference: `pending-${i + 1}`, lotId: null });
       const r = await units.commission({
-        commandId: newCommandId(), itemId, origin, lines, eventTime: now(), actorRef: actor, legalEntityId: DEFAULT_LEGAL_ENTITY,
+        commandId: newCommandId(), itemId, origin, lines, eventTime: now(), actorRef: actor,
+        ...(legalEntities && legalEntities.entities.length > 1 ? { legalEntityId } : {}),
         document: GUID.test(docId) ? { type: docType, id: docId, line: docLine ? Number(docLine) : null } : null,
         locationId: GUID.test(locationId) ? locationId : null, locationKind: locationKind || null, skipInvalidLines: true,
       });
@@ -148,6 +153,7 @@ export function Component() {
             <div className="card-body">
               <div className="stack" style={{ gap: 16 }}>
                 <div className="form-grid">
+                  {legalEntities && legalEntities.entities.length > 1 && <LegalEntityPicker id="r-legal-entity" label="Legal entity" value={legalEntityId} entities={legalEntities.entities} onChange={setLegalEntityId} hint="the company receiving these units" />}
                   <div className="field"><label htmlFor="r-item">Item id <span className="hint">· from the host's item master</span></label><input id="r-item" className="input serial" value={itemId} onChange={(e) => setItemId(e.target.value)} placeholder="00000000-0000-0000-0000-000000000000" /></div>
                   <div className="field"><label htmlFor="r-origin">Origin</label><select id="r-origin" className="select" value={origin} onChange={(e) => setOrigin(e.target.value)}>{ORIGINS.map((o) => <option key={o} value={o}>{sentence(o)}</option>)}</select></div>
                   <div className="field"><label htmlFor="r-doctype">Document type</label><input id="r-doctype" className="input" value={docType} onChange={(e) => setDocType(e.target.value)} /></div>

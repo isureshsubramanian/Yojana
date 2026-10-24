@@ -6,7 +6,7 @@ import { UnitTabBar } from "./UnitTabBar";
 import { UnitCustomerMail } from "../mail/UnitCustomerMail";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
-import { units, DEFAULT_LEGAL_ENTITY, newCommandId, now, type HistoryRow, type Page, type UnitDetail } from "../api/units";
+import { units, newCommandId, now, type HistoryRow, type Page, type UnitDetail } from "../api/units";
 import { StatusBadge, TimelineRail, type TimelineEntry } from "../components";
 import { openDrawer, updateDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
@@ -283,7 +283,7 @@ function CorrectForm({ unitId, types, onDone }: { unitId: string; types: string[
   const submit = async () => {
     setBusy(true); setError(null);
     try {
-      const r = await units.correctIdentifier({ commandId: newCommandId(), unitId, identifierType: type, newRawValue: value, reason, eventTime: now(), legalEntityId: DEFAULT_LEGAL_ENTITY, approverRef: approver || null, note: note || null });
+      const r = await units.correctIdentifier({ commandId: newCommandId(), unitId, identifierType: type, newRawValue: value, reason, eventTime: now(), approverRef: approver || null, note: note || null });
       updateDrawer({ eyebrow: "Recorded · unit.identifier_corrected", title: r.newNormalisedValue, mono: true }, <><h3>Done</h3><Kv rows={[["Before", r.oldNormalisedValue], ["After", r.newNormalisedValue], ["Old row", "closed, still searchable"]]} /></>);
       onDone();
     } catch (e) { setError(e); } finally { setBusy(false); }
@@ -314,7 +314,7 @@ function FlagForm({ unitId, flags, onDone }: { unitId: string; flags: string[]; 
   const submit = async () => {
     setBusy(true); setError(null);
     try {
-      const command = { commandId: newCommandId(), unitId, flag, eventTime: now(), legalEntityId: DEFAULT_LEGAL_ENTITY, reason: reason || null };
+      const command = { commandId: newCommandId(), unitId, flag, eventTime: now(), reason: reason || null };
       const r = isSet ? await units.unflag(command) : await units.flag(command);
       updateDrawer({ eyebrow: `Recorded · ${isSet ? "unit.flag_cleared" : "unit.flag_set"}`, title: flag }, <><h3>Done</h3><Kv rows={[["Flags now", r.flags.length ? r.flags.join(", ") : "none"], ["Investigation", r.investigationRaised ? "raised · the unit reappeared after a custody fact" : "none"]]} /></>);
       onDone();

@@ -30,20 +30,20 @@ export interface ScanResult { format: number | string; raw: string; cleaned: str
 
 export interface IdentifierInput { type: string; rawValue: string; issuerPartyRef?: string | null }
 export interface CommissionLine { identifiers: IdentifierInput[]; clientReference?: string | null; lotId?: string | null; expiryDate?: string | null }
-export interface CommissionUnits { commandId: string; itemId: string; origin: string; lines: CommissionLine[]; eventTime: string; actorRef: string; legalEntityId: string; document?: DocumentRef | null; locationId?: string | null; locationKind?: string | null; source?: string | null; skipInvalidLines?: boolean; brandIsOurs?: boolean | null }
+export interface CommissionUnits { commandId: string; itemId: string; origin: string; lines: CommissionLine[]; eventTime: string; actorRef: string; legalEntityId?: string; document?: DocumentRef | null; locationId?: string | null; locationKind?: string | null; source?: string | null; skipInvalidLines?: boolean; brandIsOurs?: boolean | null }
 export interface CommissionLineResult { index: number; clientReference: string | null; unitId: string | null; outcome: "commissioned" | "pending" | "refused" | "duplicate" | string; reasons: string[] }
 export interface CommissionUnitsResult { lines: CommissionLineResult[]; commissioned: number; pending: number; refused: number; duplicates: number }
 
-export interface CorrectIdentifier { commandId: string; unitId: string; identifierType: string; newRawValue: string; reason: string; eventTime: string; actorRef?: string; legalEntityId: string; approverRef?: string | null; note?: string | null }
+export interface CorrectIdentifier { commandId: string; unitId: string; identifierType: string; newRawValue: string; reason: string; eventTime: string; actorRef?: string; legalEntityId?: string; approverRef?: string | null; note?: string | null }
 export interface CorrectIdentifierResult { unitId: string; supersededIdentifierId: string; newIdentifierId: string; oldNormalisedValue: string; newNormalisedValue: string }
-export interface AssignIdentifier { commandId: string; unitId: string; identifier: IdentifierInput; eventTime: string; actorRef: string; legalEntityId: string }
-export interface UnitFlagCommand { commandId: string; unitId: string; flag: string; eventTime: string; actorRef?: string; legalEntityId: string; reason?: string | null }
+export interface AssignIdentifier { commandId: string; unitId: string; identifier: IdentifierInput; eventTime: string; actorRef: string; legalEntityId?: string }
+export interface UnitFlagCommand { commandId: string; unitId: string; flag: string; eventTime: string; actorRef?: string; legalEntityId?: string; reason?: string | null }
 export interface UnitFlagResult { unitId: string; flags: string[]; changed: boolean; investigationRaised: boolean }
 
 export interface SerialSchemeRow { code: string; identifierType: string; prefix: string; blockFormat: string | null; separator: string; counterDigits: number; example: string }
 export interface SerialRangeRow { rangeId: string; scheme: string; startValue: string | null; endValue: string | null; count: number; commissionedCount: number; status: string; randomised: boolean; allocatedToDocumentType: string | null; allocatedToDocumentId: string | null; itemId: string | null; reservedAt: string; reservedBy: string; note: string | null }
 export interface SerialRangeList { page: Page<SerialRangeRow>; scheme: string; ranges: number; serialsIssued: number; nextFree: string | null }
-export interface AllocateSerialRange { commandId: string; scheme: string; quantity: number; allocatedTo: DocumentRef; eventTime: string; actorRef: string; legalEntityId: string; requestedStart?: string | null; randomised?: boolean; itemId?: string | null; note?: string | null }
+export interface AllocateSerialRange { commandId: string; scheme: string; quantity: number; allocatedTo: DocumentRef; eventTime: string; actorRef: string; legalEntityId?: string; requestedStart?: string | null; randomised?: boolean; itemId?: string | null; note?: string | null }
 export interface AllocateSerialRangeResult { rangeId: string; scheme: string; startValue: string | null; endValue: string | null; count: number; randomised: boolean; serials: string[]; startMoved: boolean; [extra: string]: unknown }
 
 export interface CompletenessQuery { serials?: string[] | null; selectionId?: string | null; document?: DocumentRef | null; effectiveAt?: string | null; skip?: number; take?: number }
@@ -53,13 +53,11 @@ export interface CompletenessResult { page: Page<CompletenessRow>; units: number
 
 export interface SelectionSource { kind: string; document?: DocumentRef | null; partyRef?: string | null; itemId?: string | null; from?: string | null; to?: string | null; eventType?: string | null; serials?: string[] | null; scheme?: string | null; rangeStart?: string | null; rangeEnd?: string | null }
 export interface ResolveSelectionSetResult { selectionId: string; resolved: number; unknown: string[]; rejected: string[]; source: SelectionSource }
-export interface BulkOperationArguments { eventTime: string; actorRef: string; legalEntityId: string; sourceDocument: DocumentRef; reason?: string | null; note?: string | null; extra?: Record<string, string> | null }
+export interface BulkOperationArguments { eventTime: string; actorRef: string; legalEntityId?: string; sourceDocument: DocumentRef; reason?: string | null; note?: string | null; extra?: Record<string, string> | null }
 export interface UnitOutcome { unitId: string; serial: string | null; outcome: string; reason: string | null; detail: string | null }
 export interface BulkPreviewResult { selectionId: string; operation: string; total: number; change: number; skip: number; block: number; page: UnitOutcome[]; pageSkip: number; pageTake: number }
 export interface BulkExecutionResult { commandId: string; selectionId: string; operation: string; total: number; done: number; skipped: number; blocked: number; validationReportId: string; replayed: boolean }
 
-/** Until the host context (P12) supplies legal entities, the tenant's single legal entity is this fixed id; the ledger stores it on every event. */
-export const DEFAULT_LEGAL_ENTITY = "00000000-0000-0000-0000-000000000001";
 export const RELEASE_OPERATION = "release_units";
 
 export function newCommandId(): string { return crypto.randomUUID(); }

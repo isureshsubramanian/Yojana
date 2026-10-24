@@ -2,7 +2,8 @@ import { ClaimCausePanel } from "./ClaimCausePanel";
 import type { ClaimGuidance } from "../entitlements/coverItems";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { DEFAULT_LEGAL_ENTITY, units, type AsBuiltRow, type LookupHit, type UnitDetail } from "../api/units";
+import { units, type AsBuiltRow, type LookupHit, type UnitDetail } from "../api/units";
+import { LegalEntityPicker, useLegalEntities } from "../api/legalEntities";
 import { ScanInput, Shortcut, useModEnter } from "../components";
 import { isUrlScanFormat } from "../components/scan";
 import { ItemField, PartyField, useReferenceNames } from "../corrections/ReferenceFields";
@@ -36,6 +37,10 @@ function draftEvidence(): DraftEvidence { return { id: crypto.randomUUID(), kind
 
 export function Component() {
   const navigate = useNavigate();
+  const { value: legalEntities } = useLegalEntities();
+  const [serviceEntityId, setServiceEntityId] = useState("");
+  const [obligorEntityId, setObligorEntityId] = useState("");
+  useEffect(() => { if (legalEntities?.defaultId) { setServiceEntityId((current) => current || legalEntities.defaultId!); setObligorEntityId((current) => current || legalEntities.defaultId!); } }, [legalEntities?.defaultId]);
   const [searchParams] = useSearchParams();
   useEffect(() => {
     const id = searchParams.get("unit"); if (!id) return;
@@ -109,7 +114,7 @@ export function Component() {
     setSelectedCampaignId((current) => covering.some((option) => option.campaignId === current) ? current : covering.length === 1 ? covering[0]!.campaignId : "");
   }, [askedSource, campaignOptions, campaignsLoading]);
 
-  const names = useReferenceNames({ items: [unit?.itemId, itemId, ...(unit?.asBuilt ?? []).map((child) => child.childItemId)], parties: [unit?.ownerPartyRef, unit?.custodyPartyRef, claimant, settlement, DEFAULT_LEGAL_ENTITY] });
+  const names = useReferenceNames({ items: [unit?.itemId, itemId, ...(unit?.asBuilt ?? []).map((child) => child.childItemId)], parties: [unit?.ownerPartyRef, unit?.custodyPartyRef, claimant, settlement] });
   const resolve = async (value: string) => {
     setIdentifier(value); setLookupBusy(true); setError(null); setHit(null); setUnit(null); setEntitlements(null);
     try {
@@ -141,7 +146,7 @@ export function Component() {
   const selectedCampaigns = askedSource === "Recall" || askedSource === "Goodwill" ? coveringCampaigns(askedSource.toLowerCase() as CampaignCoverageSource) : [];
   const selectedCampaign = selectedCampaigns.find((option) => option.campaignId === selectedCampaignId) ?? null;
   const campaignChosen = askedSource !== "Recall" && askedSource !== "Goodwill" || !!selectedCampaign;
-  const canSubmit = !!claimDate && !!currency && !!claimant && !!settlement && !!serviceCountry && !!choiceEvidence.trim() && lines.length > 0 && lines.every((line) => line.description.trim() && line.coverageFamily && line.requestedAmount !== "" && Number(line.requestedAmount) >= 0)
+  const canSubmit = !!claimDate && !!currency && !!claimant && !!settlement && !!serviceEntityId && !!obligorEntityId && !!serviceCountry && !!choiceEvidence.trim() && lines.length > 0 && lines.every((line) => line.description.trim() && line.coverageFamily && line.requestedAmount !== "" && Number(line.requestedAmount) >= 0)
     && campaignChosen && (mode === "unit" ? !!unit : !!identifier.trim() && !!itemId && !!proofRef.trim() && !!proofDate);
 
   const submit = async () => {
@@ -152,7 +157,7 @@ export function Component() {
       commandId: crypto.randomUUID(), unitId: mode === "unit" ? unit!.unitId : null,
       identifier: mode === "unit" ? null : { value: identifier.trim(), issuerPartyRef: null, identifierType: null, erpSerialId: null },
       claimDate, claimantPartyRef: claimant!, settlementPartyRef: settlement!,
-      serviceEntityId: DEFAULT_LEGAL_ENTITY, obligorEntityId: DEFAULT_LEGAL_ENTITY, serviceCountry, currency,
+      serviceEntityId, obligorEntityId, serviceCountry, currency,
       lines: lines.map((line) => ({ kind: line.kind, coverageFamily: line.coverageFamily, requestedAmount: Number(line.requestedAmount), unitId: line.childUnitId || null, description: line.description.trim(), measurements: parseMeasurements(line.measurements) })),
       evidence: evidence.filter((row) => row.reference.trim()).map<ClaimEvidenceInput>((row) => ({ kind: row.kind, reference: row.reference.trim(), description: row.description.trim() || null })),
       remedy, consumerChoiceEvidenceRef: choiceEvidence.trim(), eventTime: new Date().toISOString(),
@@ -213,8 +218,8 @@ export function Component() {
             <div className="field"><label htmlFor="claim-country">Service country</label><select id="claim-country" className="select" value={serviceCountry} onChange={(event) => setServiceCountry(event.target.value)}>{COUNTRY_CODES.map((code) => <option key={code} value={code}>{code} · {countryName(code)}</option>)}</select></div>
             <div className="field"><span className="label">Home currency</span><div className="reference-selected"><strong>{currency || "Not configured"}</strong></div><span className="help">All company amounts use this currency.</span></div>
             <div className="field"><label htmlFor="claim-date">Claim date</label><input id="claim-date" className="input" type="date" value={claimDate} onChange={(event) => setClaimDate(event.target.value)} /></div>
-            <div className="field span"><label>Service entity</label><div className="reference-selected"><span>{names.party(DEFAULT_LEGAL_ENTITY)}</span></div><span className="help">The tenant’s legal entity; read-only.</span></div>
-            <div className="field span"><label>Obligor entity</label><div className="reference-selected"><span>{names.party(DEFAULT_LEGAL_ENTITY)}</span></div><span className="help">Adjudication records the obligor on the event.</span></div>
+            <LegalEntityPicker id="claim-service-entity" label="Service entity" value={serviceEntityId} entities={legalEntities?.entities ?? []} onChange={setServiceEntityId} hint="the company providing the service" />
+            <LegalEntityPicker id="claim-obligor-entity" label="Obligor entity" value={obligorEntityId} entities={legalEntities?.entities ?? []} onChange={setObligorEntityId} hint="the company that owes the warranty" />
           </div></div></section>
           <section className="card" aria-labelledby="claim-source"><div className="card-header"><h2 id="claim-source">Coverage source asked for</h2><span className="meta">adjudication may change it</span></div><div className="card-body"><div className="claims-segmented" role="group" aria-label="Coverage source">{ASKED_SOURCES.map((source) => {
             const campaignSource = source === "Recall" || source === "Goodwill" ? source.toLowerCase() as CampaignCoverageSource : null;

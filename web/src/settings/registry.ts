@@ -8,7 +8,6 @@ import { secondStepApi } from "../security/secondStepApi";
 import type { IconName } from "../shell/Icons";
 import { certificateDateTimeExample } from "./certificateDateFormats";
 import { certificateSettingsApi, type ReleaseRecordIssuePoint } from "./certificateSettingsApi";
-import { companyApi } from "./companyApi";
 import { importFileSettingsApi } from "./importFileSettingsApi";
 import { numberingApi } from "./numberingApi";
 import { timeZoneSettingsApi } from "./timeZoneSettingsApi";
@@ -44,13 +43,14 @@ function noun(value: number, singular: string, plural = `${singular}s`): string 
 
 // Hidden coupling: every summaryKey literal below must match the Key constants in
 // src/Platform/Yojana.Platform/Settings/UsersSettingsSummaryContributor.cs,
-// src/Serialisation/Yojana.Serialisation/Settings/SettingsSummaryContributors.cs and
+// src/Serialisation/Yojana.Serialisation/Settings/SettingsSummaryContributors.cs,
+// src/Serialisation/Yojana.Serialisation/Settings/LegalEntitySettingsSummaryContributor.cs and
 // src/Knowledge/Yojana.Knowledge/Settings/KnowledgeScreenChangesSettingsSummaryContributor.cs.
 // tests/Yojana.Architecture.Tests/SettingsSummaryKeyRules.cs protects both sides from silent drift.
 
 export const settingsRegistry: SettingsRegistryEntry[] = [
-  { group: "Organisation", name: "Company", description: "Footer line, sender name and reply-to on every e-mail", path: "/settings/company", icon: "home", roles: administrator,
-    currentValue: signal => companyApi.mail(signal).then(value => [value.senderName?.trim() || "No sender name", value.replyTo || "No reply-to address"].join(" · ")), route: () => import("./Company") },
+  { group: "Organisation", name: "Company", description: "Default legal entity, footer line and e-mail sender", path: "/settings/company", icon: "home", roles: administrator,
+    summaryKey: "company", summaryValue: line => ({ text: `${noun(count(line, "entities"), "legal entity", "legal entities")} · ${count(line, "defaultConfigured") ? "default ready" : "no default"}`, ...(line.attention === "legal_entity_not_configured" ? { attention: "Choose a default" } : {}) }), route: () => import("./Company") },
   { group: "Organisation", name: "Users", description: "Staff memberships, invitations and tenant roles", path: "/settings/users", icon: "users", roles: administrator,
     summaryKey: "users", summaryValue: line => ({ text: `${noun(count(line, "staff"), "staff", "staff")} · ${noun(count(line, "roles"), "role")} · ${noun(count(line, "invitationsOpen"), "invitation")} open` }), route: () => import("./Users") },
   { group: "Organisation", name: "Sign-in policy", description: "Password recovery, invitations and second-step rules", path: "/settings/sign-in-policy", icon: "key", roles: administrator,

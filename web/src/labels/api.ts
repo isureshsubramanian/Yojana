@@ -1,5 +1,5 @@
 import { api } from "../api/client";
-import { DEFAULT_LEGAL_ENTITY, newCommandId, now } from "../api/units";
+import { newCommandId, now } from "../api/units";
 import type {
   LabelBatchPrintResult, LabelBindableField, LabelBinding, LabelPolicy, LabelPrintJob, LabelPrintJobPage, LabelPrintJobSummary, LabelPrintResult,
   LabelTemplateCatalogueRow, LabelTemplateDetail, LabelTemplatePreview,
@@ -55,13 +55,13 @@ export const labelsApi = {
   printers: (from: string, to: string, signal?: AbortSignal) => api<string[]>(`/api/labels/print-jobs/printers${query({ from, to })}`, { signal }),
   job: (jobId: string, signal?: AbortSignal) => api<LabelPrintJob>(`/api/labels/print-jobs/${jobId}`, { signal }),
   print: (unitId: string, printerRef: string, templateId: string | null = null) => api<LabelPrintResult>("/api/labels/print-jobs", {
-    method: "POST", body: { commandId: newCommandId(), unitId, templateId, identifierId: null, printerRef, printAt: now(), legalEntityId: DEFAULT_LEGAL_ENTITY },
+    method: "POST", body: { commandId: newCommandId(), unitId, templateId, identifierId: null, printerRef, printAt: now() },
   }),
   printBatch: (serials: string[], printerRef: string, templateVersionId: string | null) => api<LabelBatchPrintResult>("/api/labels/print-jobs/batch", {
     method: "POST", body: { commandId: newCommandId(), templateVersionId, printerRef, serials },
   }),
   reprint: (jobId: string, printerRef: string | null) => api<LabelPrintResult>(`/api/labels/print-jobs/${jobId}/reprint`, {
-    method: "POST", body: { commandId: newCommandId(), printerRef, reprintedAt: now(), legalEntityId: DEFAULT_LEGAL_ENTITY },
+    method: "POST", body: { commandId: newCommandId(), printerRef, reprintedAt: now() },
   }),
 };
 

@@ -7,6 +7,7 @@ using Yojana.Platform.Data.Platform;
 using Yojana.Platform.Data.Platform.Entities;
 using Yojana.Platform.Scheduling;
 using Yojana.Platform.Security;
+using Yojana.Platform.Tenancy;
 
 namespace Yojana.Platform.Seeding;
 
@@ -26,6 +27,10 @@ public static class DevelopmentSeeder
     {
         await SeedTenantUsersAsync(services, new TenantUserSeed(DevTenantId, DevTenantCode, "Development tenant",
             EmailDomain, "Development administrator"), password, cancellationToken);
+        using var scope = services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<ITenantContextSetter>().Set(DevTenantId);
+        await scope.ServiceProvider.GetRequiredService<ITenantSettings>().SetAsync(
+            IActingLegalEntity.DefaultSettingKey, "00000000-0000-0000-0000-000000000001", cancellationToken);
     }
 
     /// <summary>

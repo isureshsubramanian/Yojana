@@ -1,5 +1,5 @@
 import { api } from "../api/client";
-import { DEFAULT_LEGAL_ENTITY, newCommandId, now } from "../api/units";
+import { newCommandId, now } from "../api/units";
 import type { CloseRmaResult, ReplacementCreateDraft, RmaDetail, RmaListResult, WarrantyReplacementDetail } from "./types";
 
 export interface RmaFilters { stage: string; minimumAgeDays: number | null; maximumAgeDays: number | null; exceptionsOnly: boolean; q: string }
@@ -32,7 +32,7 @@ export const replacementApi = {
     method: "POST", body: {
       commandId: newCommandId(), ...draft, differenceAmount: draft.pricePolicy === "zero" ? 0 : draft.differenceAmount,
       replacementPolicyCode: draft.replacementPolicyCode || null, returnDue: draft.returnDue || null,
-      nonReturnPriceBasis: draft.returnDue ? draft.nonReturnPriceBasis : null, legalEntityId: DEFAULT_LEGAL_ENTITY,
+      nonReturnPriceBasis: draft.returnDue ? draft.nonReturnPriceBasis : null,
       replacementConditionAllowed: replacementConditionAllowed(draft.replacementReason), eventTime: now(),
     },
   }),

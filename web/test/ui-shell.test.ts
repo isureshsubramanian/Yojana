@@ -67,8 +67,9 @@ test("landing filtering matches names and descriptions and only existing reads s
   assert.deepEqual(filterSettings(examples, "cycle limits").map(entry => entry.name), ["Refurbishment policy"]);
   const noNewRead = ["Users", "Scanning", "Labels", "Jurisdiction rules", "Claims risk rules", "Workbench choices", "Knowledge screen changes"];
   for (const name of noNewRead) assert.doesNotMatch(registry, new RegExp(`name: "${name}"[^\\n]*currentValue`), name);
-  for (const name of ["Company", "Sign-in policy", "Time zone", "Currencies", "Document numbering", "Certificates", "Disclosure tiers", "Supplier recovery", "Refurbishment policy", "Import files"])
+  for (const name of ["Sign-in policy", "Time zone", "Currencies", "Document numbering", "Certificates", "Disclosure tiers", "Supplier recovery", "Refurbishment policy", "Import files"])
     assert.match(registry, new RegExp(`name: "${name}"[^\\n]*[\\s\\S]{0,250}currentValue:`), name);
+  assert.match(registry, /name: "Company"[^\n]*[\s\S]{0,250}summaryKey: "company"/);
   const controller = new AbortController();
   const values = await loadCurrentValues([
     { path: "/settings/company", currentValue: async () => "Loaded" },
@@ -81,6 +82,7 @@ test("landing filtering matches names and descriptions and only existing reads s
 
 test("settings summary is read once, wording stays in the registry and missing lines use an em dash", async () => {
   const entries = [
+    { path: "/settings/company", summaryKey: "company", summaryValue: (line: { counts: Record<string, number>; attention: string | null }) => ({ text: `${line.counts.entities} legal entities · ${line.counts.defaultConfigured ? "default ready" : "no default"}`, ...(line.attention ? { attention: "Choose a default" } : {}) }) },
     { path: "/settings/users", summaryKey: "users", summaryValue: (line: { counts: Record<string, number> }) => ({ text: `${line.counts.staff} staff · ${line.counts.roles} roles · ${line.counts.invitationsOpen} invitations open` }) },
     { path: "/settings/jurisdictions", summaryKey: "jurisdictions", summaryValue: (line: { counts: Record<string, number>; attention: string | null }) => ({ text: `${line.counts.ruleSets} rule sets`, ...(line.attention ? { attention: "Awaits legal confirmation" } : {}) }) },
     { path: "/settings/workbench-choices", summaryKey: "workbench_choices", summaryValue: (line: { counts: Record<string, number> }) => ({ text: `${line.counts.choices} choices · ${line.counts.twoApprovers} need two approvers` }) },
@@ -93,6 +95,7 @@ test("settings summary is read once, wording stays in the registry and missing l
   const values = await loadSettingsValues(entries, async () => {
     reads += 1;
     return { lines: [
+      { key: "company", counts: { entities: 2, defaultConfigured: 0 }, attention: "legal_entity_not_configured" },
       { key: "users", counts: { staff: 14, roles: 6, invitationsOpen: 2 }, attention: null },
       { key: "jurisdictions", counts: { ruleSets: 4 }, attention: "awaiting_legal_confirmation" },
       { key: "workbench_choices", counts: { choices: 18, twoApprovers: 4 }, attention: null },
@@ -102,6 +105,8 @@ test("settings summary is read once, wording stays in the registry and missing l
     ] };
   }, new AbortController().signal);
   assert.equal(reads, 1);
+  assert.equal(values["/settings/company"]?.text, "2 legal entities · no default");
+  assert.equal(values["/settings/company"]?.attention, "Choose a default");
   assert.equal(values["/settings/users"]?.text, "14 staff · 6 roles · 2 invitations open");
   assert.equal(values["/settings/jurisdictions"]?.attention, "Awaits legal confirmation");
   assert.equal(values["/settings/workbench-choices"]?.text, "18 choices · 4 need two approvers");

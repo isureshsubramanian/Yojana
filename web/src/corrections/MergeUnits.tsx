@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { units, DEFAULT_LEGAL_ENTITY, newCommandId, now, type IdentifierRow, type UnitDetail } from "../api/units";
+import { units, newCommandId, now, type IdentifierRow, type UnitDetail } from "../api/units";
 import { DataGrid, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
 import { usePeople } from "../people/people";
 import { Rail } from "../shell/Drawer";
@@ -51,7 +51,7 @@ export function Component() {
     if (!records || !survivorId) return; setBusy(true); setError(null); setCommitted(null);
     try { const result = await correctionsApi.previewMerge({ firstUnitId: records.first.unitId, secondUnitId: records.second.unitId, eventTime: now(), survivorUnitId: survivorId }); setPreview(result); if (!survivorId) setSurvivorId(result.recommendedSurvivorUnitId); } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
-  const command = useMemo<MergeUnits | null>(() => !records || !survivorId ? null : { commandId, survivorUnitId: survivorId, absorbedUnitId: survivorId === records.first.unitId ? records.second.unitId : records.first.unitId, reason, eventTime: now(), actorRef: "", legalEntityId: DEFAULT_LEGAL_ENTITY, resolution: "merge", vendorSerialValue: null, note: note || null }, [records, survivorId, commandId, reason, note]);
+  const command = useMemo<MergeUnits | null>(() => !records || !survivorId ? null : { commandId, survivorUnitId: survivorId, absorbedUnitId: survivorId === records.first.unitId ? records.second.unitId : records.first.unitId, reason, eventTime: now(), actorRef: "", resolution: "merge", vendorSerialValue: null, note: note || null }, [records, survivorId, commandId, reason, note]);
   const commit = async () => { if (!command || !preview || preview.approval.status !== "allowed" || preview.preview.block > 0 || preview.preview.refusal) return; setBusy(true); setError(null); try { const result = await correctionsApi.merge(command); setCommitted(result); setCommandId(newCommandId()); } catch (reason) { setError(reason); } finally { setBusy(false); } };
 
   const identifiers = useMemo<IdentifierView[]>(() => {
