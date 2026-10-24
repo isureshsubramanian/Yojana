@@ -46,3 +46,21 @@ export function serviceRecordPath(kind: string, recordId: string | null | undefi
   const base = ({ claim: "/claims", rma: "/returns", refurbishment: "/refurbishments" } as Record<string, string | undefined>)[kind];
   return base ? `${base}/${recordId}` : null;
 }
+
+export interface PrefixMatch { unitId: string; identifier: string; identifierType: string; superseded: boolean; itemId: string; lifecycleStatus: string }
+
+/** ADR-0013: the units whose identifier starts with the typed value, one row per unit (first hit kept), capped. */
+export function prefixMatches(rows: readonly { unitId: string; identifier: string; rawValue?: string | null; identifierType: string; open: boolean; itemId: string; lifecycleStatus: string }[], hasMore: boolean, limit = PREFIX_MATCH_LIMIT): { rows: PrefixMatch[]; more: boolean } {
+  const seen = new Set<string>();
+  const unique: PrefixMatch[] = [];
+  for (const row of rows) {
+    if (seen.has(row.unitId)) continue;
+    seen.add(row.unitId);
+    unique.push({ unitId: row.unitId, identifier: row.rawValue ?? row.identifier, identifierType: row.identifierType, superseded: !row.open, itemId: row.itemId, lifecycleStatus: row.lifecycleStatus });
+  }
+  return { rows: unique.slice(0, limit), more: hasMore || unique.length > limit };
+}
+
+/** Rows shown (an estimate: one screenful) and the shortest prefix searched, so one character does not list arbitrary units. */
+export const PREFIX_MATCH_LIMIT = 10;
+export const PREFIX_MIN_LENGTH = 2;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { acceptedImportFormats, acceptsImportFile, actionOptions, serviceRecordPath, coverageLabel, disclosureLocked, human, internalSections, portalUnitSections, publicLookupFields, reconciliationKpis, splitValues, xrefIndent } from "../src/p7/model.ts";
+import { acceptedImportFormats, acceptsImportFile, actionOptions, prefixMatches, serviceRecordPath, coverageLabel, disclosureLocked, human, internalSections, portalUnitSections, publicLookupFields, reconciliationKpis, splitValues, xrefIndent } from "../src/p7/model.ts";
 import { countryName } from "../src/reference/countries.ts";
 
 test("import job accepts every approved spreadsheet format and rejects unrelated files", () => {
@@ -105,7 +105,7 @@ test("disclosure policy locks forbidden public fields and the internal tier", ()
 test("an internal lookup that matches no unit says so in the results instead of a failed-request banner", () => {
   const screens = readFileSync(new URL("../src/p7/screens.tsx", import.meta.url), "utf8");
   const screen = screens.slice(screens.indexOf("export function InternalLookupScreen"), screens.indexOf("export function XrefScreen"));
-  assert.ok(screen.includes("reason instanceof ApiError && reason.status === 404) setMissing(value.trim()); else setError(reason)"), "404 is a result");
+  assert.ok(screen.includes("if (!(reason instanceof ApiError && reason.status === 404)) { setError(reason); return; } setMissing(typed);"), "404 is a result");
   assert.ok(screen.includes("No unit matches “${missing}”"), "named in the empty state");
 });
 
@@ -115,4 +115,27 @@ test("service-history references open their claim, RMA or work order by opaque i
   assert.equal(serviceRecordPath("refurbishment", "0f1e"), "/refurbishments/0f1e");
   assert.equal(serviceRecordPath("claim", null), null);
   assert.equal(serviceRecordPath("unknown_kind", "0f1e"), null);
+});
+
+test("internal lookup prefix matches keep one row per unit, cap at ten and flag more (ADR-0013)", () => {
+  const row = (unitId: string, identifier: string, open = true) => ({ unitId, identifier, rawValue: identifier, identifierType: "internal_serial", open, itemId: "item", lifecycleStatus: "in_stock" });
+  const rows = [row("u1", "10000001"), row("u1", "10000001-OLD", false), ...Array.from({ length: 10 }, (_, i) => row(`u${i + 2}`, `1000000${i + 2}`))];
+  const result = prefixMatches(rows, false);
+  assert.equal(result.rows.length, 10);
+  assert.equal(new Set(result.rows.map((r) => r.unitId)).size, 10);
+  assert.equal(result.rows[0].identifier, "10000001");
+  assert.equal(result.more, true);
+  const few = prefixMatches([row("u1", "AB-1", false)], false);
+  assert.deepEqual([few.rows[0].superseded, few.more], [true, false]);
+  assert.equal(prefixMatches([row("u1", "AB-1")], true).more, true);
+});
+
+test("internal lookup offers prefix matches only after the exact lookup misses, with no owner (ADR-0013)", () => {
+  const source = readFileSync(new URL("../src/p7/screens.tsx", import.meta.url), "utf8");
+  const screen = source.slice(source.indexOf("export function InternalLookupScreen"), source.indexOf("export function XrefScreen"));
+  assert.ok(screen.indexOf("reason.status === 404") < screen.indexOf("units.search("));
+  assert.ok(screen.includes("superseded: true"));
+  assert.ok(screen.includes("More matches, open Unit search"));
+  const list = screen.slice(screen.indexOf("p7-matches"), screen.indexOf("No unit matches"));
+  assert.ok(!/owner/i.test(list));
 });

@@ -39,6 +39,8 @@
 .p7-lineage { list-style: none; padding: 0; margin: 0; }
 .p7-lineage li { display: grid; grid-template-columns: 140px 1fr auto; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
 .p7-lineage li:last-child { border: 0; }
+.p7-matches li { grid-template-columns: minmax(140px, 1fr) 160px minmax(160px, 1.2fr) auto; align-items: center; }
+.p7-matches .link-button { justify-self: start; font-size: inherit; }
 .p7-chain { display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap; }
 .p7-chain .node { min-width: 150px; padding: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-s); }
 .p7-chain .node + .node::before { content: "→"; color: var(--text-3); margin-left: -22px; margin-right: 10px; }
@@ -82,3 +84,4 @@ a.p7-file-btn:hover { background: var(--surface-3); border-color: var(--accent);
 a.p7-file-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .p7-file-btn.disabled { color: var(--text-3); opacity: 0.45; cursor: not-allowed; }
 .p7-file-btn.p7-file-slot { border-color: transparent; background: transparent; }
+@media (max-width: 720px) { .p7-matches li { grid-template-columns: 1fr auto; } }
