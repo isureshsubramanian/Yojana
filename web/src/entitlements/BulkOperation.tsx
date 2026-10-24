@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import type { BulkExecutionResult, BulkOperationArguments, BulkPreviewResult, SelectionSource, UnitOutcome } from "../api/units";
-import { DEFAULT_LEGAL_ENTITY, newCommandId, now } from "../api/units";
+import { DEFAULT_LEGAL_ENTITY, newCommandId, now, ranges, type SerialSchemeRow } from "../api/units";
+import { DocumentField, ItemField, LegalEntityField, PartyField, useReferenceNames } from "../corrections/ReferenceFields";
 import { DataGrid, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
@@ -20,6 +21,14 @@ const OPERATIONS = [
   ["entitlement.create", "Create"], ["entitlement.amend", "Amend"], ["entitlement.attach_extended", "Attach extended or add-on"],
   ["entitlement.supersede", "Supersede"], ["entitlement.void", "Void"], ["entitlement.close", "Close"], ["entitlement.backfill", "Backfill"],
 ] as const;
+/** Documents whose units a selection can address, and documents a bulk change can cite as its source. Codes are the recorded event document types (DocumentPrefix in Ports/DefaultReferencePorts.cs). */
+const SELECTION_DOCUMENTS = ["shipment", "sales_order", "invoice", "production_order", "receipt", "return"] as const;
+const SOURCE_DOCUMENTS = ["invoice", "sales_order", "shipment"] as const;
+/** AmendmentReason.All in Yojana.Serialisation.Contracts/EntitlementVocabulary.cs: the reasons an amendment policy prices. */
+export const BULK_REASONS = [
+  ["purchase", "Purchase"], ["goodwill", "Goodwill"], ["correction", "Correction"], ["statutory_extension", "Statutory extension"],
+  ["dispute_settlement", "Dispute settlement"], ["seller_error", "Seller error"],
+] as const;
 
 export function Component() {
   const actor = useActor();
@@ -35,7 +44,7 @@ export function Component() {
   const initialSerials = useHandoff().serials ?? "";
   const [kind, setKind] = useState((initialSerials ? "pasted_list" : "document"));
   const [operation, setOperation] = useState(params.get("operation") ?? "entitlement.supersede");
-  const [documentType, setDocumentType] = useState("sales_order");
+  const [documentType, setDocumentType] = useState<string>(SELECTION_DOCUMENTS[0]);
   const [documentId, setDocumentId] = useState("");
   const [partyRef, setPartyRef] = useState("");
   const [itemId, setItemId] = useState("");
@@ -60,11 +69,13 @@ export function Component() {
   const [reason, setReason] = useState("purchase");
   const [sourceType, setSourceType] = useState("invoice");
   const [sourceId, setSourceId] = useState("");
+  const names = useReferenceNames({ documents: [sourceId ? { type: sourceType, id: sourceId } : null] });
   const [notification, setNotification] = useState("");
   const [financeReview, setFinanceReview] = useState("");
   const [enteredValue, setEnteredValue] = useState("");
   const [note, setNote] = useState("");
   const [families, setFamilies] = useState<CoverageFamily[]>([]);
+  const [schemes, setSchemes] = useState<SerialSchemeRow[]>([]);
   const [policies, setPolicies] = useState<PolicySummary[]>([]);
   const [selectionId, setSelectionId] = useState<string | null>(null);
   const [resolvedCount, setResolvedCount] = useState(0);
@@ -93,7 +104,7 @@ export function Component() {
     return () => controller.abort();
   }, [requestId]);
 
-  useEffect(() => { Promise.all([entitlementApi.families(), entitlementApi.policies(), entitlementApi.currency()]).then(([f, p, c]) => { setFamilies(f); setPolicies(p); if (!currency && c.currency) setCurrency(c.currency); }).catch(setError); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { Promise.all([entitlementApi.families(), entitlementApi.policies(), entitlementApi.currency(), ranges.schemes()]).then(([f, p, c, k]) => { setFamilies(f); setPolicies(p); setSchemes(k); if (!currency && c.currency) setCurrency(c.currency); }).catch(setError); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const source = useMemo<SelectionSource>(() => ({
     kind,
@@ -181,7 +192,7 @@ export function Component() {
   };
   const columns: GridColumn<UnitOutcome>[] = [
     { key: "serial", label: "Serial", width: 17, mono: true, render: (row) => row.serial ?? shortId(row.unitId) },
-    { key: "now", label: `Now in ${family}`, width: 25, render: (row) => { const value = previewDetail(row.detail); return <>{value?.now ?? (row.outcome === "skip" ? "none live" : "—")}<span className="sub">{value?.nowEnd ? `ends ${value.nowEnd}` : shortId(row.unitId, 12)}</span></>; } },
+    { key: "now", label: `Now in ${families.find((row) => row.familyCode === family)?.name.toLowerCase() ?? humanise(family).toLowerCase()}`, width: 25, render: (row) => { const value = previewDetail(row.detail); return <>{value?.now ?? (row.outcome === "skip" ? "none live" : "—")}<span className="sub">{value?.nowEnd ? `ends ${value.nowEnd}` : shortId(row.unitId, 12)}</span></>; } },
     { key: "after", label: "After", width: 20, render: (row) => { const value = previewDetail(row.detail); return <>{value?.after ?? "unchanged"}<span className="sub">{value?.afterEnd ? `ends ${value.afterEnd}` : ""}</span></>; } },
     { key: "days", label: "Days", width: 10, numeric: true, render: (row) => { const days = previewDetail(row.detail)?.days; return days == null ? "—" : signed(days); } },
     { key: "outcome", label: "Outcome", width: 28, render: (row) => { const value = previewDetail(row.detail); return <><StatusBadge tone={outcomeTone(row.outcome)}>{row.outcome === "change" ? "Will change" : `${humanise(row.outcome)}${row.reason ? ` · ${humanise(row.reason)}` : ""}`}</StatusBadge>{value?.summary && <span className="sub">{value.summary}</span>}</>; } },
@@ -205,27 +216,26 @@ export function Component() {
           {/* A stored request's selection and arguments are fixed: the approver reads them, never edits them. */}
           <fieldset disabled={!!request} style={{ display: "contents" }}>
           {!request && <><div className="field span"><span className="lbl">Address units by</span><div className="segmented plain" role="group" aria-label="Selection source" style={{ flexWrap: "wrap" }}>{KINDS.map(([id, label]) => <button type="button" key={id} aria-pressed={kind === id} onClick={() => setKind(id)}>{label}</button>)}</div></div>
-          {kind === "document" && <><Field label="Document type" id="bulk-doc-type" value={documentType} onChange={setDocumentType} /><Field label="Document id" id="bulk-doc-id" value={documentId} onChange={setDocumentId} mono placeholder="UUID" /></>}
-          {kind === "customer" && <Field label="Customer party ref" id="bulk-party" value={partyRef} onChange={setPartyRef} mono placeholder="UUID" span />}
-          {kind === "item" && <Field label="Item id" id="bulk-item" value={itemId} onChange={setItemId} mono placeholder="UUID" span />}
+          {kind === "document" && <div className="span"><DocumentField id="bulk-doc" label="Document" types={SELECTION_DOCUMENTS} value={documentId ? { type: documentType, id: documentId } : null} onChange={(value) => { if (value) setDocumentType(value.type); setDocumentId(value?.id ?? ""); }} hint="every unit the document touched" /></div>}
+          {kind === "customer" && <div className="span"><PartyField id="bulk-party" label="Customer" value={partyRef || null} onChange={(value) => setPartyRef(value ?? "")} hint="units the customer owns" /></div>}
+          {kind === "item" && <div className="span"><ItemField id="bulk-item" label="Item" value={itemId || null} onChange={(value) => setItemId(value ?? "")} /></div>}
           {kind === "date_range" && <><Field label="From" id="bulk-from" value={from} onChange={setFrom} type="date" /><Field label="To" id="bulk-to" value={to} onChange={setTo} type="date" /></>}
           {kind === "pasted_list" && <div className="field span"><label htmlFor="bulk-serials">Serials <span className="hint">· {splitSerials(serials).length} distinct</span></label><textarea id="bulk-serials" className="textarea serial" value={serials} onChange={(event) => setSerials(event.target.value)} /></div>}
-          {kind === "serial_range" && <><Field label="Scheme" id="bulk-scheme" value={scheme} onChange={setScheme} /><div /><Field label="From" id="bulk-range-from" value={rangeStart} onChange={setRangeStart} mono /><Field label="To" id="bulk-range-to" value={rangeEnd} onChange={setRangeEnd} mono /></>}</>}
+          {kind === "serial_range" && <><div className="field"><label htmlFor="bulk-scheme">Serial scheme</label><select id="bulk-scheme" className="select" value={scheme} onChange={(event) => setScheme(event.target.value)}>{!schemes.some((row) => row.code === scheme) && <option value={scheme}>{humanise(scheme)}</option>}{schemes.map((row) => <option value={row.code} key={row.code}>{humanise(row.code)} · e.g. {row.example}</option>)}</select></div><div /><Field label="From" id="bulk-range-from" value={rangeStart} onChange={setRangeStart} mono /><Field label="To" id="bulk-range-to" value={rangeEnd} onChange={setRangeEnd} mono /></>}</>}
           {request && <div className={`span note ${request.status === "approved" ? "ok" : request.status === "pending" ? "info" : "warn"}`}><strong>{request.status === "pending" ? "Waiting for your decision." : `Request ${request.status}.`}</strong>&nbsp;{request.status === "stale" ? "The units changed after it was raised, so nothing was executed. Preview again and raise a new request." : request.status === "pending" ? `Raised by ${person(request.requestedBy)} · ${request.block} units need approval. The arguments are fixed by the request.` : `${request.decidedBy ? person(request.decidedBy) : ""}${request.decisionNote ? ` · ${request.decisionNote}` : ""}`}</div>}
           {selectionId && <div className="span note ok"><strong>{request ? "Requested selection." : "Resolved."}</strong>&nbsp;{resolvedCount} units are frozen in selection {shortId(selectionId)}.</div>}
-          <div className="field"><label htmlFor="bulk-family">Coverage family</label><select id="bulk-family" className="select" value={family} onChange={(event) => setFamily(event.target.value)}>{families.map((row) => <option value={row.familyCode} key={row.familyCode}>{row.name} · {row.familyCode}</option>)}</select></div>
-          {(operation === "entitlement.create" || operation === "entitlement.supersede" || operation === "entitlement.attach_extended") && <div className="field"><label htmlFor="bulk-policy">Policy</label><select id="bulk-policy" className="select" value={policyCode} onChange={(event) => setPolicyCode(event.target.value)}><option value="">Latest applicable policy</option>{policies.filter((row) => row.coverageFamily === family).map((row) => <option value={row.policyCode} key={row.policyCode}>{row.name} · {row.policyCode}</option>)}</select></div>}
-          {["entitlement.create", "entitlement.attach_extended"].includes(operation) && <><Field label="Contract date" id="bulk-contract" value={contractDate} onChange={setContractDate} type="date" /><Field label="Obligor legal entity" id="bulk-obligor" value={obligorEntityId} onChange={setObligorEntityId} mono placeholder="UUID" /></>}
+          <div className="field"><label htmlFor="bulk-family">Coverage family</label><select id="bulk-family" className="select" value={family} onChange={(event) => setFamily(event.target.value)}>{families.map((row) => <option value={row.familyCode} key={row.familyCode}>{row.name}</option>)}</select></div>
+          {(operation === "entitlement.create" || operation === "entitlement.supersede" || operation === "entitlement.attach_extended") && <div className="field"><label htmlFor="bulk-policy">Policy</label><select id="bulk-policy" className="select" value={policyCode} onChange={(event) => setPolicyCode(event.target.value)}><option value="">Latest applicable policy</option>{policies.filter((row) => row.coverageFamily === family).map((row) => <option value={row.policyCode} key={row.policyCode}>{row.name}</option>)}</select></div>}
+          {["entitlement.create", "entitlement.attach_extended"].includes(operation) && <><Field label="Contract date" id="bulk-contract" value={contractDate} onChange={setContractDate} type="date" /><LegalEntityField id="bulk-obligor" label="Obligor legal entity" value={obligorEntityId || null} onChange={(value) => setObligorEntityId(value ?? "")} hint="the company that owes the warranty" /></>}
           {["entitlement.supersede", "entitlement.void", "entitlement.close"].includes(operation) && <Field label="Effective date" id="bulk-effective" value={effectiveDate} onChange={setEffectiveDate} type="date" />}
           {operation === "entitlement.amend" && <><Field label="New end date" id="bulk-end" value={newEnd} onChange={setNewEnd} type="date" /><Field label="New term value" id="bulk-term" value={termValue} onChange={setTermValue} type="number" /><div className="field"><label htmlFor="bulk-term-unit">Term unit</label><select id="bulk-term-unit" className="select" value={termUnit} onChange={(event) => setTermUnit(event.target.value)}><option value="months">months</option><option value="days">days</option></select></div><Field label="Entered amendment value" id="bulk-entered-value" value={enteredValue} onChange={setEnteredValue} type="number" /></>}
           {operation === "entitlement.attach_extended" && <><Field label="Price per unit" id="bulk-price" value={price} onChange={setPrice} type="number" /><Field label="Currency" id="bulk-currency" value={currency} onChange={setCurrency} /></>}
-          {operation === "entitlement.backfill" && <Field label="Obligor legal entity" id="bulk-backfill-obligor" value={obligorEntityId} onChange={setObligorEntityId} mono placeholder="UUID" />}
-          {["entitlement.backfill", "entitlement.void"].includes(operation) && <Field label="Evidence refs" id="bulk-evidence" value={evidence} onChange={setEvidence} placeholder="Comma-separated" span />}
-          <Field label="Reason code" id="bulk-reason" value={reason} onChange={setReason} />
-          <Field label="Source document type" id="bulk-source-type" value={sourceType} onChange={setSourceType} />
-          <Field label="Source document id" id="bulk-source-id" value={sourceId} onChange={setSourceId} mono placeholder="UUID · required for preview" />
-          <Field label="Customer notification ref" id="bulk-notification" value={notification} onChange={setNotification} />
-          <Field label="Finance review ref" id="bulk-finance" value={financeReview} onChange={setFinanceReview} />
+          {operation === "entitlement.backfill" && <LegalEntityField id="bulk-backfill-obligor" label="Obligor legal entity" value={obligorEntityId || null} onChange={(value) => setObligorEntityId(value ?? "")} hint="the company that owes the warranty" />}
+          {["entitlement.backfill", "entitlement.void"].includes(operation) && <Field label="Evidence references" id="bulk-evidence" value={evidence} onChange={setEvidence} placeholder="Your document or case numbers, comma-separated" span />}
+          <div className="field"><label htmlFor="bulk-reason">Reason</label><select id="bulk-reason" className="select" value={reason} onChange={(event) => setReason(event.target.value)}>{!BULK_REASONS.some(([code]) => code === reason) && <option value={reason}>{humanise(reason)}</option>}{BULK_REASONS.map(([code, label]) => <option value={code} key={code}>{label}</option>)}</select></div>
+          <div className="span"><DocumentField id="bulk-source" label="Source document" types={SOURCE_DOCUMENTS} value={sourceId ? { type: sourceType, id: sourceId } : null} onChange={(value) => { if (value) setSourceType(value.type); setSourceId(value?.id ?? ""); }} hint="the document that justifies this change · required for preview" /></div>
+          <Field label="Customer notification reference" id="bulk-notification" value={notification} onChange={setNotification} placeholder="Letter or e-mail reference" />
+          <Field label="Finance review reference" id="bulk-finance" value={financeReview} onChange={setFinanceReview} placeholder="Approval or case number" />
           <div className="field span"><label htmlFor="bulk-note">Note</label><textarea id="bulk-note" className="textarea" value={note} onChange={(event) => setNote(event.target.value)} /></div>
           </fieldset>
           {request && <div className="span field"><label htmlFor="bulk-decision">Decision note <span className="hint">· required to reject</span></label><textarea id="bulk-decision" className="textarea" value={decisionNote} onChange={(event) => setDecisionNote(event.target.value)} disabled={!pending} /></div>}
@@ -241,7 +251,7 @@ export function Component() {
         </section>
       </div>
     </main>
-    <Rail label="Execution"><Section title="Routing"><Kv rows={[["Initiator", person(actor)], ["Approver", request ? "you · judged from your roles" : "judged from signed-in roles"], ["Source document", sourceId ? `${sourceType} ${shortId(sourceId)}` : "—"], ["Transaction", "1 · all or nothing"], ["Selection", selectionId ? shortId(selectionId) : "—"]]} /></Section><Section title="Rules applied"><p className="muted">The server rehearses the real command for every unit and rolls it back. Execution uses the same arguments in one transaction. A request for approval freezes this preview on the server; approval re-checks it and executes only if no unit has changed since.</p></Section></Rail>
+    <Rail label="Execution"><Section title="Routing"><Kv rows={[["Initiator", person(actor)], ["Approver", request ? "you · judged from your roles" : "judged from signed-in roles"], ["Source document", sourceId ? names.document({ type: sourceType, id: sourceId }) : "—"], ["Transaction", "1 · all or nothing"], ["Selection", selectionId ? shortId(selectionId) : "—"]]} /></Section><Section title="Rules applied"><p className="muted">The server rehearses the real command for every unit and rolls it back. Execution uses the same arguments in one transaction. A request for approval freezes this preview on the server; approval re-checks it and executes only if no unit has changed since.</p></Section></Rail>
   </>;
 }
 

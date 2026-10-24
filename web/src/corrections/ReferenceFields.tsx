@@ -124,6 +124,15 @@ export function PartyField({ id, label, value, onChange, optional, hint }: Field
     kind="party" placeholder="Search by partner code or name" noResult={(query) => `No business partner ${query} found`} />;
 }
 
+const LEGAL_ENTITY = ["legal_entity"] as const;
+
+/** A legal entity of the company (the one that owes a warranty, issues a document), chosen by code or name; the value is its party reference. */
+export function LegalEntityField({ id, label, value, onChange, optional, hint }: FieldProps<string>) {
+  const names = useReferenceNames({ parties: [value] });
+  return <ReferencePicker id={id} label={label} value={value} selectedLabel={names.party(value)} onChange={onChange} optional={optional} hint={hint}
+    kind="party" partyTypes={LEGAL_ENTITY} placeholder="Search by company code or name" noResult={(query) => `No legal entity ${query} found`} />;
+}
+
 /** A stock or service location, chosen by code or name; the value is the location id. */
 export function LocationField({ id, label, value, onChange, optional, hint, kind = "quarantine" }: FieldProps<string> & { kind?: string | undefined }) {
   const names = useReferenceNames({ locations: [value] });
@@ -141,7 +150,7 @@ export function DocumentField({ id, label, types, value, onChange, optional, hin
     kind="document" documentType={selectedType} placeholder={`Search by ${friendlyType(selectedType)} number`}
     noResult={(query) => `No ${friendlyType(selectedType)} ${query} found`} hideLabel={types.length > 1} />;
   if (types.length <= 1) return picker;
-  return <div className="reference-field-with-type"><div className="field"><label htmlFor={`${id}-type`}>{label}{optional && <span className="hint"> · optional</span>}</label><select id={`${id}-type`} className="select" value={selectedType} onChange={(event) => { setSelectedType(event.target.value); if (value) onChange(null); }}>{types.map((candidate) => <option key={candidate} value={candidate}>{friendlyType(candidate)}</option>)}</select></div>{picker}</div>;
+  return <div className="reference-field-with-type"><div className="field"><label htmlFor={`${id}-type`}>{label}{optional && <span className="hint"> · optional</span>}</label><select id={`${id}-type`} className="select" value={selectedType} onChange={(event) => { setSelectedType(event.target.value); if (value) onChange(null); }}>{types.map((candidate) => <option key={candidate} value={candidate}>{sentence(friendlyType(candidate))}</option>)}</select></div>{picker}</div>;
 }
 
 /** A serialised unit, chosen by any live identifier; the value is the unit id. Shown as the serial a person recognises and its item. */
@@ -173,9 +182,9 @@ export function LotField({ id, label, value, onChange, optional, hint }: FieldPr
     onChange={(document) => onChange(document?.id ?? null)} optional={optional} hint={hint} />;
 }
 
-function ReferencePicker({ id, label, value, selectedLabel, onChange, optional, hint, kind, documentType, locationKind, acceptGuid = true, placeholder, noResult, hideLabel = false }: {
+function ReferencePicker({ id, label, value, selectedLabel, onChange, optional, hint, kind, documentType, locationKind, partyTypes, acceptGuid = true, placeholder, noResult, hideLabel = false }: {
   id: string; label: string; value: string | null; selectedLabel: string; onChange: (value: string | null) => void; optional: boolean | undefined; hint: string | undefined;
-  kind: "item" | "party" | "location" | "document" | "unit"; documentType?: string; locationKind?: string; acceptGuid?: boolean;
+  kind: "item" | "party" | "location" | "document" | "unit"; documentType?: string; locationKind?: string; partyTypes?: readonly string[]; acceptGuid?: boolean;
   placeholder: string; noResult: (query: string) => string; hideLabel?: boolean;
 }) {
   const listId = `${useId().replace(/:/g, "")}-reference-options`;
@@ -189,11 +198,13 @@ function ReferencePicker({ id, label, value, selectedLabel, onChange, optional, 
   const resultNames = useReferenceNames({ items: results.map((result) => result.itemId) });
 
   const search = useCallback(async (text: string, signal: AbortSignal) => {
-    const params = new URLSearchParams({ kind, q: text, take: "10" });
+    // A party-type filter reads the widest page and keeps the matching types, so a short list is not crowded out.
+    const params = new URLSearchParams({ kind, q: text, take: partyTypes ? "25" : "10" });
     if (documentType) params.set("type", documentType);
     if (locationKind) params.set("locationKind", locationKind);
-    return (await api<{ results: SearchResult[] }>(`/api/serialisation/reference-search?${params}`, { signal })).results;
-  }, [kind, documentType, locationKind]);
+    const results = (await api<{ results: SearchResult[] }>(`/api/serialisation/reference-search?${params}`, { signal })).results;
+    return partyTypes ? results.filter((result) => result.partyType !== null && partyTypes.includes(result.partyType)) : results;
+  }, [kind, documentType, locationKind, partyTypes]);
 
   useEffect(() => {
     const text = query.trim();
@@ -234,7 +245,7 @@ function ReferencePicker({ id, label, value, selectedLabel, onChange, optional, 
   };
 
   return <div className="field reference-field">
-    {!hideLabel && <label htmlFor={id}>{label}{optional && <span className="hint"> · optional</span>}</label>}
+    {hideLabel ? <span className="lbl" aria-hidden="true">&nbsp;</span> : <label htmlFor={id}>{label}{optional && <span className="hint"> · optional</span>}</label>}
     {value ? <div className="reference-selected"><span title={value}>{selectedLabel}</span><button type="button" className="reference-clear" aria-label={`Clear ${label}`} onClick={() => onChange(null)}>Clear</button></div>
       : <div className="reference-combobox">
         <input id={id} className="input" role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={listId}
@@ -271,4 +282,5 @@ function resultMeta(result: SearchResult): string | null {
 }
 
 function friendlyType(value: string): string { return value.replace(/_/g, " "); }
+function sentence(value: string): string { return value.charAt(0).toUpperCase() + value.slice(1); }
 function aborted(reason: unknown): boolean { return reason instanceof DOMException && reason.name === "AbortError"; }

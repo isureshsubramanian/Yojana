@@ -17,7 +17,8 @@
 .correction-choice-help { white-space: normal; line-height: 1.35; }
 .correction-alert { margin-bottom: var(--gap); }
 .correction-empty-setup { display: grid; gap: 12px; max-width: 780px; }
-.reference-field-with-type { display: grid; grid-template-columns: minmax(140px, .4fr) minmax(0, 1fr); gap: 8px; align-items: end; }
+/* Top-aligned: the search box keeps an empty label row the height of the type label, so both controls share a line and a hint below the search does not push the type select down. */
+.reference-field-with-type { display: grid; grid-template-columns: minmax(140px, .4fr) minmax(0, 1fr); gap: 8px; align-items: start; }
 .reference-combobox { position: relative; }
 .reference-combobox .input { padding-right: 36px; }
 .reference-loading { position: absolute; right: 12px; top: 8px; color: var(--text-3); }
@@ -59,6 +60,6 @@
   .correction-records, .correction-source-fields { grid-template-columns: 1fr; }
   .correction-work-orders { grid-template-columns: 1fr; }
   .correction-exchange { transform: rotate(90deg); }
-  .reference-field-with-type { grid-template-columns: 1fr; }
+  .reference-field-with-type { grid-template-columns: 1fr; } .reference-field-with-type .lbl[aria-hidden="true"] { display: none; }
   .correction-line-controls, .correction-line-controls.late-stock, .correction-serial-pair { grid-template-columns: 1fr; }
 }
