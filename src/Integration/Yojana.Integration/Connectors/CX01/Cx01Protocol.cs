@@ -58,7 +58,8 @@ internal static class Cx01Protocol
             ["invoices"] = new("Invoices", "DocEntry", "InvoicePosted"),
             ["goods_receipts"] = new("PurchaseDeliveryNotes", "DocEntry", "GoodsReceiptPosted"),
             ["production_receipts"] = new("InventoryGenEntries", "DocEntry", "ProductionCompleted"),
-            ["inventory_transfers"] = new("StockTransfers", "DocEntry", "TransferPosted"),
+            // The live stock-transfer object has a change date but no change time; filtering on one is refused.
+            ["inventory_transfers"] = new("StockTransfers", "DocEntry", "TransferPosted", HasUpdateTime: false),
             ["inventory_adjustments"] = new("InventoryGenExits", "DocEntry", "InventoryAdjusted"),
         };
 
@@ -119,4 +120,5 @@ internal static class Cx01Protocol
         CultureInfo.InvariantCulture, out _) ? value : "'" + value.Replace("'", "''", StringComparison.Ordinal) + "'";
 }
 
-internal sealed record Cx01EntityDefinition(string Collection, string KeyField, string CanonicalMessage);
+internal sealed record Cx01EntityDefinition(string Collection, string KeyField, string CanonicalMessage,
+    bool HasUpdateTime = true);

@@ -432,9 +432,9 @@ public sealed class Cx01Adapter(
             filter += " and " + filterField + " lt '"
                 + until.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + "'";
         var path = Cx01Protocol.Collection(entity) + "?$select=" + entity.KeyField
-            + ",UpdateDate,UpdateTime" + (filterField == "UpdateDate" ? "" : "," + filterField)
+            + (entity.HasUpdateTime ? ",UpdateDate,UpdateTime" : ",UpdateDate") + (filterField == "UpdateDate" ? "" : "," + filterField)
             + "&$filter=" + Uri.EscapeDataString(filter)
-            + "&$orderby=UpdateDate,UpdateTime," + entity.KeyField + "&$top="
+            + "&$orderby=UpdateDate," + (entity.HasUpdateTime ? "UpdateTime," : "") + entity.KeyField + "&$top="
             + Math.Min(maximum, 1_000).ToString(CultureInfo.InvariantCulture);
         while (result.Count < maximum)
         {
@@ -443,7 +443,10 @@ public sealed class Cx01Adapter(
             {
                 var key = RequiredText(row, entity.KeyField);
                 var marker = Cx01Watermark.From(row, key);
-                if (!restrictToWatermarkRange || marker.Timestamp >= fromInclusive
+                // Without a change time a marker is the day's midnight; compare whole days, or a record changed later
+                // that day falls before a time-of-day watermark and is never read. Same-day re-reads deduplicate.
+                var from = entity.HasUpdateTime ? fromInclusive : new DateTimeOffset(fromInclusive.UtcDateTime.Date, TimeSpan.Zero);
+                if (!restrictToWatermarkRange || marker.Timestamp >= from
                     && (toExclusive is null || marker.Timestamp < toExclusive))
                     result.Add(marker);
                 if (result.Count == maximum) break;

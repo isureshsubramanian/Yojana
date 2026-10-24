@@ -116,6 +116,18 @@ public sealed class Cx01AdapterTests
     }
 
     [Fact]
+    public async Task Stock_transfers_poll_by_change_date_only_as_they_carry_no_change_time()
+    {
+        await using var simulator = new Cx01Simulator();
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+
+        var result = await context.Adapter.PollAsync(new(context.TenantId, context.ConnectionId, "inventory_transfers",
+            null, TimeSpan.FromMinutes(2), 1), CancellationToken.None);
+
+        Assert.Empty(result.Events);
+    }
+
+    [Fact]
     public async Task First_read_after_full_return_is_partial_and_raises_attribution_work()
     {
         await using var simulator = new Cx01Simulator { SameWarehouseReturnPosted = true };

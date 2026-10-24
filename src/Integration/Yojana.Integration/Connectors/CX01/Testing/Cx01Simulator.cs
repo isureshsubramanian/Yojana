@@ -593,6 +593,15 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                     return;
                 }
             }
+            // The live stock-transfer object has no change time; the service refuses a query that names one.
+            if (path == Cx01Protocol.Root + "StockTransfers"
+                && request.Url?.Query.Contains("UpdateTime", StringComparison.Ordinal) == true)
+            {
+                response.StatusCode = (int)HttpStatusCode.BadRequest;
+                await JsonAsync(response, new { error = new { code = "-1000",
+                    message = "Property 'UpdateTime' of 'StockTransfer'is invalid" } });
+                return;
+            }
             if (new[]
                 {
                     "Items", "BusinessPartners", "Invoices", "PurchaseDeliveryNotes",
