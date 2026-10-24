@@ -106,6 +106,10 @@ public sealed class ImportComparisonService(
 
         // ParentJobId is comparison provenance here, not a split-import command child. ImportService's command replay
         // distinguishes the two by file identity; removing that distinction makes a source upload replay two jobs.
+        // TIGHT COUPLING (file-comparison history provenance)
+        // WHAT: ImportQueries reconstructs job B from this exact "A versus B" name and SHA-256(A hash + ':' + B hash).
+        // WHY: the existing row stores only job A's id, with no schema field for job B. WHAT BREAKS IF SEPARATED:
+        // changing either convention makes historical comparisons show the input file as unavailable rather than report the wrong one.
         var comparison = new ImportJob
         {
             TenantId = tenant.TenantId, JobId = command.CommandId, CommandId = command.CommandId, ParentJobId = jobA.JobId,

@@ -1,6 +1,6 @@
 import { api } from "../api/client";
 import { DEFAULT_LEGAL_ENTITY, newCommandId, now } from "../api/units";
-import type { CompareResult, DisclosurePolicy, ImportFileHistoryPage, ImportJob, ImportPage, ImportRowPage, ImportRunResult, InstalledBasePage, InternalLookup, PortalContext, PortalLookup, PortalUnit, PublicLookup, ReconciliationPage, ReferenceOption, SerialListResult, ServiceHistoryPage, CertificatePage, WhereUsedResult, XrefPage, PortalRegistrationResult, PortalRmaResult } from "./types";
+import type { CertificatePage, CompareResult, ComparisonHistoryPage, DisclosurePolicy, FeedMessageHistoryPage, ImportFileHistoryPage, ImportJob, ImportPage, ImportRowPage, ImportRunResult, InstalledBasePage, InternalLookup, PortalContext, PortalLookup, PortalUnit, PortalRegistrationResult, PortalRmaResult, PublicLookup, ReconciliationPage, ReferenceOption, SerialListResult, ServiceHistoryPage, WhereUsedResult, XrefPage } from "./types";
 
 export function query(values: Record<string, string | number | boolean | null | undefined>): string { const params = new URLSearchParams(); for (const [key, value] of Object.entries(values)) if (value !== null && value !== undefined && value !== "") params.set(key, String(value)); const text = params.toString(); return text ? `?${text}` : ""; }
 export function exportUrl(path: string, format: "csv" | "xlsx"): string { return `${path}${path.includes("?") ? "&" : "?"}format=${format}`; }
@@ -15,6 +15,8 @@ export async function fileBytes(file: File): Promise<string> {
 export const p7Api = {
   imports: (cursor?: string, signal?: AbortSignal) => api<ImportPage>(`/api/imports/${query({ cursor, take: 50 })}`, { signal }),
   importHistory: (filters: Record<string, string | undefined>, cursor?: string, signal?: AbortSignal) => api<ImportFileHistoryPage>(`/api/imports/history${query({ ...filters, cursor, take: 50 })}`, { signal }),
+  feedMessageHistory: (filters: Record<string, string | undefined>, cursor?: string, signal?: AbortSignal) => api<FeedMessageHistoryPage>(`/api/imports/history/feed-messages${query({ ...filters, cursor, take: 50 })}`, { signal }),
+  comparisonHistory: (filters: Record<string, string | undefined>, cursor?: string, signal?: AbortSignal) => api<ComparisonHistoryPage>(`/api/imports/history/comparisons${query({ ...filters, cursor, take: 50 })}`, { signal }),
   importJob: (id: string, signal?: AbortSignal) => api<ImportJob>(`/api/imports/${id}`, { signal }),
   importRows: (id: string, cursor?: string, signal?: AbortSignal) => api<ImportRowPage>(`/api/imports/${id}/rows${query({ cursor, take: 100 })}`, { signal }),
   runImport: async (file: File, mode: "apply" | "compare" = "apply") => api<ImportRunResult>("/api/imports/run", { method: "POST", body: { commandId: newCommandId(), source: "user_upload", file: { fileName: file.name, format: file.name.split(".").pop()?.toLowerCase(), content: await fileBytes(file) }, eventTime: now(), legalEntityId: DEFAULT_LEGAL_ENTITY, mapping: { serial: "Serial", orderNumber: "Order" }, mappingName: "standard_serial_list", mode } }),

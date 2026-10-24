@@ -152,6 +152,10 @@ svg.ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-wid
 .card-header .meta { font-size: 13px; color: var(--text-3); font-weight: 400; }
 .card-body { padding: 20px; }
 .card-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 48px; padding: 0 20px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-2); }
+.collapsible-card-actions { display: flex; align-items: center; gap: 8px; }
+.collapsible-card .card-header { flex-wrap: wrap; }
+.collapsible-card-chevron { transition: transform 120ms ease; }
+.collapsible-card-chevron.expanded { transform: rotate(180deg); }
 .stack { display: grid; gap: 24px; }
 .cols-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
 .cols-3-2 { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 24px; }

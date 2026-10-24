@@ -11,6 +11,11 @@ export interface ImportSummary { jobId: string; source: string; fileName: string
 export interface ImportPage { items: ImportSummary[]; nextCursor: string | null }
 export interface ImportFileHistoryRow { jobId: string; fileName: string; format: string; size: number; originalHash: string; convertedHash: string | null; uploaderName: string; uploaderReference: string; uploadedAt: string; source: string; status: string; applied: number; skipped: number; rejected: number; storageState: string; originalAvailable: boolean; convertedAvailable: boolean; archiveStoreName: string | null; mayDownload: boolean }
 export interface ImportFileHistoryPage { items: ImportFileHistoryRow[]; nextCursor: string | null }
+export interface FeedMessageHistoryRow { feedMessageId: string; messageReference: string; documentType: string; documentId: string; documentLine: number; importJobId: string; payloadHash: string; status: string; shipped: number; assetTags: number; rejected: number; callerName: string; receivedAt: string }
+export interface FeedMessageHistoryPage { items: FeedMessageHistoryRow[]; nextCursor: string | null }
+export interface ComparisonInputFile { id: string | null; name: string; hash: string | null }
+export interface ComparisonHistoryRow { jobId: string; firstFile: ComparisonInputFile; secondFile: ComparisonInputFile; status: string; applied: number; skipped: number; rejected: number; ranAt: string }
+export interface ComparisonHistoryPage { items: ComparisonHistoryRow[]; nextCursor: string | null }
 export interface ImportRowPage { items: ImportRow[]; nextCursor: string | null }
 export interface ImportJob extends ImportSummary { originalHash: string; convertedHash: string | null; target: DocumentRef | null; targetName: string | null; originalArchiveReference: string | null; convertedArchiveReference: string | null; inboxReference: string | null; rows: ImportRow[] }
 export interface ImportRunResult { jobs: ImportJob[]; replayed: boolean }
