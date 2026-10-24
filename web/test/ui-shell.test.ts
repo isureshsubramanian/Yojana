@@ -48,7 +48,7 @@ test("group waiting state is a dot while numbers stay inside the flyout", () => 
 
 test("every settings page is registered once and registry entries generate the routes", () => {
   const expected = [
-    "/settings/company", "/settings/users", "/settings/sign-in-policy", "/settings/security-events", "/settings/time-zone", "/settings/currencies",
+    "/settings/company", "/settings/users", "/settings/sign-in-policy", "/settings/security-events", "/settings/time-zone", "/settings/currencies", "/settings/scanning",
     "/settings/numbering", "/settings/certificates", "/settings/labels", "/settings/disclosure", "/settings/jurisdictions",
     "/settings/claim-risk", "/settings/recovery", "/settings/refurbishment", "/settings/workbench-choices",
     "/settings/import-files", "/settings/knowledge-screen-changes",
@@ -65,7 +65,7 @@ test("landing filtering matches names and descriptions and only existing reads s
   const examples = [{ name: "Company", description: "Sender and reply-to" }, { name: "Refurbishment policy", description: "Identity outcomes and cycle limits" }];
   assert.deepEqual(filterSettings(examples, "reply-to").map(entry => entry.name), ["Company"]);
   assert.deepEqual(filterSettings(examples, "cycle limits").map(entry => entry.name), ["Refurbishment policy"]);
-  const noNewRead = ["Users", "Labels", "Jurisdiction rules", "Claims risk rules", "Workbench choices", "Knowledge screen changes"];
+  const noNewRead = ["Users", "Scanning", "Labels", "Jurisdiction rules", "Claims risk rules", "Workbench choices", "Knowledge screen changes"];
   for (const name of noNewRead) assert.doesNotMatch(registry, new RegExp(`name: "${name}"[^\\n]*currentValue`), name);
   for (const name of ["Company", "Sign-in policy", "Time zone", "Currencies", "Document numbering", "Certificates", "Disclosure tiers", "Supplier recovery", "Refurbishment policy", "Import files"])
     assert.match(registry, new RegExp(`name: "${name}"[^\\n]*[\\s\\S]{0,250}currentValue:`), name);
@@ -86,6 +86,7 @@ test("settings summary is read once, wording stays in the registry and missing l
     { path: "/settings/workbench-choices", summaryKey: "workbench_choices", summaryValue: (line: { counts: Record<string, number> }) => ({ text: `${line.counts.choices} choices · ${line.counts.twoApprovers} need two approvers` }) },
     { path: "/settings/claim-risk", summaryKey: "claims_risk", summaryValue: (line: { counts: Record<string, number> }) => ({ text: `${line.counts.claimsHeld} claim held for second review` }) },
     { path: "/settings/knowledge-screen-changes", summaryKey: "knowledge_screen_changes", summaryValue: (line: { counts: Record<string, number> }) => ({ text: `${line.counts.screensMarked} screens marked · ${line.counts.entriesToReview} entries to review` }) },
+    { path: "/settings/scanning", summaryKey: "scanning", summaryValue: (line: { counts: Record<string, number> }) => ({ text: `${line.counts.endPauseMs} ms end pause · ${line.counts.repeatWindowMs} ms repeat window` }) },
     { path: "/settings/labels", summaryKey: "labels", summaryValue: () => ({ text: "unexpected" }) },
   ];
   let reads = 0;
@@ -97,6 +98,7 @@ test("settings summary is read once, wording stays in the registry and missing l
       { key: "workbench_choices", counts: { choices: 18, twoApprovers: 4 }, attention: null },
       { key: "claims_risk", counts: { claimsHeld: 1 }, attention: null },
       { key: "knowledge_screen_changes", counts: { screensMarked: 3, entriesToReview: 2 }, attention: null },
+      { key: "scanning", counts: { endPauseMs: 300, repeatWindowMs: 1500 }, attention: null },
     ] };
   }, new AbortController().signal);
   assert.equal(reads, 1);
@@ -105,8 +107,9 @@ test("settings summary is read once, wording stays in the registry and missing l
   assert.equal(values["/settings/workbench-choices"]?.text, "18 choices · 4 need two approvers");
   assert.equal(values["/settings/claim-risk"]?.text, "1 claim held for second review");
   assert.equal(values["/settings/knowledge-screen-changes"]?.text, "3 screens marked · 2 entries to review");
+  assert.equal(values["/settings/scanning"]?.text, "300 ms end pause · 1500 ms repeat window");
   assert.equal(values["/settings/labels"]?.text, "—");
-  for (const phrase of ["invitationsOpen\"), \"invitation\"", "awaiting_legal_confirmation", "held for second review", "need\"} two approvers", "entriesToReview\"), \"entry\", \"entries\")} to review"])
+  for (const phrase of ["invitationsOpen\"), \"invitation\"", "awaiting_legal_confirmation", "held for second review", "need\"} two approvers", "entriesToReview\"), \"entry\", \"entries\")} to review", "repeatWindowMs\").toLocaleString()"])
     assert.ok(registry.includes(phrase), phrase);
   assert.match(settingsLanding, /settingsSummaryApi\.get/);
   assert.match(settingsLanding, /StatusBadge tone="warn"/);

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Identity;
 
 namespace Yojana.Serialisation.Replacements;
 
@@ -31,13 +32,27 @@ public sealed class ReplacementLinkQueries(SerialisationDbContext db, ITenantCon
         if (!string.IsNullOrWhiteSpace(query))
         {
             var text = query.Trim();
-            source = source.Where(link =>
-                db.WarrantyReplacements.Any(document => document.TenantId == tenantId
-                    && document.WarrantyReplacementId == link.WarrantyReplacementId
-                    && (document.ReplacementNumber.Contains(text) || document.SourceNumber.Contains(text)))
-                || db.Identifiers.Any(identifier => identifier.TenantId == tenantId && identifier.ValidTo == null
-                    && (identifier.UnitId == link.OriginalUnitId || identifier.UnitId == link.ReplacementUnitId)
-                    && (identifier.RawValue.Contains(text) || identifier.NormalisedValue.Contains(text))));
+            var parsed = ScanParser.Parse(text);
+            if (parsed.Format == ScanFormat.Url)
+            {
+                source = source.Where(_ => false);
+            }
+            else
+            {
+                var identifierText = parsed.Cleaned;
+                if (parsed.Alternatives.Count > 0
+                    && !await db.Identifiers.AsNoTracking().AnyAsync(identifier => identifier.TenantId == tenantId
+                        && (identifier.RawValue == identifierText || identifier.NormalisedValue == identifierText),
+                        cancellationToken))
+                    identifierText = parsed.Alternatives[0];
+                source = source.Where(link =>
+                    db.WarrantyReplacements.Any(document => document.TenantId == tenantId
+                        && document.WarrantyReplacementId == link.WarrantyReplacementId
+                        && (document.ReplacementNumber.Contains(text) || document.SourceNumber.Contains(text)))
+                    || db.Identifiers.Any(identifier => identifier.TenantId == tenantId && identifier.ValidTo == null
+                        && (identifier.UnitId == link.OriginalUnitId || identifier.UnitId == link.ReplacementUnitId)
+                        && (identifier.RawValue.Contains(identifierText) || identifier.NormalisedValue.Contains(identifierText))));
+            }
         }
         var total = await source.CountAsync(cancellationToken);
         var data = await (from link in source

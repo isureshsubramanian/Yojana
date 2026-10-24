@@ -13,6 +13,9 @@ public enum ScanFormat
 
     /// <summary>No recognised structure: the whole value is the identifier.</summary>
     Plain,
+
+    /// <summary>An HTTP or HTTPS address. It is classified only; the application never opens or fetches it.</summary>
+    Url,
 }
 
 /// <summary>One parsed field: a GS1 application identifier or an MH10.8.2 data identifier with its value.</summary>
@@ -24,6 +27,9 @@ public sealed record ScanField(string Key, string Value, string? Description, IR
 /// </summary>
 public sealed record ScanResult(ScanFormat Format, string Raw, string Cleaned, string? SymbologyIdentifier, IReadOnlyList<ScanField> Fields, int SeparatorsRecovered)
 {
+    /// <summary>Less likely identifier values that lookups may try after <see cref="Cleaned"/> has no match.</summary>
+    public IReadOnlyList<string> Alternatives { get; init; } = [];
+
     public string? this[string key] => Fields.FirstOrDefault(f => f.Key == key && f.Errors.Count == 0)?.Value;
 
     public bool HasErrors => Fields.Any(f => f.Errors.Count > 0);
@@ -53,6 +59,12 @@ public static partial class ScanParser
             cleaned = cleaned[m.Length..];
         }
 
+        if (cleaned.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || cleaned.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return new ScanResult(ScanFormat.Url, raw, cleaned, aim, [], recovered);
+        }
+
         if (IsIso15434(cleaned) || LooksLikeMh10(cleaned))
         {
             return new ScanResult(ScanFormat.Mh10, raw, cleaned, aim, ParseMh10(cleaned), recovered);
@@ -71,7 +83,9 @@ public static partial class ScanParser
             }
         }
 
-        return new ScanResult(ScanFormat.Plain, raw, cleaned, aim, [], recovered);
+        var plain = new ScanResult(ScanFormat.Plain, raw, cleaned, aim, [], recovered);
+        var codabar = Codabar().Match(cleaned);
+        return codabar.Success ? plain with { Alternatives = [codabar.Groups["value"].Value] } : plain;
     }
 
     /// <summary>Restores group separators a wedge rendered as text; returns the cleaned string and how many were recovered.</summary>
@@ -181,4 +195,7 @@ public static partial class ScanParser
     // A fixed-length opener (SSCC, GTIN) may be the whole scan, as on a carton label carrying only its GTIN.
     [GeneratedRegex(@"^(?:(?:00\d{18}|01\d{14}|02\d{14})(?:\d|$)|(?:1[0-7]|2[0-1]|240|241|253|254|255|8003|8004|8006|8010|8017|8018|90)\d)")]
     private static partial Regex Gs1Opener();
+
+    [GeneratedRegex(@"^[A-D](?<value>[0-9\-$:/.+]{4,})[A-D]$")]
+    private static partial Regex Codabar();
 }

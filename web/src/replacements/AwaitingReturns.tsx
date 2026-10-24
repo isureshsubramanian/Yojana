@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActionDialog, DataGrid, KpiStrip, ScanInput, StatusBadge, type GridColumn } from "../components";
+import { isUrlScanFormat } from "../components/scan";
+import { units } from "../api/units";
 import { useReferenceNames } from "../corrections/ReferenceFields";
 import { Rail } from "../shell/Drawer";
 import { openDrawer, updateDrawer } from "../shell/drawerStore";
@@ -17,6 +19,7 @@ type Dialog = { kind: "extend" | "bill" | "lift"; row: ReplacementLinkRow } | nu
 export function Component() {
   const [filter, setFilter] = useState<AwaitingFilter>("overdue");
   const [find, setFind] = useState("");
+  const [findInput, setFindInput] = useState("");
   const [pageNumber, setPageNumber] = useState(1);
   const [page, setPage] = useState<ReplacementLinkPage | null>(null);
   const [active, setActive] = useState<string | null>(null);
@@ -43,6 +46,14 @@ export function Component() {
   const showAction = (kind: NonNullable<Dialog>["kind"], row: ReplacementLinkRow) => {
     setDialog({ kind, row }); setReason(""); setDue(row.returnDue ?? ""); setBasis(row.nonReturnPriceBasis ?? "list");
     setAmount(row.nonReturnAmount === null ? "" : String(row.nonReturnAmount));
+  };
+  const submitFind = async (value: string) => {
+    setError(null);
+    try {
+      const parsed = await units.scan(value);
+      if (isUrlScanFormat(parsed.format)) { setError(new Error("This is a web address, not a serial")); return; }
+      setFind(value.trim()); setPageNumber(1);
+    } catch (reason) { setError(reason); }
   };
   const drawer = (row: ReplacementLinkRow) => <ReplacementDrawer row={row} customer={names.party(row.counterpartyPartyRef)} onAction={showAction} />;
   const open = (row: ReplacementLinkRow) => { setActive(row.replacementLinkId); openDrawer({ eyebrow: "Advance replacement", title: row.replacementNumber, mono: true }, drawer(row)); };
@@ -82,7 +93,7 @@ export function Component() {
           { label: "Customers on hold", value: page?.kpis.customersOnHold.toLocaleString() ?? "—", detail: "no further advance replacements" },
         ]} />
         <section className="card" aria-label="Replacement filters"><div className="card-body replacement-toolbar">
-          <ScanInput value={find} onChange={(value) => { setFind(value.trim()); setPageNumber(1); }} onSubmit={(scan) => { setFind(scan.value); setPageNumber(1); }} ariaLabel="Find an awaiting replacement" placeholder="Serial, replacement document or RMA" />
+          <ScanInput value={findInput} onChange={setFindInput} onSubmit={(scan) => void submitFind(scan.value)} ariaLabel="Find an awaiting replacement" placeholder="Serial, replacement document or RMA" />
           <div className="segmented plain" role="group" aria-label="Due status">{(["overdue", "due_soon", "all"] as const).map((value) => <button type="button" key={value} aria-pressed={filter === value} onClick={() => setView(value)}>{filterTitle(value)}<span className="n">{filterCount(value, page?.kpis ?? null)?.toLocaleString() ?? "—"}</span></button>)}</div>
         </div></section>
         <section className="card" aria-labelledby="awaiting-list"><div className="card-header"><h2 id="awaiting-list">{filterTitle(filter)} <span className="meta">{page?.total.toLocaleString() ?? "—"} links</span></h2><span className="meta nowrap">{filter === "overdue" ? "Most overdue first" : "Earliest due first"}</span></div>

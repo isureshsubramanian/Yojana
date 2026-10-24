@@ -22,6 +22,29 @@ public abstract class SerialisationSettingsSummaryContributor
         [new SettingsSummaryLine(key, counts, attention)];
 }
 
+public sealed class ScanningSettingsSummaryContributor(ScanningSettings settings)
+    : SerialisationSettingsSummaryContributor, ISettingsSummaryContributor
+{
+    // Hidden coupling: this key must also appear as summaryKey in web/src/settings/registry.ts. The architecture
+    // cross-check protects both otherwise-independent sides from silently drifting.
+    public const string Key = "scanning";
+
+    public IReadOnlyList<SettingsSummaryKey> Keys { get; } = [new(Key, AdministratorRoles)];
+
+    public async Task<IReadOnlyList<SettingsSummaryLine>> ReadAsync(
+        IReadOnlySet<string> keys,
+        CancellationToken cancellationToken)
+    {
+        if (!keys.Contains(Key)) return [];
+        var policy = await settings.GetAsync(cancellationToken);
+        return Line(Key, new Dictionary<string, long>(StringComparer.Ordinal)
+        {
+            ["endPauseMs"] = policy.EndPauseMs,
+            ["repeatWindowMs"] = policy.RepeatWindowMs,
+        });
+    }
+}
+
 public sealed class LabelsSettingsSummaryContributor(
     SerialisationDbContext db,
     ITenantContext tenant) : SerialisationSettingsSummaryContributor, ISettingsSummaryContributor

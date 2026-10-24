@@ -37,14 +37,37 @@ public sealed record PreparedIdentifier(IdentifierInput Input, IdentifierPolicy 
 public sealed record OpenIdentifierHolder(Guid UnitId, Guid IdentifierId, string LifecycleStatus);
 
 /// <summary>Identity rules 1–4 applied for the commands: normalise, validate, scope, and look up the current holder of a value.</summary>
-public sealed class IdentifierService(SerialisationDbContext db, IIdentifierPolicySource policies, ITenantContext tenant)
+public sealed class IdentifierService(SerialisationDbContext db, IIdentifierPolicySource policies,
+    IdentifierCaptureSettings captureSettings, ITenantContext tenant)
 {
+    private Task<IReadOnlySet<string>>? codabarTypes;
+
     public PreparedIdentifier Prepare(IdentifierInput input, Guid? itemId, Guid? ownerPartyRef)
     {
         var policy = policies.For(input.Type);
         var normalised = IdentifierNormaliser.Normalise(input.RawValue, policy);
         var validation = IdentifierValidator.Validate(normalised.Value, policy);
         return new PreparedIdentifier(input, policy, normalised.Value, policy.ScopeKeyFor(itemId, ownerPartyRef), validation, normalised.ArtefactsStripped);
+    }
+
+    /// <summary>Prepares a newly captured value, applying only the tenant's explicit per-type Codabar override.</summary>
+    public async Task<PreparedIdentifier> PrepareCaptureAsync(IdentifierInput input, Guid? itemId,
+        Guid? ownerPartyRef, CancellationToken cancellationToken)
+    {
+        var parsed = ScanParser.Parse(input.RawValue);
+        if (parsed.Format == ScanFormat.Url)
+            throw new CommandRefusedException("scan_url_not_identifier", "This is a web address, not a serial.");
+
+        // Coupled to IdentifierCaptureSettings' factory registration in SerialisationModule: direct ITenantSettings
+        // access here would expose PlatformDbContext to every Wolverine handler using this service and stop startup.
+        var configuredTypes = await (codabarTypes ??= captureSettings.CodabarTypesAsync(cancellationToken));
+        if (configuredTypes.Contains(input.Type))
+        {
+            if (parsed.Format == ScanFormat.Plain && parsed.Alternatives.Count > 0)
+                input = input with { RawValue = parsed.Alternatives[0] };
+        }
+
+        return Prepare(input, itemId, ownerPartyRef);
     }
 
     /// <summary>The unit that currently holds (scheme, scope, value), with its status, or null.</summary>

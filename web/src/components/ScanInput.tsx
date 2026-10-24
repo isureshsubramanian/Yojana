@@ -1,6 +1,7 @@
-import { useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import { Icon } from "../shell/Icons";
-import { ScanTimer, separatorForControlKey, submission, type ScanSubmission } from "./scan";
+import { PauseEndedScan, ScanRepeatSuppressor, ScanTimer, separatorForControlKey, type ScanSubmission } from "./scan";
+import { useScanSettings } from "./useScanSettings";
 
 export interface ScanInputProps {
   id?: string;
@@ -27,10 +28,39 @@ export interface ScanInputProps {
  */
 export function ScanInput({ id, value, onChange, onSubmit, placeholder, ariaLabel, hint, size = "md", autoFocus, primary, disabled, describedBy }: ScanInputProps) {
   const [inner, setInner] = useState("");
+  const [repeatNote, setRepeatNote] = useState("");
+  const settings = useScanSettings();
   const timer = useRef(new ScanTimer());
+  const pause = useRef(new PauseEndedScan(timer.current, {
+    set: (callback, delayMs) => window.setTimeout(callback, delayMs),
+    clear: handle => window.clearTimeout(handle as number),
+  }));
+  const repeats = useRef(new ScanRepeatSuppressor());
+  const noteTimer = useRef<number | null>(null);
   const controlled = value !== undefined;
   const current = controlled ? value : inner;
-  const set = (next: string) => { if (!controlled) setInner(next); onChange?.(next); };
+  const currentRef = useRef(current);
+  currentRef.current = current;
+  const set = (next: string) => { currentRef.current = next; if (!controlled) setInner(next); onChange?.(next); };
+
+  const emit = (scan: ScanSubmission) => {
+    if (!repeats.current.accept(scan.value, performance.now(), settings.repeatWindowMs)) {
+      setRepeatNote("Same label read again: ignored");
+      if (noteTimer.current !== null) window.clearTimeout(noteTimer.current);
+      noteTimer.current = window.setTimeout(() => { setRepeatNote(""); noteTimer.current = null; }, 2000);
+      return;
+    }
+    setRepeatNote("");
+    onSubmit(scan);
+  };
+
+  useEffect(() => {
+    if (disabled) pause.current.cancel();
+  }, [disabled]);
+  useEffect(() => () => {
+    pause.current.cancel();
+    if (noteTimer.current !== null) window.clearTimeout(noteTimer.current);
+  }, []);
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     const separator = separatorForControlKey(e.key, e.ctrlKey);
@@ -40,17 +70,17 @@ export function ScanInput({ id, value, onChange, onSubmit, placeholder, ariaLabe
       const start = input.selectionStart ?? current.length;
       const end = input.selectionEnd ?? start;
       set(current.slice(0, start) + separator + current.slice(end));
-      timer.current.key(performance.now());
+      pause.current.key(performance.now(), settings.endPauseMs, () => currentRef.current, emit);
       return;
     }
     if (e.key === "Enter") {
       e.preventDefault();
+      const entered = pause.current.enter(current);
       if (!current.trim()) return;
-      const source = timer.current.classify(current.length);
-      onSubmit(submission(current, source));
+      emit(entered);
       return;
     }
-    if (e.key.length === 1) timer.current.key(performance.now());
+    if (e.key.length === 1) pause.current.key(performance.now(), settings.endPauseMs, () => currentRef.current, emit);
   };
 
   const onInput = (e: ChangeEvent<HTMLInputElement>) => set(e.target.value);
@@ -76,7 +106,8 @@ export function ScanInput({ id, value, onChange, onSubmit, placeholder, ariaLabe
         disabled={disabled}
         data-scan-focus={primary ? "" : undefined}
       />
-      {hint && <span className="scan-hint">{hint}</span>}
+      {!repeatNote && hint && <span className="scan-hint">{hint}</span>}
+      <span className={repeatNote ? "scan-hint" : "sr-only"} aria-live="polite">{repeatNote}</span>
     </div>
   );
 }

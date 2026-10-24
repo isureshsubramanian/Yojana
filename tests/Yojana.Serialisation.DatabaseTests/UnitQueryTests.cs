@@ -1,8 +1,11 @@
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 using Xunit;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Identity;
+using Yojana.Serialisation.Ledger;
 using Yojana.Serialisation.Queries;
 
 namespace Yojana.Serialisation.DatabaseTests;
@@ -85,5 +88,56 @@ public sealed class UnitQueryTests(SerialisationHostFixture fixture)
         var history = await queries.HistoryAsync(vxUnits[8], 0, 10, CancellationToken.None);
         Assert.Equal([UnitEventType.IdentifierCorrected, UnitEventType.Commissioned], history.Items.Select(h => h.EventType));
         Assert.Null(await queries.DetailAsync(Guid.NewGuid(), CancellationToken.None));
+    }
+
+    [DatabaseFact]
+    public async Task Codabar_alternative_is_lookup_only_until_the_identifier_type_override_is_enabled()
+    {
+        var tenant = await fixture.NewTenantAsync("uqc");
+        var item = Guid.NewGuid();
+        const string inner = "8906101767472";
+        const string wrapped = "A8906101767472A";
+        var innerUnit = (await InvokeAsync<CommissionUnitsResult>(tenant, new CommissionUnits(Guid.NewGuid(), item,
+            UnitOrigin.Purchased, [new CommissionLine([new IdentifierInput(IdentifierType.InternalSerial, inner)])],
+            At, "scanner", Entity))).Lines.Single().UnitId!.Value;
+
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var lookup = await scope.ServiceProvider.GetRequiredService<UnitQueries>()
+                .LookupAsync(wrapped, IdentifierType.InternalSerial, CancellationToken.None);
+            Assert.Equal(innerUnit, Assert.Single(lookup.Hits).UnitId);
+        }
+
+        const string preserved = "A123456789A";
+        var preservedUnit = (await InvokeAsync<CommissionUnitsResult>(tenant, new CommissionUnits(Guid.NewGuid(), item,
+            UnitOrigin.Purchased, [new CommissionLine([new IdentifierInput(IdentifierType.InternalSerial, preserved)])],
+            At.AddMinutes(1), "scanner", Entity))).Lines.Single().UnitId!.Value;
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var detail = await scope.ServiceProvider.GetRequiredService<UnitQueries>()
+                .DetailAsync(preservedUnit, CancellationToken.None);
+            Assert.Equal(preserved, detail!.Identifiers.Single().RawValue);
+        }
+
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var setting = new Dictionary<string, IdentifierCaptureSettings.IdentifierPolicyOverride>
+            {
+                [IdentifierType.InternalSerial] = new(true),
+            };
+            await scope.ServiceProvider.GetRequiredService<ITenantSettings>().SetAsync(IdentifierCaptureSettings.Key,
+                JsonSerializer.Serialize(setting, LedgerJson.Options), CancellationToken.None);
+        }
+
+        const string strippedScan = "B987654321B";
+        var strippedUnit = (await InvokeAsync<CommissionUnitsResult>(tenant, new CommissionUnits(Guid.NewGuid(), item,
+            UnitOrigin.Purchased, [new CommissionLine([new IdentifierInput(IdentifierType.InternalSerial, strippedScan)])],
+            At.AddMinutes(2), "scanner", Entity))).Lines.Single().UnitId!.Value;
+        using (var scope = fixture.ScopeFor(tenant))
+        {
+            var detail = await scope.ServiceProvider.GetRequiredService<UnitQueries>()
+                .DetailAsync(strippedUnit, CancellationToken.None);
+            Assert.Equal("987654321", detail!.Identifiers.Single().RawValue);
+        }
     }
 }

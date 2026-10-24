@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { DEFAULT_LEGAL_ENTITY, units, type AsBuiltRow, type LookupHit, type UnitDetail } from "../api/units";
 import { ScanInput, Shortcut, useModEnter } from "../components";
+import { isUrlScanFormat } from "../components/scan";
 import { ItemField, PartyField, useReferenceNames } from "../corrections/ReferenceFields";
 import { entitlementApi } from "../entitlements/api";
 import type { UnitEntitlementDetail } from "../entitlements/types";
@@ -113,6 +114,8 @@ export function Component() {
   const resolve = async (value: string) => {
     setIdentifier(value); setLookupBusy(true); setError(null); setHit(null); setUnit(null); setEntitlements(null);
     try {
+      const parsed = await units.scan(value);
+      if (isUrlScanFormat(parsed.format)) throw new Error("This is a web address, not a serial");
       const lookup = await units.lookup(value);
       if (lookup.hits.length !== 1 || !["exact", "superseded"].includes(lookup.resolution)) throw new Error(lookup.hits.length ? "This identifier is ambiguous. Open Unit search and choose the unit before claiming." : "No unit resolves from this identifier. Use Proof of purchase or No record to reconstruct it.");
       const match = lookup.hits[0]!;

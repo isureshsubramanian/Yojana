@@ -23,14 +23,34 @@ public sealed class UnitQueries(SerialisationDbContext db, IIdentifierPolicySour
     public async Task<LookupResult> LookupAsync(string query, string? identifierType, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
-        var candidates = (identifierType is null ? LookupTypes : [identifierType]).Select(t => IdentifierNormaliser.Normalise(query, policies.For(t)).Value).Distinct(StringComparer.Ordinal).ToList();
-        var rows = await (from i in db.Identifiers.AsNoTracking()
+        var parsed = ScanParser.Parse(query);
+        if (parsed.Format == ScanFormat.Url) return new LookupResult(query, LookupResult.Resolutions.None, []);
+
+        var types = identifierType is null ? LookupTypes : [identifierType];
+        async Task<List<IdentifierLookupProjection>> ReadAsync(string value)
+        {
+            var candidates = types.Select(t => IdentifierNormaliser.Normalise(value, policies.For(t)).Value)
+                .Distinct(StringComparer.Ordinal).ToList();
+            return await (from i in db.Identifiers.AsNoTracking()
                           join u in db.Units.AsNoTracking() on new { i.TenantId, i.UnitId } equals new { u.TenantId, u.UnitId }
                           join a in db.ItemAssignments.AsNoTracking().Where(x => x.ValidTo == null) on new { i.TenantId, i.UnitId } equals new { a.TenantId, a.UnitId } into items
                           from a in items.DefaultIfEmpty()
                           where i.TenantId == tenantId && candidates.Contains(i.NormalisedValue) && (identifierType == null || i.Type == identifierType)
-                          select new { i.UnitId, i.IdentifierId, i.Type, i.Scheme, i.NormalisedValue, i.RawValue, i.ValidTo, i.SupersededByIdentifierId, ItemId = (Guid?)a.ItemId, u.LifecycleStatus })
-                         .ToListAsync(cancellationToken);
+                          select new IdentifierLookupProjection
+                          {
+                              UnitId = i.UnitId, IdentifierId = i.IdentifierId, Type = i.Type, Scheme = i.Scheme,
+                              NormalisedValue = i.NormalisedValue, RawValue = i.RawValue, ValidTo = i.ValidTo,
+                              SupersededByIdentifierId = i.SupersededByIdentifierId, ItemId = (Guid?)a.ItemId,
+                              LifecycleStatus = u.LifecycleStatus,
+                          }).ToListAsync(cancellationToken);
+        }
+
+        var rows = await ReadAsync(parsed.Cleaned);
+        foreach (var alternative in parsed.Alternatives)
+        {
+            if (rows.Count > 0) break;
+            rows = await ReadAsync(alternative);
+        }
         var successors = rows.Where(r => r.SupersededByIdentifierId != null).Select(r => r.SupersededByIdentifierId!.Value).ToList();
         var resolvesTo = successors.Count == 0 ? new Dictionary<Guid, string>() : await db.Identifiers.AsNoTracking().Where(i => i.TenantId == tenantId && successors.Contains(i.IdentifierId)).ToDictionaryAsync(i => i.IdentifierId, i => i.NormalisedValue, cancellationToken);
         var hits = rows.Select(r => new LookupHit(r.UnitId, r.IdentifierId, r.Type, r.Scheme, r.NormalisedValue, r.RawValue, r.ValidTo == null, r.SupersededByIdentifierId, r.SupersededByIdentifierId is { } s && resolvesTo.TryGetValue(s, out var v) ? v : null, r.ItemId, r.LifecycleStatus)).ToList();
@@ -42,6 +62,20 @@ public sealed class UnitQueries(SerialisationDbContext db, IIdentifierPolicySour
             _ => hits.Count > 0 ? LookupResult.Resolutions.Superseded : LookupResult.Resolutions.None,
         };
         return new LookupResult(query, resolution, hits.OrderByDescending(h => h.Open).ThenBy(h => h.NormalisedValue).ToList());
+    }
+
+    private sealed class IdentifierLookupProjection
+    {
+        public Guid UnitId { get; init; }
+        public Guid IdentifierId { get; init; }
+        public required string Type { get; init; }
+        public required string Scheme { get; init; }
+        public required string NormalisedValue { get; init; }
+        public required string RawValue { get; init; }
+        public DateTime? ValidTo { get; init; }
+        public Guid? SupersededByIdentifierId { get; init; }
+        public Guid? ItemId { get; init; }
+        public required string LifecycleStatus { get; init; }
     }
 
     /// <summary>Prefix search over identifiers, joined to current state; a hit per identifier so the item column disambiguates (case 1).</summary>

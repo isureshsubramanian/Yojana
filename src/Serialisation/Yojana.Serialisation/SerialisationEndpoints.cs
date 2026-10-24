@@ -34,6 +34,7 @@ using Yojana.Serialisation.Ledger;
 using Yojana.Serialisation.Imports;
 using Yojana.Serialisation.Portal;
 using Yojana.Serialisation.Reports;
+using Yojana.Serialisation.Settings;
 
 namespace Yojana.Serialisation;
 
@@ -1198,6 +1199,14 @@ public static class SerialisationEndpoints
 
         // P6 certificate read and selection issue/reprint surface.
         var generalSettings = app.MapGroup("/api/settings").RequireAuthorization(YojanaPolicy.TenantMember);
+        generalSettings.MapGet("/scanning", async (ScanningSettings settings, CancellationToken ct) =>
+            Results.Ok(await settings.GetAsync(ct)));
+        generalSettings.MapPut("/scanning", async (ScanningPolicy policy, ScanningSettings settings,
+            CancellationToken ct) =>
+        {
+            try { return Results.Ok(await settings.SetAsync(policy, ct)); }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
+        }).RequireAuthorization(YojanaPolicy.TenantAdministrator);
         generalSettings.MapGet("/time-zone", async (TenantTimeZoneSettings settings, CancellationToken ct) =>
             Results.Ok(await settings.GetAsync(ct)));
         generalSettings.MapPut("/time-zone", async (UpdateTenantTimeZoneSettings update,

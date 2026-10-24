@@ -60,6 +60,8 @@ export const settingsRegistry: SettingsRegistryEntry[] = [
     currentValue: signal => timeZoneSettingsApi.get(signal).then(value => `${value.tenantTimeZone ?? "UTC"} · ${value.legalEntityOverrides.length} entity ${value.legalEntityOverrides.length === 1 ? "override" : "overrides"}`), route: () => import("./TimeZoneSettings") },
   { group: "Organisation", name: "Currencies", description: "Working and accepted currencies", path: "/settings/currencies", icon: "coins", roles: administrator,
     currentValue: signal => claimsApi.currency(signal).then(value => `${value.currency ?? "Not set"} working · ${value.accepted.length ? value.accepted.join(", ") : "no additional"} accepted`), route: () => import("./Currencies") },
+  { group: "Organisation", name: "Scanning", description: "Scanner completion timing and repeat protection", path: "/settings/scanning", icon: "scan", roles: administrator,
+    summaryKey: "scanning", summaryValue: line => ({ text: `${count(line, "endPauseMs").toLocaleString()} ms end pause · ${count(line, "repeatWindowMs").toLocaleString()} ms repeat window` }), route: () => import("./Scanning") },
 
   { group: "Documents", name: "Document numbering", description: "Series modes and gap behaviour per document", path: "/settings/numbering", icon: "range", roles: administrator,
     currentValue: signal => numberingApi.settings(signal).then(value => { const sequence = value.series.filter(row => row.mode === "sequence").length; return `${value.series.length} series · ${sequence === value.series.length ? "all sequence" : `${sequence} sequence`}`; }), route: () => import("./Numbering") },
