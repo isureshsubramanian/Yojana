@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using PlatformCommandRefusedException = Yojana.Platform.Contracts.CommandRefusedException;
 using Wolverine;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
@@ -98,7 +99,7 @@ public static class CustomerMailEndpoints
             return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status409Conflict,
                 extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["changedBy"] = ex.ChangedBy, ["changedAt"] = ex.ChangedAt });
         }
-        catch (CommandRefusedException ex)
+        catch (PlatformCommandRefusedException ex)
         {
             var status = ex.Rule.EndsWith("_unknown", StringComparison.Ordinal) ? StatusCodes.Status404NotFound
                 : ex.Rule.EndsWith("_forbidden", StringComparison.Ordinal) ? StatusCodes.Status403Forbidden : StatusCodes.Status409Conflict;

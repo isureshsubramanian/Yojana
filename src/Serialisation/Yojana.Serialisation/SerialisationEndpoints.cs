@@ -35,6 +35,7 @@ using Yojana.Serialisation.Imports;
 using Yojana.Serialisation.Portal;
 using Yojana.Serialisation.Reports;
 using Yojana.Serialisation.Settings;
+using CommandRefusedException = Yojana.Platform.Contracts.CommandRefusedException;
 
 namespace Yojana.Serialisation;
 

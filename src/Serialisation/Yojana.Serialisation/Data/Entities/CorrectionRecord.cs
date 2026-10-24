@@ -1,4 +1,5 @@
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Privacy;
 
 namespace Yojana.Serialisation.Data.Entities;
 
@@ -6,6 +7,7 @@ namespace Yojana.Serialisation.Data.Entities;
 /// Indexed projection of correction ledger facts for the correction-volume KPI. The ledger remains the fact; one row
 /// represents one correction even when that correction writes events for many units.
 /// </summary>
+[PersonalData]
 public sealed class CorrectionRecord : ITenantScoped
 {
     public TenantId TenantId { get; set; }

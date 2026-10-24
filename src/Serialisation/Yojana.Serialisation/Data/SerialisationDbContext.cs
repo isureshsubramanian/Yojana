@@ -185,6 +185,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
     public DbSet<CertificateInstance> CertificateInstances => Set<CertificateInstance>();
     public DbSet<CertificateTrigger> CertificateTriggers => Set<CertificateTrigger>();
     public DbSet<CertificateSignature> CertificateSignatures => Set<CertificateSignature>();
+    public DbSet<CertificateRedaction> CertificateRedactions => Set<CertificateRedaction>();
     public DbSet<ReprintLog> ReprintLogs => Set<ReprintLog>();
     public DbSet<CertificateRun> CertificateRuns => Set<CertificateRun>();
     public DbSet<CertificateRunUnit> CertificateRunUnits => Set<CertificateRunUnit>();
@@ -1754,6 +1755,16 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(row => row.SignatureMethod).HasMaxLength(40).IsUnicode(false);
             b.HasOne<CertificateInstance>().WithMany().HasForeignKey(row => new { row.TenantId, row.CertificateId }).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(row => new { row.TenantId, row.CertificateId, row.SignedAt });
+        });
+
+        modelBuilder.Entity<CertificateRedaction>(b =>
+        {
+            b.ToTable("certificate_redaction");
+            b.HasKey(row => new { row.TenantId, row.CertificateId });
+            b.Property(row => row.OriginalPayloadHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
+            b.HasIndex(row => new { row.TenantId, row.ErasureId, row.CertificateId });
+            b.HasOne<CertificateInstance>().WithMany().HasForeignKey(row =>
+                new { row.TenantId, row.CertificateId }).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<ReprintLog>(b =>

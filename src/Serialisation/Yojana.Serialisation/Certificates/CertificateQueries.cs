@@ -72,6 +72,8 @@ public sealed class CertificateQueries(SerialisationDbContext db, ITenantContext
         var recipients = recipientIds.Count == 0 ? new Dictionary<Guid, PartyLabel>() : await partyNames.NamesAsync(recipientIds, cancellationToken);
         var serials = await units.PrimarySerialsAsync([row.UnitId], cancellationToken);
         var itemIds = await units.CurrentItemIdsAsync([row.UnitId], cancellationToken);
+        var redaction = await db.CertificateRedactions.AsNoTracking().SingleOrDefaultAsync(item =>
+            item.TenantId == tenant.TenantId && item.CertificateId == certificateId, cancellationToken);
         return new CertificateDetail(row.CertificateId, row.UnitId,
             itemIds.TryGetValue(row.UnitId, out var itemId) ? itemId : null,
             serials.GetValueOrDefault(row.UnitId) ?? "Unlabelled unit",
@@ -84,7 +86,10 @@ public sealed class CertificateQueries(SerialisationDbContext db, ITenantContext
             DisplayTime(row.Language, row.IssuedAt, payload), row.Status,
             signatures, reprints.Select(item => new CertificateReprintRow(item.ReprintId, item.Version, item.RequestedBy, item.At,
                 DisplayTime(row.Language, item.At, payload),
-                item.RecipientPartyRef is { } recipient && recipients.TryGetValue(recipient, out var name) ? name.Name ?? name.Code : null)).ToList());
+                item.RecipientPartyRef is { } recipient && recipients.TryGetValue(recipient, out var name) ? name.Name ?? name.Code : null)).ToList(),
+            redaction is null ? null : new CertificateRedactionView(redaction.RedactedAt,
+                redaction.OriginalPayloadHash,
+                $"Issued and signed on {row.IssuedAt:yyyy-MM-dd}; owner details removed on {redaction.RedactedAt:yyyy-MM-dd} under a personal-data erasure."));
     }
 
     public async Task<CertificateVersionChain> ChainAsync(Guid unitId, CancellationToken cancellationToken)

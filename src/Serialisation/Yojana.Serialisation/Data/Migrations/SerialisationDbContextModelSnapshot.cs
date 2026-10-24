@@ -884,6 +884,41 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CertificateRedaction", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("CertificateId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("certificate_id");
+
+                    b.Property<Guid>("ErasureId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("erasure_id");
+
+                    b.Property<string>("OriginalPayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("original_payload_hash")
+                        .IsFixedLength();
+
+                    b.Property<DateTime>("RedactedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("redacted_at");
+
+                    b.HasKey("TenantId", "CertificateId")
+                        .HasName("pk_certificate_redaction");
+
+                    b.HasIndex("TenantId", "ErasureId", "CertificateId")
+                        .HasDatabaseName("ix_certificate_redaction_tenant_id_erasure_id_certificate_id");
+
+                    b.ToTable("certificate_redaction", "serialisation");
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CertificateRun", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -10953,6 +10988,16 @@ namespace Yojana.Serialisation.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_certificate_instance_tenant_id_template_version_id");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CertificateRedaction", b =>
+                {
+                    b.HasOne("Yojana.Serialisation.Data.Entities.CertificateInstance", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CertificateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_certificate_redaction_tenant_id_certificate_id");
                 });
 
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.CertificateRun", b =>

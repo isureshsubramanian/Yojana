@@ -36,6 +36,8 @@ using Yojana.Platform.Settings;
 using Yojana.Platform.Tenancy;
 using Yojana.Platform.Time;
 using Yojana.Platform.Files;
+using Yojana.Platform.Privacy;
+using Yojana.Platform.Contracts.Privacy;
 
 namespace Yojana.Platform;
 
@@ -183,6 +185,11 @@ public static class PlatformSetup
         builder.Services.AddScoped<ITenantTrainingDirectory>(sp => sp.GetRequiredService<UserDirectory>());
         builder.Services.AddScoped<ITenantStaffDirectory>(sp => sp.GetRequiredService<UserDirectory>());
         builder.Services.AddScoped<ISettingsSummaryContributor, UsersSettingsSummaryContributor>();
+        builder.Services.AddScoped<PlatformPersonalDataHolder>();
+        builder.Services.AddScoped<IPersonalDataHolder>(services =>
+            services.GetRequiredService<PlatformPersonalDataHolder>());
+        builder.Services.AddScoped<PersonalDataErasureService>();
+        builder.Services.AddScoped<IPersonalDataErasureReadPort, PersonalDataErasureReadPort>();
         // Shell contributions: modules add their own IOverviewContributor and IConnectionHealthSource registrations.
         builder.Services.AddScoped<IOverviewContributor, PlatformOverviewContributor>();
         builder.Services.AddSingleton<IConnectionHealthSource, NoConnectionsHealthSource>();

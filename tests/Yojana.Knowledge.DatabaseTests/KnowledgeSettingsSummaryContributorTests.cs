@@ -73,7 +73,7 @@ public sealed class KnowledgeSettingsSummaryContributorTests(KnowledgeHostFixtur
         stopwatch.Stop();
 
         Assert.NotNull(response);
-        Assert.Equal(6, response.Lines.Count);
+        Assert.Equal(8, response.Lines.Count);
         Assert.True(stopwatch.Elapsed < TimeSpan.FromMilliseconds(100),
             $"Settings summary took {stopwatch.Elapsed.TotalMilliseconds:F2} ms.");
         output.WriteLine("UI-04 settings summary endpoint: {0:F2} ms on 558 units, 7 templates, 18 choices.",

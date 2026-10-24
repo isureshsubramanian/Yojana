@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Yojana.Platform.Contracts.Privacy;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Serialisation.Contracts;
 using Yojana.Platform.Contracts.Tenancy;
@@ -71,6 +72,39 @@ public sealed class InMemoryPartyNamePort : IPartyNamePort
     public Task<IReadOnlyList<PartyLabel>> SearchAsync(string text, int take, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<PartyLabel>>(ReferenceFallback.Ranked(labels.Values, text, take,
             label => label.Code, label => label.Name));
+}
+
+/// <summary>Prevents every party-name consumer from redisplaying a name after its Platform tombstone is committed.</summary>
+public sealed class ErasureAwarePartyNamePort(
+    InMemoryPartyNamePort inner,
+    IPersonalDataErasureReadPort erasures) : IPartyNamePort
+{
+    public async Task<IReadOnlyDictionary<Guid, PartyLabel>> NamesAsync(IReadOnlyCollection<Guid> partyRefs,
+        CancellationToken cancellationToken)
+    {
+        var labels = (await inner.NamesAsync(partyRefs, cancellationToken)).ToDictionary();
+        foreach (var partyRef in labels.Keys.ToList())
+            if (await erasures.ErasedPartyAsync(partyRef, cancellationToken) is { } erased)
+                labels[partyRef] = new PartyLabel(partyRef, ErasedCode(partyRef), erased.Token, null);
+        return labels;
+    }
+
+    public async Task<IReadOnlyList<PartyLabel>> SearchAsync(string text, int take,
+        CancellationToken cancellationToken)
+    {
+        var labels = await inner.SearchAsync(text, take, cancellationToken);
+        var result = new List<PartyLabel>(labels.Count);
+        foreach (var label in labels)
+        {
+            var erased = await erasures.ErasedPartyAsync(label.PartyRef, cancellationToken);
+            result.Add(erased is null ? label
+                : new PartyLabel(label.PartyRef, ErasedCode(label.PartyRef), erased.Token, null));
+        }
+        return result;
+    }
+
+    private static string ErasedCode(Guid partyRef) =>
+        $"ERASED-{partyRef.ToString("N")[..4].ToUpperInvariant()}";
 }
 
 /// <summary>Development and test contacts until the party owner's connector supplies them.</summary>

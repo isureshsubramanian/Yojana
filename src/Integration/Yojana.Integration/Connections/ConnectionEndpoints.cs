@@ -2,8 +2,8 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Yojana.Platform.Contracts;
 using Yojana.Platform.Contracts.Security;
-using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.Connections;
 

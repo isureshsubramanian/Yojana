@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Http;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
+using CommandRefusedException = Yojana.Platform.Contracts.CommandRefusedException;
+using SerialisationCommandRefusedException = Yojana.Serialisation.Contracts.CommandRefusedException;
 
 namespace Yojana.Web;
 
@@ -121,7 +123,7 @@ public sealed class ScreenCommandLegalEntityFilter(IActingLegalEntity legalEntit
         var result = await legalEntities.ResolveAsync(requestedId == Guid.Empty ? null : requestedId,
             choiceAllowed, cancellationToken);
         if (!result.Accepted)
-            throw new CommandRefusedException(result.RefusalRule!, result.RefusalMessage!,
+            throw new SerialisationCommandRefusedException(result.RefusalRule!, result.RefusalMessage!,
                 result.RefusalRule == "legal_entity_not_configured"
                     ? "choose a default legal entity in Company settings" : null);
         return result.LegalEntityId!.Value;

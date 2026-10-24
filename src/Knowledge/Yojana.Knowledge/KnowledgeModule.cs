@@ -10,6 +10,8 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Scheduling;
 using Yojana.Platform.Contracts.Settings;
 using Yojana.Knowledge.Settings;
+using Yojana.Knowledge.Privacy;
+using Yojana.Platform.Contracts.Privacy;
 
 namespace Yojana.Knowledge;
 
@@ -21,6 +23,9 @@ public static class KnowledgeModule
     public static IHostApplicationBuilder AddKnowledgeModule(this IHostApplicationBuilder builder)
     {
         builder.AddModuleDbContext<KnowledgeDbContext>(Schema);
+        builder.Services.AddScoped<KnowledgePersonalDataHolder>();
+        builder.Services.AddScoped<IPersonalDataHolder>(services =>
+            services.GetRequiredService<KnowledgePersonalDataHolder>());
         builder.Services.AddScoped<ISettingsSummaryContributor, KnowledgeScreenChangesSettingsSummaryContributor>();
         builder.Services.AddScoped<RecordReferenceLookup>();
         builder.Services.AddScoped<IQuestionTextSearch, SqlServerFullTextQuestionSearch>();

@@ -1,7 +1,9 @@
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Privacy;
 
 namespace Yojana.Serialisation.Data.Entities;
 
+[PersonalData]
 public sealed class ImportJob : ITenantScoped
 {
     public TenantId TenantId { get; set; }
@@ -49,6 +51,7 @@ public sealed class ImportFileDownloadAudit : ITenantScoped
     public DateTime DownloadedAt { get; set; }
 }
 
+[PersonalData]
 public sealed class ImportRowResult : ITenantScoped
 {
     public TenantId TenantId { get; set; }

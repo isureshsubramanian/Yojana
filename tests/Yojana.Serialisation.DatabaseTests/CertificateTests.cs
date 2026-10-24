@@ -10,6 +10,8 @@ using Xunit;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Platform.Data.Platform;
+using Yojana.Platform.Data.Platform.Entities;
 using Yojana.Serialisation.Certificates;
 using Yojana.Serialisation.Commands;
 using Yojana.Serialisation.Contracts;
@@ -20,6 +22,7 @@ using Yojana.Serialisation.Ledger;
 using Yojana.Serialisation.Ports;
 using Yojana.Serialisation.Refurbishments;
 using Yojana.Serialisation.TimeZones;
+using Yojana.Serialisation.Privacy;
 
 namespace Yojana.Serialisation.DatabaseTests;
 
@@ -46,6 +49,272 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
             runtime.ExplainRoutingFor(typeof(CertificateTriggerWork)).ToText(), StringComparison.Ordinal);
         Assert.Contains("local://serialisation-certificate-sale-triggers",
             runtime.ExplainRoutingFor(typeof(CustomerSaleCertificateWork)).ToText(), StringComparison.Ordinal);
+    }
+
+    [DatabaseFact]
+    public async Task Personal_data_erasure_redacts_the_owner_through_the_narrow_trigger_exception()
+    {
+        var setup = await CommissionAsync("cert-erase");
+        const string ownerName = "Fictional Sole Trader";
+        const string ownerCode = "SOLE-ERASE-01";
+        var party = Guid.CreateVersion7();
+        var erasure = Guid.CreateVersion7();
+        var certificate = Guid.CreateVersion7();
+        string originalHash;
+        using (var seed = fixture.ScopeFor(setup.Tenant))
+        {
+            var serial = seed.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            await seed.ServiceProvider.GetRequiredService<CertificateTemplateService>()
+                .EnsureStartersAsync(CancellationToken.None);
+            var template = await (from version in serial.CertificateTemplateVersions.AsNoTracking()
+                    join definition in serial.CertificateTemplates.AsNoTracking()
+                        on new { version.TenantId, version.TemplateId }
+                        equals new { definition.TenantId, definition.TemplateId }
+                    where definition.DocumentKind == CertificateDocumentKind.WarrantyCertificate
+                          && version.Status == CertificateTemplateStatus.Active
+                    select version.TemplateVersionId).FirstAsync();
+            var payload = JsonSerializer.Serialize(new
+            {
+                owner = new { code = ownerCode, name = ownerName },
+                presentation = new { time_zone = "UTC", date_pattern = "yyyy-MM-dd", time_pattern = "HH:mm" },
+            }, CanonicalJson.Options);
+            originalHash = CanonicalJson.Hash(payload);
+            serial.CertificateInstances.Add(new Yojana.Serialisation.Data.Entities.CertificateInstance
+            {
+                TenantId = setup.Tenant, CertificateId = certificate, UnitId = setup.UnitId,
+                DocumentKind = CertificateDocumentKind.WarrantyCertificate,
+                FormType = CertificateFormType.WarrantyCertificate, Version = 1,
+                TrackingNumber = "CRT-2026-990001", TemplateVersionId = template, Payload = payload,
+                PayloadHash = originalHash, FactsHash = originalHash, TriggeringEventId = Guid.CreateVersion7(),
+                IssuerEntityId = Entity,
+                IssuerSnapshot = JsonSerializer.Serialize(new CertificateIssuerSnapshot("Fictional Hardware Ltd", null),
+                    CanonicalJson.Options),
+                OwnerSnapshot = JsonSerializer.Serialize(new CertificateOwnerSnapshot(ownerCode, ownerName,
+                    PartyType.Customer, At), CanonicalJson.Options),
+                BrandingSnapshot = JsonSerializer.Serialize(new CertificateBrandingSnapshot("default", null, null),
+                    CanonicalJson.Options),
+                Language = "en", Provenance = CertificateProvenance.SystemGenerated, IssuedAt = At,
+                Status = CertificateStatus.Issued,
+            });
+            serial.Episodes.Add(new Yojana.Serialisation.Data.Entities.CustodyEpisode
+            {
+                TenantId = setup.Tenant, EpisodeId = Guid.CreateVersion7(), UnitId = setup.UnitId,
+                Kind = EpisodeKind.Ownership, PartyRef = party, PartyType = PartyType.Customer,
+                LegalEntityId = Entity, Reason = EpisodeReason.Sale, Source = EpisodeSource.Delivery,
+                Confidence = Confidence.High, ValidFrom = At, OpeningEventId = Guid.CreateVersion7(),
+            });
+            serial.CertificateSignatures.Add(new Yojana.Serialisation.Data.Entities.CertificateSignature
+            {
+                TenantId = setup.Tenant, SignatureId = Guid.CreateVersion7(), CertificateId = certificate,
+                SignerIdentity = "user:test", PrintedName = "Fictional Quality Signer",
+                Meaning = CertificateSignatureMeaning.Approval, SignedAt = At,
+                HashSigned = originalHash, SignatureMethod = "authenticated_user",
+            });
+            await serial.SaveChangesAsync();
+
+            var platform = seed.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            platform.ErasureRequests.Add(new ErasureRequest
+            {
+                TenantId = setup.Tenant, ErasureId = erasure,
+                SubjectKind = Yojana.Platform.Contracts.Privacy.ErasureSubjectKind.Party,
+                SubjectId = party, RequestReference = "DSR-2026-9901", Reason = "verified request",
+                RequestedBy = Guid.CreateVersion7(), RequestedAt = At, StartedAt = At,
+                Status = ErasureRequestStatus.Running,
+                RetentionBasis = Yojana.Platform.Privacy.PersonalDataErasureService.RetentionBasis,
+            });
+            await platform.SaveChangesAsync();
+        }
+
+        var subject = new Yojana.Platform.Contracts.Privacy.ErasureSubject(
+            Yojana.Platform.Contracts.Privacy.ErasureSubjectKind.Party, party, [ownerName, ownerCode], []);
+        using (var erase = fixture.ScopeFor(setup.Tenant))
+            await erase.ServiceProvider.GetRequiredService<SerialisationPersonalDataHolder>()
+                .EraseAsync(subject, erasure, CancellationToken.None);
+
+        using (var verify = fixture.ScopeFor(setup.Tenant))
+        {
+            var db = verify.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            var stored = await db.CertificateInstances.AsNoTracking().SingleAsync(x => x.CertificateId == certificate);
+            Assert.Equal(originalHash, stored.PayloadHash);
+            Assert.DoesNotContain(ownerName, stored.Payload, StringComparison.Ordinal);
+            Assert.DoesNotContain(ownerCode, stored.OwnerSnapshot!, StringComparison.Ordinal);
+            var redaction = await db.CertificateRedactions.AsNoTracking().SingleAsync(x => x.CertificateId == certificate);
+            Assert.Equal(originalHash, redaction.OriginalPayloadHash);
+            Assert.Equal("Fictional Quality Signer", await db.CertificateSignatures.AsNoTracking()
+                .Where(x => x.CertificateId == certificate).Select(x => x.PrintedName).SingleAsync());
+            var detail = await verify.ServiceProvider.GetRequiredService<CertificateQueries>()
+                .DetailAsync(certificate, CancellationToken.None);
+            Assert.Contains("owner details removed", detail!.Redaction!.Note, StringComparison.Ordinal);
+            Assert.Equal(originalHash, detail.Redaction.OriginalPayloadHash);
+            var timeline = await verify.ServiceProvider.GetRequiredService<Yojana.Serialisation.Queries.UnitQueries>()
+                .HistoryAsync(setup.UnitId, 0, 50, CancellationToken.None);
+            Assert.NotEmpty(timeline.Items);
+            Assert.Equal(setup.LocationId, await db.Current.AsNoTracking().Where(x => x.UnitId == setup.UnitId)
+                .Select(x => x.LocationId).SingleAsync());
+        }
+
+        using (var ordinary = fixture.ScopeFor(setup.Tenant))
+        {
+            var db = ordinary.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            var stored = await db.CertificateInstances.SingleAsync(x => x.CertificateId == certificate);
+            stored.Payload = "{}";
+            await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        }
+    }
+
+    [DatabaseFact]
+    public async Task Same_name_on_another_partys_unit_does_not_redact_its_certificate_event_or_correction()
+    {
+        var setup = await CommissionAsync("cert-erase-scope");
+        var second = await InvokeAsync<CommissionUnitsResult>(setup.Tenant, new CommissionUnits(
+            Guid.NewGuid(), setup.ItemId, UnitOrigin.Manufactured,
+            [new CommissionLine([new IdentifierInput(IdentifierType.InternalSerial, setup.Serial + "-OTHER")])],
+            At, "production.user", Entity, LocationId: setup.LocationId, LocationKind: LocationKind.Warehouse));
+        var otherUnit = second.Lines.Single().UnitId!.Value;
+        var subjectParty = Guid.CreateVersion7();
+        var otherParty = Guid.CreateVersion7();
+        var erasure = Guid.CreateVersion7();
+        const string sharedName = "Fictional Shared Customer";
+        const string subjectCode = "SHARED-A";
+        const string otherCode = "SHARED-B";
+        Guid subjectCertificate;
+        Guid otherCertificate;
+        Guid subjectEvent;
+        Guid otherEvent;
+        Guid subjectCorrection;
+        Guid otherCorrection;
+        string otherPayload;
+        string otherSnapshot;
+        const string sharedNote = sharedName;
+
+        using (var seed = fixture.ScopeFor(setup.Tenant))
+        {
+            var serial = seed.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            await seed.ServiceProvider.GetRequiredService<CertificateTemplateService>()
+                .EnsureStartersAsync(CancellationToken.None);
+            var template = await (from version in serial.CertificateTemplateVersions.AsNoTracking()
+                    join definition in serial.CertificateTemplates.AsNoTracking()
+                        on new { version.TenantId, version.TemplateId }
+                        equals new { definition.TenantId, definition.TemplateId }
+                    where definition.DocumentKind == CertificateDocumentKind.WarrantyCertificate
+                          && version.Status == CertificateTemplateStatus.Active
+                    select version.TemplateVersionId).FirstAsync();
+
+            serial.Episodes.AddRange(Ownership(setup.UnitId, subjectParty), Ownership(otherUnit, otherParty));
+            var subjectCertificateRow = Certificate(setup.UnitId, subjectCode, "CRT-2026-990101", template);
+            var otherCertificateRow = Certificate(otherUnit, otherCode, "CRT-2026-990102", template);
+            subjectCertificate = subjectCertificateRow.CertificateId;
+            otherCertificate = otherCertificateRow.CertificateId;
+            otherPayload = otherCertificateRow.Payload;
+            otherSnapshot = otherCertificateRow.OwnerSnapshot!;
+            serial.CertificateInstances.AddRange(subjectCertificateRow, otherCertificateRow);
+
+            subjectEvent = Guid.CreateVersion7();
+            otherEvent = Guid.CreateVersion7();
+            serial.Events.AddRange(Ledger(setup.UnitId, subjectEvent, subjectCode, 900001),
+                Ledger(otherUnit, otherEvent, otherCode, 900002));
+            subjectCorrection = Guid.CreateVersion7();
+            otherCorrection = Guid.CreateVersion7();
+            serial.Corrections.AddRange(Correction(subjectCorrection), Correction(otherCorrection));
+            serial.CorrectionUnits.AddRange(
+                new Yojana.Serialisation.Data.Entities.CorrectionRecordUnit
+                {
+                    TenantId = setup.Tenant, CorrectionId = subjectCorrection,
+                    UnitId = setup.UnitId, ItemId = setup.ItemId,
+                },
+                new Yojana.Serialisation.Data.Entities.CorrectionRecordUnit
+                {
+                    TenantId = setup.Tenant, CorrectionId = otherCorrection,
+                    UnitId = otherUnit, ItemId = setup.ItemId,
+                });
+            await serial.SaveChangesAsync();
+
+            var platform = seed.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            platform.ErasureRequests.Add(new ErasureRequest
+            {
+                TenantId = setup.Tenant, ErasureId = erasure,
+                SubjectKind = Yojana.Platform.Contracts.Privacy.ErasureSubjectKind.Party,
+                SubjectId = subjectParty, RequestReference = "DSR-2026-9902", Reason = "verified request",
+                RequestedBy = Guid.CreateVersion7(), RequestedAt = At, StartedAt = At,
+                Status = ErasureRequestStatus.Running,
+                RetentionBasis = Yojana.Platform.Privacy.PersonalDataErasureService.RetentionBasis,
+            });
+            await platform.SaveChangesAsync();
+
+            Yojana.Serialisation.Data.Entities.CustodyEpisode Ownership(Guid unitId, Guid partyRef) => new()
+            {
+                TenantId = setup.Tenant, EpisodeId = Guid.CreateVersion7(), UnitId = unitId,
+                Kind = EpisodeKind.Ownership, PartyRef = partyRef, PartyType = PartyType.Customer,
+                LegalEntityId = Entity, Reason = EpisodeReason.Sale, Source = EpisodeSource.Delivery,
+                Confidence = Confidence.High, ValidFrom = At, OpeningEventId = Guid.CreateVersion7(),
+            };
+
+            Yojana.Serialisation.Data.Entities.CertificateInstance Certificate(Guid unitId, string code,
+                string tracking, Guid templateVersionId)
+            {
+                var payload = JsonSerializer.Serialize(new { owner = new { code, name = sharedName } },
+                    CanonicalJson.Options);
+                var hash = CanonicalJson.Hash(payload);
+                return new()
+                {
+                    TenantId = setup.Tenant, CertificateId = Guid.CreateVersion7(), UnitId = unitId,
+                    DocumentKind = CertificateDocumentKind.WarrantyCertificate,
+                    FormType = CertificateFormType.WarrantyCertificate, Version = 1,
+                    TrackingNumber = tracking, TemplateVersionId = templateVersionId, Payload = payload,
+                    PayloadHash = hash, FactsHash = hash, TriggeringEventId = Guid.CreateVersion7(),
+                    IssuerEntityId = Entity, IssuerSnapshot = "{}",
+                    OwnerSnapshot = JsonSerializer.Serialize(new CertificateOwnerSnapshot(code, sharedName,
+                        PartyType.Customer, At), CanonicalJson.Options), BrandingSnapshot = "{}", Language = "en",
+                    Provenance = CertificateProvenance.SystemGenerated, IssuedAt = At,
+                    Status = CertificateStatus.Issued,
+                };
+            }
+
+            Yojana.Serialisation.Data.Entities.UnitEvent Ledger(Guid unitId, Guid eventId, string code, long seq) =>
+                new()
+                {
+                    TenantId = setup.Tenant, EventTime = At.AddMinutes(seq - 900000), EventId = eventId,
+                    UnitId = unitId, Seq = seq, EventType = "fixture.personal_data", LegalEntityId = Entity,
+                    ActorRef = "fixture", RecordedTime = At, IdempotencyKey = Guid.NewGuid().ToString("N"),
+                    Attributes = JsonSerializer.Serialize(new { party_code = code, note = sharedNote }),
+                };
+
+            Yojana.Serialisation.Data.Entities.CorrectionRecord Correction(Guid id) => new()
+            {
+                TenantId = setup.Tenant, CorrectionId = id, Command = "CorrectIdentifier", ReasonCode = "typo",
+                InitiatedVia = "fixture", InitiatingRole = "serial_administrator", ActorRef = "fixture",
+                EventTime = At, RecordedTime = At, UnitCount = 1, Note = sharedNote,
+            };
+        }
+
+        var subject = new Yojana.Platform.Contracts.Privacy.ErasureSubject(
+            Yojana.Platform.Contracts.Privacy.ErasureSubjectKind.Party, subjectParty,
+            [sharedName, subjectCode], []);
+        using (var erase = fixture.ScopeFor(setup.Tenant))
+            await erase.ServiceProvider.GetRequiredService<SerialisationPersonalDataHolder>()
+                .EraseAsync(subject, erasure, CancellationToken.None);
+
+        using var verify = fixture.ScopeFor(setup.Tenant);
+        var db = verify.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var untouchedCertificate = await db.CertificateInstances.AsNoTracking()
+            .SingleAsync(x => x.CertificateId == otherCertificate);
+        Assert.Equal(otherPayload, untouchedCertificate.Payload);
+        Assert.Equal(otherSnapshot, untouchedCertificate.OwnerSnapshot);
+        Assert.Equal(JsonSerializer.Serialize(new { party_code = otherCode, note = sharedNote }),
+            await db.Events.AsNoTracking().Where(x => x.EventId == otherEvent).Select(x => x.Attributes).SingleAsync());
+        Assert.Equal(sharedNote, await db.Corrections.AsNoTracking()
+            .Where(x => x.CorrectionId == otherCorrection).Select(x => x.Note).SingleAsync());
+        Assert.DoesNotContain(sharedName, await db.CertificateInstances.AsNoTracking()
+            .Where(x => x.CertificateId == subjectCertificate).Select(x => x.OwnerSnapshot!).SingleAsync(),
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(sharedName, await db.Events.AsNoTracking()
+            .Where(x => x.EventId == subjectEvent).Select(x => x.Attributes!).SingleAsync(),
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(sharedName, await db.Corrections.AsNoTracking()
+            .Where(x => x.CorrectionId == subjectCorrection).Select(x => x.Note!).SingleAsync(),
+            StringComparison.Ordinal);
+        var redaction = Assert.Single(await db.CertificateRedactions.AsNoTracking().ToListAsync());
+        Assert.Equal(subjectCertificate, redaction.CertificateId);
     }
 
     [DatabaseFact]

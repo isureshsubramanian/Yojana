@@ -11,6 +11,7 @@ using Yojana.Integration.Gateway;
 using Yojana.Integration.Notifications;
 using Yojana.Integration.Security.Cryptography;
 using Yojana.Integration.Security.Workers;
+using Yojana.Platform.Contracts.Privacy;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Tenancy;
 
@@ -415,7 +416,8 @@ internal sealed class Cx01TestContext : IAsyncDisposable
         var history = new RememberingSerialHistory();
         var tasks = new CollectingAttributionTasks();
         var rejections = new CollectingInboundRejections();
-        var adapter = new Cx01Adapter(tenant, clock, db, new GatewayReferenceStore(db, tenant, clock),
+        var adapter = new Cx01Adapter(tenant, clock, db,
+            new GatewayReferenceStore(db, tenant, clock, new NoPersonalDataErasures()),
             settings, client, history, new NoCapturedDocuments(), tasks, new NoOwnWrites(), rejections,
             new EmptySurveyReader(), new EmptyTrackingPermissions());
         return new(tenantId, connectionId, client, settings, adapter, history, tasks, rejections, transport, db);
@@ -427,6 +429,12 @@ internal sealed class Cx01TestContext : IAsyncDisposable
         db.Dispose();
         return ValueTask.CompletedTask;
     }
+}
+
+internal sealed class NoPersonalDataErasures : IPersonalDataErasureReadPort
+{
+    public Task<ErasedParty?> ErasedPartyAsync(Guid partyRef, CancellationToken cancellationToken) =>
+        Task.FromResult<ErasedParty?>(null);
 }
 
 internal sealed class NoCapturedDocuments : ICx01DocumentCaptureStore

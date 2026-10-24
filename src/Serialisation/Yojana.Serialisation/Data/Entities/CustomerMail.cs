@@ -1,4 +1,5 @@
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Privacy;
 
 namespace Yojana.Serialisation.Data.Entities;
 
@@ -58,6 +59,7 @@ public sealed class MailTemplateDefault : ITenantScoped
 /// here, not in the platform delivery log, because the log deliberately holds no bodies (account mail carries single-use
 /// links) while a customer message must be shown exactly as sent.
 /// </summary>
+[PersonalData]
 public sealed class CustomerMailMessage : ITenantScoped
 {
     public TenantId TenantId { get; set; }

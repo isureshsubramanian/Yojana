@@ -1,4 +1,5 @@
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Privacy;
 
 namespace Yojana.Serialisation.Data.Entities;
 
@@ -32,6 +33,7 @@ public sealed class Rma : ITenantScoped
     public byte[] RowVersion { get; set; } = [];
 }
 
+[PersonalData]
 public sealed class RmaLine : ITenantScoped
 {
     public TenantId TenantId { get; set; }
@@ -87,6 +89,7 @@ public sealed class RmaStageCounter : ITenantScoped
     public string? LastRebuiltBy { get; set; }
 }
 
+[PersonalData]
 public sealed class ReturnReceipt : ITenantScoped
 {
     public TenantId TenantId { get; set; }

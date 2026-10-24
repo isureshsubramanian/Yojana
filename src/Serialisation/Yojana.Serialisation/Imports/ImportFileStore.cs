@@ -77,6 +77,31 @@ public sealed class ImportFileStore(TenantImportFileSettings settings, IEnumerab
     internal Task DeleteActiveAsync(string reference, CancellationToken cancellationToken) =>
         Active(Scheme(reference)).DeleteAsync(reference, cancellationToken);
 
+    /// <summary>Irreversibly removes an import copy selected by the ADR-0017 personal-data holder.</summary>
+    public async Task PurgeAsync(string reference, CancellationToken cancellationToken)
+    {
+        if (!TryArchiveReference(reference, out var name, out var kind, out var inner))
+        {
+            await Active(Scheme(reference)).DeleteAsync(reference, cancellationToken);
+            return;
+        }
+        var store = Archive(name);
+        if (kind == "file" && store.Kind == "folder")
+        {
+            var path = ResolveArchivePath(store, FileRelative(inner));
+            if (File.Exists(path)) File.Delete(path);
+            return;
+        }
+        if (kind == "database" && store.Kind == "database")
+        {
+            await using var db = ArchiveContext(store);
+            await db.Files.Where(x => x.TenantId == tenant.TenantId && x.FileId == DatabaseId(inner))
+                .ExecuteDeleteAsync(cancellationToken);
+            return;
+        }
+        throw Unavailable(name);
+    }
+
     internal static string? ArchiveStoreName(string? reference) => reference is not null &&
         TryArchiveReference(reference, out var name, out _, out _) ? name : null;
 

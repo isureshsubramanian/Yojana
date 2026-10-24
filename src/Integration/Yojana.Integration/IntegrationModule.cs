@@ -17,6 +17,8 @@ using Yojana.Integration.DeadLetters;
 using Yojana.Platform.Scheduling;
 using Yojana.Integration.Data;
 using Yojana.Platform;
+using Yojana.Platform.Contracts.Privacy;
+using Yojana.Integration.Privacy;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Integration.Security.Audit;
 using Yojana.Integration.Security.Credentials;
@@ -54,6 +56,10 @@ public static class IntegrationModule
     public static IHostApplicationBuilder AddIntegrationModule(this IHostApplicationBuilder builder)
     {
         builder.AddModuleDbContext<IntegrationDbContext>(Schema);
+        builder.Services.AddScoped<ExternalIdErasureProtector>();
+        builder.Services.AddScoped<IntegrationPersonalDataHolder>();
+        builder.Services.AddScoped<IPersonalDataHolder>(services =>
+            services.GetRequiredService<IntegrationPersonalDataHolder>());
         builder.Services.AddKeyedScoped<IRecordReferenceResolver, IntegrationMessageRecordReferenceResolver>(RecordKind.IntegrationMessage);
         builder.Services.AddScoped<IConnectionBusyObserver, ConnectionBusyAuditObserver>();
         builder.Services.AddScoped<ConnectionCommands>();

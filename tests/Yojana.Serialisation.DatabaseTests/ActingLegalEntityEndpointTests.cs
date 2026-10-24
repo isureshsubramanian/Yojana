@@ -86,6 +86,38 @@ public sealed class ActingLegalEntityEndpointTests
         Assert.Equal("legal_entity_unknown", problem.ProblemDetails.Extensions["rule"]);
     }
 
+    [Fact]
+    public async Task Platform_and_serialisation_refusals_use_the_same_problem_shape()
+    {
+        var platform = await ProblemAsync(new Yojana.Platform.Contracts.CommandRefusedException(
+            "same_rule", "Same refusal.", "take the same step"));
+        var serialisation = await ProblemAsync(new CommandRefusedException(
+            "same_rule", "Same refusal.", "take the same step"));
+
+        Assert.Equal(platform.StatusCode, serialisation.StatusCode);
+        Assert.Equal(platform.ProblemDetails.Title, serialisation.ProblemDetails.Title);
+        Assert.Equal(platform.ProblemDetails.Detail, serialisation.ProblemDetails.Detail);
+        Assert.Equal(platform.ProblemDetails.Extensions["rule"], serialisation.ProblemDetails.Extensions["rule"]);
+        Assert.Equal(platform.ProblemDetails.Extensions["unblockingStep"],
+            serialisation.ProblemDetails.Extensions["unblockingStep"]);
+
+        static async Task<ProblemHttpResult> ProblemAsync(Exception refusal)
+        {
+            var http = new DefaultHttpContext();
+            http.Request.Method = HttpMethods.Post;
+            http.Request.Path = "/api/units/commission";
+            http.User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(YojanaClaim.UserId, Guid.NewGuid().ToString())], "test"));
+            var command = new CommissionUnits(Guid.NewGuid(), Guid.NewGuid(), "purchased",
+                [new CommissionLine([new IdentifierInput("internal_serial", "SN-1")])], At,
+                string.Empty, ChosenEntity);
+            var filter = new ScreenCommandLegalEntityFilter(new Resolver());
+            var result = await filter.InvokeAsync(
+                new DefaultEndpointFilterInvocationContext(http, [command]), _ => throw refusal);
+            return Assert.IsType<ProblemHttpResult>(result);
+        }
+    }
+
     private static BulkOperationArguments Arguments(Guid legalEntityId) => new(At, string.Empty, legalEntityId,
         new DocumentRef("production_order", Guid.NewGuid()));
 

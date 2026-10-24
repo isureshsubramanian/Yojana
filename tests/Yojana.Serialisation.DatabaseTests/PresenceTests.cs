@@ -95,7 +95,7 @@ public sealed class PresenceTests(SerialisationHostFixture fixture)
         using var scope = fixture.ScopeFor(null);
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         var tenantTables = db.Model.GetEntityTypes().Where(e => typeof(ITenantScoped).IsAssignableFrom(e.ClrType)).ToList();
-        Assert.Equal(3, tenantTables.Count);
+        Assert.Equal(5, tenantTables.Count);
         Assert.Empty(db.ValidateTenantKeyConventions());
         var covered = await db.Database.SqlQueryRaw<string>("""
             SELECT OBJECT_NAME(p.target_object_id) AS [Value]
@@ -103,6 +103,8 @@ public sealed class PresenceTests(SerialisationHostFixture fixture)
             WHERE s.name = 'tenant_policy_platform' AND p.predicate_type_desc = 'FILTER'
             """).ToListAsync();
         Assert.Contains("document_presence", covered);
+        Assert.Contains("erasure_request", covered);
+        Assert.Contains("erasure_store_count", covered);
         var indexes = db.Model.FindEntityType(typeof(Yojana.Platform.Data.Platform.Entities.DocumentPresence))!
             .GetIndexes().Select(index => index.Properties.Select(p => p.Name).ToArray()).ToList();
         Assert.Contains(indexes, properties => properties.SequenceEqual(

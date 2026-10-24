@@ -4,6 +4,7 @@ using Yojana.Integration.Data.Entities;
 using Yojana.Platform.Contracts.Records;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 
@@ -163,7 +164,7 @@ public sealed class RecordReferenceDatabaseTests(KnowledgeHostFixture fixture)
 
     private static Unit Unit(TenantId tenant, Guid id) => new()
     {
-        TenantId = tenant, UnitId = id, LifecycleStatus = "active", Origin = "manufactured", SerialisationPoint = "production",
+        TenantId = tenant, UnitId = id, LifecycleStatus = LifecycleStatus.Released, Origin = "manufactured", SerialisationPoint = "production",
         RetentionClass = "standard", CreatedAt = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc),
         CreatedEventId = Guid.CreateVersion7(), CreatedEventTime = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc),
     };

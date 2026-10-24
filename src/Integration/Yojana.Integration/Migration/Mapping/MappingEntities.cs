@@ -1,4 +1,5 @@
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Privacy;
 
 namespace Yojana.Integration.LegacyMigration.Mapping;
 
@@ -160,6 +161,7 @@ public sealed class MigrationPlanEvent : ITenantScoped
     public required string Provenance { get; set; }
 }
 
+[PersonalData]
 public sealed class MigrationPlanOwnership : ITenantScoped
 {
     public TenantId TenantId { get; set; }

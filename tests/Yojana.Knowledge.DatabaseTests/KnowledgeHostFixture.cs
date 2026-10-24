@@ -22,6 +22,7 @@ using Yojana.Platform.Contracts.Time;
 using Yojana.Platform.Data.Platform;
 using Yojana.Platform.Data.Platform.Entities;
 using Yojana.Platform.Tenancy;
+using Yojana.Platform.Privacy;
 using Yojana.Serialisation;
 using Yojana.Serialisation.Imports;
 
@@ -68,6 +69,7 @@ public sealed class KnowledgeHostFixture : IAsyncLifetime
         app.UseApiProblemDetails();
         app.UseYojanaPlatform();
         app.MapKnowledgeEndpoints();
+        app.MapYojanaPrivacyEndpoints();
         app.MapSettingsSummaryEndpoints();
         app.MapGet("/test/sign-in/{tenantId:guid}", async (Guid tenantId, Guid userId, bool? portal,
             PlatformDbContext platform, HttpContext http) =>

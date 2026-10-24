@@ -35,6 +35,8 @@ using Yojana.Platform.Contracts.Settings;
 using Yojana.Serialisation.Settings;
 using Yojana.Serialisation.Currency;
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Privacy;
+using Yojana.Serialisation.Privacy;
 
 namespace Yojana.Serialisation;
 
@@ -46,6 +48,9 @@ public static class SerialisationModule
     public static IHostApplicationBuilder AddSerialisationModule(this IHostApplicationBuilder builder)
     {
         builder.AddModuleDbContext<SerialisationDbContext>(Schema);
+        builder.Services.AddScoped<SerialisationPersonalDataHolder>();
+        builder.Services.AddScoped<IPersonalDataHolder>(services =>
+            services.GetRequiredService<SerialisationPersonalDataHolder>());
         builder.Services.AddScoped<SerialisationCurrencyUsage>();
         builder.Services.AddScoped<ICurrencyUsage>(services => services.GetRequiredService<SerialisationCurrencyUsage>());
         builder.Services.AddScoped<ICurrencyUsageReport>(services => services.GetRequiredService<SerialisationCurrencyUsage>());
@@ -423,7 +428,9 @@ public static class SerialisationModule
         builder.Services.AddSingleton<InMemoryPartyContactPort>();
         builder.Services.TryAddSingleton<IPartyContactPort>(sp => sp.GetRequiredService<InMemoryPartyContactPort>());
         builder.Services.AddSingleton<InMemoryPartyNamePort>();
-        builder.Services.TryAddSingleton<IPartyNamePort>(sp => sp.GetRequiredService<InMemoryPartyNamePort>());
+        builder.Services.TryAddScoped<IPartyNamePort>(sp => new ErasureAwarePartyNamePort(
+            sp.GetRequiredService<InMemoryPartyNamePort>(),
+            sp.GetRequiredService<IPersonalDataErasureReadPort>()));
         // A factory keeps PlatformDbContext (behind ITenantSettings) out of Wolverine handler graphs while adapting
         // only the existing party-name contract; screen command stamping is owned by the HTTP composition root.
         builder.Services.AddScoped<IActingLegalEntity>(sp => new ActingLegalEntity(

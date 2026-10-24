@@ -1,7 +1,9 @@
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Privacy;
 
 namespace Yojana.Integration.Data.Entities;
 
+[PersonalData]
 public sealed class DeadLetterItem : ITenantScoped
 {
     public TenantId TenantId { get; set; }

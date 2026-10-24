@@ -1,7 +1,9 @@
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Privacy;
 
 namespace Yojana.Knowledge.Data.Entities;
 
+[PersonalData]
 public sealed class KnowledgeEntry : ITenantScoped
 {
     public TenantId TenantId { get; set; }
@@ -29,6 +31,7 @@ public sealed class KnowledgeEntry : ITenantScoped
     public byte[] RowVersion { get; set; } = [];
 }
 
+[PersonalData]
 public sealed class KnowledgeEntryVersion : ITenantScoped
 {
     public TenantId TenantId { get; set; }
