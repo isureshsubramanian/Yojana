@@ -2,9 +2,15 @@ import { useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { useSession } from "../session/session";
 import { Icon } from "../shell/Icons";
-import { Breadcrumbs } from "../shell/PageHeader";
+import { useHandoff } from "../shell/handoff";
+import { Breadcrumbs, type Crumb } from "../shell/PageHeader";
 import { settingsRegistry, visibleSettings, type SettingsGroup, type SettingsRegistryEntry } from "./registry";
 import { filterSettings } from "./registryModel";
+
+/** Screens that open a setting with `state.from`, so the trail leads back to where the person came from. */
+const ORIGINS: Record<string, Crumb[]> = {
+  "risk-review": [{ label: "Claims", to: "/claims" }, { label: "Risk review", to: "/claims/risk-review" }],
+};
 
 const groups: SettingsGroup[] = ["Organisation", "Documents", "Service operations", "Data and knowledge"];
 
@@ -12,9 +18,11 @@ export function Component() {
   const location = useLocation();
   const landing = location.pathname === "/settings" || location.pathname === "/settings/";
   const current = settingsRegistry.find(entry => entry.path === location.pathname);
+  const from = useHandoff().from;
+  const trail = (from && ORIGINS[from]) || [{ label: "Settings", to: "/settings" }];
   if (landing) return <Outlet />;
   return <div className="settings-route content">
-    <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Settings", to: "/settings" }, { label: current?.name ?? "Setting not found" }]} />
+    <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, ...trail, { label: current?.name ?? "Setting not found" }]} />
     <div className="settings-layout">
       <SettingsNavigation currentPath={location.pathname} />
       <div className="settings-body"><Outlet /></div>

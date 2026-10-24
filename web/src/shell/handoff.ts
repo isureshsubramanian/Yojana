@@ -6,9 +6,10 @@ import { useLocation, useNavigate } from "react-router";
  * They travel in the router's history state, never the query string: URLs carry opaque ids only, so serials and
  * codes do not land in browser history, proxy logs or shared links.
  */
-export interface Handoff { serials?: string; resolvedFrom?: string; entry?: string }
+/** `from` names the screen a person came from, so the next screen can lead back to it (e.g. "risk-review"). */
+export interface Handoff { serials?: string; resolvedFrom?: string; entry?: string; from?: string }
 
-const KEYS = ["serials", "resolvedFrom", "entry"] as const;
+const KEYS = ["serials", "resolvedFrom", "entry", "from"] as const;
 
 export function handoff(state: unknown): Handoff {
   if (typeof state !== "object" || state === null) return {};

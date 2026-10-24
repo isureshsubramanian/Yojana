@@ -5,6 +5,7 @@ import { claimRiskRuleLabel } from "../claims/format";
 import type { ClaimRiskRulesPolicy } from "../claims/types";
 import { useSession } from "../session/session";
 import { Icon } from "../shell/Icons";
+import { useHandoff } from "../shell/handoff";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote } from "../units/common";
 import { STAFF_ROLES, roleLabel } from "./roles";
@@ -32,9 +33,11 @@ export function Component() {
     finally { setBusy(false); }
   };
 
+  // Opened from Risk review ("Edit rules"): the header leads back there; SettingsLayout shows the matching trail.
+  const fromReview = useHandoff().from === "risk-review";
   return <main className="content" id="main" tabIndex={-1}>
     <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Settings", to: "/settings" }, { label: "Claims risk rules" }]} />
-    <div className="page-header"><div><div className="eyebrow">Settings · Claims · {permitted ? "tenant administrator" : "read only"}</div><h1>Claims risk rules</h1><p className="sub">Choose which deterministic checks hold a claim for a second review. A flag never denies a claim; thresholds apply to later evaluations.</p></div><div className="actions"><Link className="btn" to="/claims/risk-review">Risk review</Link>{permitted && <button type="button" className="btn primary" disabled={loading || busy || !policy} aria-busy={busy} onClick={() => void save()}><Icon name="check" />Save</button>}</div></div>
+    <div className="page-header"><div><div className="eyebrow">Settings · Claims · {permitted ? "tenant administrator" : "read only"}</div><h1>Claims risk rules</h1><p className="sub">Choose which deterministic checks hold a claim for a second review. A flag never denies a claim; thresholds apply to later evaluations.</p></div><div className="actions"><Link className="btn" to="/claims/risk-review">{fromReview ? "Back to risk review" : "Risk review"}</Link>{permitted && <button type="button" className="btn primary" disabled={loading || busy || !policy} aria-busy={busy} onClick={() => void save()}><Icon name="check" />Save</button>}</div></div>
     {!permitted && <div className="note" style={{ marginBottom: 16 }}><strong>Read only.</strong>&nbsp;A tenant administrator can change claim risk rules.</div>}
     <ErrorNote error={error} />
     {saved && <div className="note ok" role="status" style={{ marginBottom: 16 }}><strong>Claim risk rules saved.</strong>&nbsp;Later claim evaluations now use these settings.</div>}
