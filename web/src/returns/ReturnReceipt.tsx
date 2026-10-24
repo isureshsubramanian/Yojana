@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { ScanInput, Shortcut, StatusBadge } from "../components";
+import { isUrlScanFormat } from "../components/scan";
 import { useTenantTime } from "../components/tenantTime";
 import { units } from "../api/units";
 import { LocationField, useReferenceNames } from "../corrections/ReferenceFields";
@@ -20,6 +21,7 @@ export function Component() {
   const [activeLineId, setActiveLineId] = useState<string | null>(null);
   const [scan, setScan] = useState("");
   const [received, setReceived] = useState<Record<string, string | null>>({});
+  const [resolvedMatches, setResolvedMatches] = useState<Set<string>>(new Set());
   const [unreadable, setUnreadable] = useState<Set<string>>(new Set());
   const [grades, setGrades] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -48,6 +50,8 @@ export function Component() {
   const resolveScan = async (value: string) => {
     setBusy(true); setError(null); setMessage(null);
     try {
+      const parsed = await units.scan(value);
+      if (isUrlScanFormat(parsed.format)) { setMessage("This is a web address, not a serial"); return; }
       let current = detail;
       if (!current) {
         const matches = await returnsApi.list({ stage: "", minimumAgeDays: null, maximumAgeDays: null, exceptionsOnly: false, q: value }, null, 10);
@@ -63,6 +67,7 @@ export function Component() {
       const target = matched ?? current.lines.find((line) => !(line.rmaLineId in received) && !unreadable.has(line.rmaLineId));
       if (!target) throw new Error("Every line on this return already has a scanned unit.");
       setReceived((existing) => ({ ...existing, [target.rmaLineId]: value }));
+      setResolvedMatches((existing) => { const next = new Set(existing); if (matched) next.add(target.rmaLineId); else next.delete(target.rmaLineId); return next; });
       setUnreadable((existing) => { const next = new Set(existing); next.delete(target.rmaLineId); return next; });
       setActiveLineId(target.rmaLineId); setScan("");
       setMessage(matched ? `Matched ${value} to line ${target.sequence}` : `${value} is not the authorised unit · line ${target.sequence} will be held as a mismatch`);
@@ -86,13 +91,15 @@ export function Component() {
   const markUnreadable = () => {
     if (!activeLine) { setMessage("Load an RMA before recording an unreadable label."); return; }
     setUnreadable((existing) => new Set(existing).add(activeLine.rmaLineId));
+    setResolvedMatches((existing) => { const next = new Set(existing); next.delete(activeLine.rmaLineId); return next; });
     setReceived((existing) => ({ ...existing, [activeLine.rmaLineId]: null })); setScan(""); setMessage(`Line ${activeLine.sequence} will use a provisional identity and stay in quarantine.`);
   };
   const itemIds = detail?.lines.flatMap((line) => [line.requestedItemId, line.receivedItemId]) ?? [];
   const partyIds = detail ? [detail.returningPartyRef] : [];
   const names = useReferenceNames({ items: itemIds, parties: partyIds });
   const todayNames = useReferenceNames({ items: today.map((row) => row.primaryItemId) });
-  const matched = activeLine && activeValue ? activeValue.toLowerCase() === (activeLine.authorisedSerial ?? activeLine.requestedSerial ?? "").toLowerCase() : false;
+  const matched = activeLine && activeValue ? resolvedMatches.has(activeLine.rmaLineId)
+    || activeValue.toLowerCase() === (activeLine.authorisedSerial ?? activeLine.requestedSerial ?? "").toLowerCase() : false;
   const activeGrade = activeLine ? grades[activeLine.rmaLineId] ?? "defective" : "defective";
   const valuation = activeLine
     ? receiptValuationRule(activeLine, activeGrade)

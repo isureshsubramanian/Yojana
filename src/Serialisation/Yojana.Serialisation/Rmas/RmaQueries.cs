@@ -31,14 +31,26 @@ public sealed class RmaQueries(SerialisationDbContext db, IIdentifierPolicySourc
         if (!string.IsNullOrWhiteSpace(filter.Find))
         {
             var find = filter.Find.Trim();
-            var normalised = IdentifierNormaliser.Normalise(find, identifierPolicies.For(IdentifierType.InternalSerial)).Value;
+            var parsed = ScanParser.Parse(find);
+            var normalised = IdentifierNormaliser.Normalise(parsed.Cleaned,
+                identifierPolicies.For(IdentifierType.InternalSerial)).Value;
             var rmaNumber = find.ToUpperInvariant();
             // Free text deliberately has a bounded candidate phase: both prefixes seek their own indexes and no
             // request can turn a broad serial/RMA prefix into an unbounded RMA sort at benchmark volume.
-            var unitIds = await db.Identifiers.AsNoTracking()
+            var unitIds = parsed.Format == ScanFormat.Url ? [] : await db.Identifiers.AsNoTracking()
                 .Where(i => i.TenantId == tenantId && i.NormalisedValue.StartsWith(normalised))
                 .OrderBy(i => i.NormalisedValue).Select(i => i.UnitId).Distinct().Take(201).ToListAsync(cancellationToken);
-            var numberIds = await db.Rmas.AsNoTracking().Where(r => r.TenantId == tenantId && r.RmaNumber != null
+            foreach (var alternative in parsed.Alternatives)
+            {
+                if (unitIds.Count > 0) break;
+                var alternativeNormalised = IdentifierNormaliser.Normalise(alternative,
+                    identifierPolicies.For(IdentifierType.InternalSerial)).Value;
+                unitIds = await db.Identifiers.AsNoTracking()
+                    .Where(i => i.TenantId == tenantId && i.NormalisedValue.StartsWith(alternativeNormalised))
+                    .OrderBy(i => i.NormalisedValue).Select(i => i.UnitId).Distinct().Take(201)
+                    .ToListAsync(cancellationToken);
+            }
+            var numberIds = parsed.Format == ScanFormat.Url ? [] : await db.Rmas.AsNoTracking().Where(r => r.TenantId == tenantId && r.RmaNumber != null
                     && r.RmaNumber.StartsWith(rmaNumber))
                 .OrderBy(r => r.RmaNumber).Select(r => r.RmaId).Take(201).ToListAsync(cancellationToken);
             var unitRmaIds = unitIds.Count == 0 ? [] : await db.RmaLines.AsNoTracking()

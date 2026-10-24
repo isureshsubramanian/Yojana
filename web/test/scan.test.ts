@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { GROUP_SEPARATOR, ScanTimer, displayScan, recoverGroupSeparators, separatorForControlKey, submission } from "../src/components/scan.ts";
+import { readFileSync } from "node:fs";
+import { DEFAULT_SCANNING_POLICY, GROUP_SEPARATOR, PauseEndedScan, ScanRepeatSuppressor, ScanSettingsSessionCache, ScanTimer, displayScan, recoverGroupSeparators, separatorForControlKey, submission } from "../src/components/scan.ts";
 
 test("Ctrl+] is the FNC1 group separator; other keys are not", () => {
   assert.equal(separatorForControlKey("]", true), GROUP_SEPARATOR);
@@ -25,8 +26,100 @@ test("a burst of fast keystrokes classifies as a scan; typing does not", () => {
 });
 
 test("a submission trims, recovers separators and reports them", () => {
-  const s = submission("  2506-493445{GS}x ", "scan");
+  const s = submission("  2506-493445{GS}x ", "scan", "enter");
   assert.equal(s.value, `2506-493445${GROUP_SEPARATOR}x`);
   assert.equal(s.hasGroupSeparator, true);
+  assert.equal(s.endedBy, "enter");
   assert.equal(displayScan(s.value), "2506-493445⟨GS⟩x");
+});
+
+class FakeTimeouts {
+  private next = 1;
+  private tasks = new Map<number, { at: number; callback: () => void }>();
+  now = 0;
+
+  set = (callback: () => void, delayMs: number): unknown => {
+    const id = this.next++;
+    this.tasks.set(id, { at: this.now + delayMs, callback });
+    return id;
+  };
+  clear = (handle: unknown): void => { this.tasks.delete(handle as number); };
+  advance(ms: number): void {
+    this.now += ms;
+    const due = [...this.tasks.entries()].filter(([, task]) => task.at <= this.now).sort((a, b) => a[1].at - b[1].at);
+    for (const [id, task] of due) { this.tasks.delete(id); task.callback(); }
+  }
+}
+
+function type(controller: PauseEndedScan, clock: FakeTimeouts, text: string, gap: number, submitted: ReturnType<typeof submission>[]): { value: string } {
+  const input = { value: "" };
+  for (const character of text) {
+    clock.advance(gap); input.value += character;
+    controller.key(clock.now, 300, () => input.value, scan => submitted.push(scan));
+  }
+  return input;
+}
+
+test("pause submits scanner-speed input but typed text never auto-submits", () => {
+  const fastClock = new FakeTimeouts(); const fastSubmitted: ReturnType<typeof submission>[] = [];
+  const fast = new PauseEndedScan(new ScanTimer(), fastClock);
+  type(fast, fastClock, "3R29440J", 10, fastSubmitted);
+  fastClock.advance(299); assert.equal(fastSubmitted.length, 0);
+  fastClock.advance(1); assert.equal(fastSubmitted.length, 1);
+  assert.deepEqual({ value: fastSubmitted[0]!.value, source: fastSubmitted[0]!.source, endedBy: fastSubmitted[0]!.endedBy },
+    { value: "3R29440J", source: "scan", endedBy: "pause" });
+
+  const slowClock = new FakeTimeouts(); const slowSubmitted: ReturnType<typeof submission>[] = [];
+  const slow = new PauseEndedScan(new ScanTimer(), slowClock);
+  type(slow, slowClock, "WCC4M5AFPEK3", 100, slowSubmitted);
+  slowClock.advance(300); assert.equal(slowSubmitted.length, 0);
+});
+
+test("Enter stays immediate for scanner and typed input", () => {
+  const clock = new FakeTimeouts(); const submitted: ReturnType<typeof submission>[] = [];
+  const fast = new PauseEndedScan(new ScanTimer(), clock);
+  const fastInput = type(fast, clock, "S802C1A1950E3132074", 10, submitted);
+  const entered = fast.enter(fastInput.value);
+  assert.equal(entered.source, "scan"); assert.equal(entered.endedBy, "enter");
+  clock.advance(300); assert.equal(submitted.length, 0);
+
+  const typed = new PauseEndedScan(new ScanTimer(), new FakeTimeouts());
+  assert.equal(typed.enter("typed value").endedBy, "enter");
+});
+
+test("repeat suppression drops only the same value inside the window", () => {
+  const repeats = new ScanRepeatSuppressor();
+  assert.equal(repeats.accept("A8906101767472A", 100, 1500), true);
+  assert.equal(repeats.accept("A8906101767472A", 1600, 1500), false);
+  assert.equal(repeats.accept("0104043752177374", 1601, 1500), true);
+  assert.equal(repeats.accept("A8906101767472A", 1602, 1500), true);
+  assert.equal(repeats.accept("A8906101767472A", 3103, 1500), true);
+});
+
+test("a zero repeat window disables suppression", () => {
+  const repeats = new ScanRepeatSuppressor();
+  assert.equal(repeats.accept("same", 100, 0), true);
+  assert.equal(repeats.accept("same", 101, 0), true);
+});
+
+test("scan settings are read once per session and failures use defaults", async () => {
+  const cache = new ScanSettingsSessionCache(); let reads = 0;
+  const read = async () => { reads += 1; return { endPauseMs: 250, repeatWindowMs: 900 }; };
+  assert.deepEqual(await cache.load("user:tenant", read), { endPauseMs: 250, repeatWindowMs: 900 });
+  assert.deepEqual(await cache.load("user:tenant", read), { endPauseMs: 250, repeatWindowMs: 900 });
+  assert.equal(reads, 1);
+  assert.deepEqual(await cache.load("user:other", async () => { throw new Error("offline"); }), DEFAULT_SCANNING_POLICY);
+});
+
+test("scanning settings and every resolving scan screen reject web addresses", () => {
+  const source = (path: string) => readFileSync(new URL(`../src/${path}`, import.meta.url), "utf8");
+  const page = source("settings/Scanning.tsx");
+  for (const token of ["tenant_administrator", "End pause", 'min="150"', 'max="1000"', "Repeat window", 'min="0"', 'max="10000"'])
+    assert.ok(page.includes(token), token);
+  const screens = ["units/UnitSearch.tsx", "units/Receive.tsx", "returns/ReturnReceipt.tsx", "replacements/AwaitingReturns.tsx", "claims/ClaimIntake.tsx"];
+  for (const screen of screens) {
+    const text = source(screen);
+    assert.ok(text.includes("isUrlScanFormat"), screen);
+    assert.ok(text.includes("This is a web address, not a serial"), screen);
+  }
 });

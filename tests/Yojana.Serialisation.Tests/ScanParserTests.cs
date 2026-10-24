@@ -73,6 +73,42 @@ public sealed class ScanParserTests
         Assert.Equal("2506-493445", scan.Cleaned);
         Assert.Empty(scan.Fields);
         Assert.Null(scan.SymbologyIdentifier);
+        Assert.Empty(scan.Alternatives);
+    }
+
+    [Theory]
+    [InlineData("http://qr.example.com/item")]
+    [InlineData("HTTPS://qr.example.com/item")]
+    public void A_web_address_is_classified_but_not_interpreted(string raw)
+    {
+        var scan = ScanParser.Parse(raw);
+        Assert.Equal(ScanFormat.Url, scan.Format);
+        Assert.Equal(raw, scan.Cleaned);
+        Assert.Empty(scan.Fields);
+        Assert.Empty(scan.Alternatives);
+    }
+
+    [Theory]
+    [InlineData("A8906101767472A", "8906101767472")]
+    [InlineData("B12-34/56+C", "12-34/56+")]
+    public void A_plain_codabar_shape_keeps_the_scan_and_offers_the_inner_value(string raw, string alternative)
+    {
+        var scan = ScanParser.Parse(raw);
+        Assert.Equal(ScanFormat.Plain, scan.Format);
+        Assert.Equal(raw, scan.Cleaned);
+        Assert.Equal([alternative], scan.Alternatives);
+    }
+
+    [Theory]
+    [InlineData("3R29440J")]
+    [InlineData("WCC4M5AFPEK3")]
+    [InlineData("S802C1A1950E3132074")]
+    public void Scanner_serial_fixtures_stay_plain_without_alternatives(string raw)
+    {
+        var scan = ScanParser.Parse(raw);
+        Assert.Equal(ScanFormat.Plain, scan.Format);
+        Assert.Equal(raw, scan.Cleaned);
+        Assert.Empty(scan.Alternatives);
     }
 
     [Theory]

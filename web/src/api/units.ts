@@ -26,7 +26,7 @@ export interface UnitDetail {
 }
 
 export interface ScanField { key: string; value: string; description: string | null; errors: string[] }
-export interface ScanResult { format: number | string; raw: string; cleaned: string; symbologyIdentifier: string | null; fields: ScanField[]; separatorsRecovered: number }
+export interface ScanResult { format: number | string; raw: string; cleaned: string; symbologyIdentifier: string | null; fields: ScanField[]; separatorsRecovered: number; alternatives: string[] }
 
 export interface IdentifierInput { type: string; rawValue: string; issuerPartyRef?: string | null }
 export interface CommissionLine { identifiers: IdentifierInput[]; clientReference?: string | null; lotId?: string | null; expiryDate?: string | null }

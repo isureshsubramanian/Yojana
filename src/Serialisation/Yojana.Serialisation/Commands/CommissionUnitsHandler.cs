@@ -91,7 +91,9 @@ public static class CommissionUnitsHandler
                 continue;
             }
 
-            var ids = line.Identifiers.Select(input => identifiers.Prepare(input, command.ItemId, null)).ToList();
+            var ids = new List<PreparedIdentifier>(line.Identifiers.Count);
+            foreach (var input in line.Identifiers)
+                ids.Add(await identifiers.PrepareCaptureAsync(input, command.ItemId, null, cancellationToken));
             var reasons = ids.Where(p => p.Blocks).SelectMany(p => p.Validation.Reasons.Select(r => p.Input.Type + ":" + r)).ToList();
             if (profile.ExpiryRequired && line.ExpiryDate is null)
             {

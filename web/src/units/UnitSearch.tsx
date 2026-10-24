@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { units, toPage, type UnitSearchResult, type UnitSearchRow } from "../api/units";
 import { DataGrid, ScanInput, StatusBadge, type GridColumn } from "../components";
+import { isUrlScanFormat } from "../components/scan";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Icon } from "../shell/Icons";
@@ -61,6 +62,8 @@ export function Component() {
   const submit = async (value: string) => {
     setError(null);
     try {
+      const parsed = await units.scan(value);
+      if (isUrlScanFormat(parsed.format)) { setError(new Error("This is a web address, not a serial")); return; }
       const lookup = await units.lookup(value, type || undefined);
       setResolution(lookup.resolution);
       if ((lookup.resolution === "exact" || lookup.resolution === "superseded") && lookup.hits.length === 1) {

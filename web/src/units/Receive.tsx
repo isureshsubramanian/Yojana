@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { units, DEFAULT_LEGAL_ENTITY, newCommandId, now, type CommissionLineResult, type CommissionUnitsResult, type ScanResult } from "../api/units";
 import { DataGrid, ScanInput, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
+import { isUrlScanFormat } from "../components/scan";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Breadcrumbs } from "../shell/PageHeader";
@@ -37,15 +38,20 @@ export function Component() {
   const [page, setPage] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [scanNote, setScanNote] = useState<string | null>(null);
   const [result, setResult] = useState<CommissionUnitsResult | null>(null);
 
   const add = async (raw: string, source: "scan" | "typed" | "list") => {
     let scan: ScanResult | null = null;
     try { scan = await units.scan(raw); } catch { scan = null; }
+    if (scan && isUrlScanFormat(scan.format)) { setScanNote("This is a web address, not a serial"); return; }
+    setScanNote(null);
     const serial = scan ? serialFromScan(scan.fields, scan.cleaned) : raw.trim();
     const lot = scan?.fields.find((f) => f.key === "10")?.value ?? null;
     const errors = scan ? scan.fields.flatMap((f) => f.errors) : [];
-    const duplicate = rows.find((r) => r.serial.toUpperCase() === serial.toUpperCase());
+    const candidates = [serial, ...(scan?.alternatives ?? [])].map(value => value.toUpperCase());
+    const duplicate = rows.find((r) => [r.serial, ...(r.scan?.alternatives ?? [])]
+      .some(value => candidates.includes(value.toUpperCase())));
     if (duplicate) errors.push(`duplicate in session · first at #${duplicate.n}`);
     const captured: Captured = { n: rows.length + 1, raw, serial, vendor: null, lot, scan, source, at: new Date().toISOString(), errors };
     setRows((r) => [captured, ...r]);
@@ -53,7 +59,12 @@ export function Component() {
     setResult(null);
   };
 
-  const pairVendor = (value: string) => {
+  const pairVendor = async (value: string) => {
+    try {
+      const parsed = await units.scan(value);
+      if (isUrlScanFormat(parsed.format)) { setScanNote("This is a web address, not a serial"); return; }
+    } catch { /* The capture endpoint remains authoritative when parsing is unavailable. */ }
+    setScanNote(null);
     setRows((r) => {
       const i = r.findIndex((x) => x.vendor === null);
       if (i < 0) return r;
@@ -176,9 +187,10 @@ export function Component() {
                 {vendorRequired && (
                   <div className="field">
                     <label htmlFor="r-vendor">Vendor serial <span className="hint">· pairs with the next unpaired internal serial</span></label>
-                    <ScanInput id="r-vendor" ariaLabel="Vendor serial" placeholder="Scan the vendor label" hint={<StatusBadge tone="ok">auto-pairs</StatusBadge>} onSubmit={(s) => pairVendor(s.value)} />
+                    <ScanInput id="r-vendor" ariaLabel="Vendor serial" placeholder="Scan the vendor label" hint={<StatusBadge tone="ok">auto-pairs</StatusBadge>} onSubmit={(s) => void pairVendor(s.value)} />
                   </div>
                 )}
+                {scanNote && <div className="note warn">{scanNote}</div>}
                 <label className="checkrow"><input type="checkbox" checked={pending > 0} onChange={(e) => setPending(e.target.checked ? Math.max(0, expected - rows.length) : 0)} /><span>Create <strong>{pending || Math.max(0, expected - rows.length)}</strong> pending-identifier units for the unscanned remainder, identified at put-away</span></label>
                 {decide.length > 0 && <div className="note warn"><strong>{decide.length} rows need a decision</strong>&nbsp;before commit. Commit records the {valid.length} valid rows and leaves these in the session.</div>}
                 {result && <div className="note ok"><strong>Recorded.</strong>&nbsp;{result.commissioned} commissioned, {result.pending} pending identifier, {result.refused} refused, {result.duplicates} duplicates. Refused rows show their reason in the table.</div>}

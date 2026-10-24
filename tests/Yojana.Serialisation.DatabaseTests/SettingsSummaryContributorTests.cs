@@ -67,6 +67,10 @@ public sealed class SettingsSummaryContributorTests(SerialisationHostFixture fix
 
         var claims = await ReadAsync(scope, ClaimsRiskSettingsSummaryContributor.Key);
         Assert.Equal(2, claims.Counts["claimsHeld"]);
+
+        var scanning = await ReadAsync(scope, ScanningSettingsSummaryContributor.Key);
+        Assert.Equal(ScanningSettings.DefaultEndPauseMs, scanning.Counts["endPauseMs"]);
+        Assert.Equal(ScanningSettings.DefaultRepeatWindowMs, scanning.Counts["repeatWindowMs"]);
     }
 
     private static async Task<SettingsSummaryLine> ReadAsync(IServiceScope scope, string key)

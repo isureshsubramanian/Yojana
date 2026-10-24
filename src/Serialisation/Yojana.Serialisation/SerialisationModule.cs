@@ -48,6 +48,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<ISettingsSummaryContributor, JurisdictionsSettingsSummaryContributor>();
         builder.Services.AddScoped<ISettingsSummaryContributor, WorkbenchChoicesSettingsSummaryContributor>();
         builder.Services.AddScoped<ISettingsSummaryContributor, ClaimsRiskSettingsSummaryContributor>();
+        builder.Services.AddScoped<ISettingsSummaryContributor, ScanningSettingsSummaryContributor>();
         foreach (var recordKind in new[]
                  {
                      RecordKind.Unit, RecordKind.Claim, RecordKind.Rma, RecordKind.RefurbishmentWorkOrder,
@@ -97,6 +98,12 @@ public static class SerialisationModule
         // Identity rules and commands (P1-T07, P1-T09). Item and BOM facts come through ports; until a connector or an
         // in-house module registers them, the in-memory ports answer with defaults (development and tests only).
         builder.Services.AddSingleton<IIdentifierPolicySource, IdentifierPolicySet>();
+        // These factories keep PlatformDbContext, reached through ITenantSettings, outside Wolverine's
+        // SerialisationDbContext handler graphs. Exposing either dependency directly prevents transaction discovery.
+        builder.Services.AddScoped(sp => new IdentifierCaptureSettings(
+            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+        builder.Services.AddScoped(sp => new ScanningSettings(
+            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
         builder.Services.AddScoped<IdentifierService>();
         builder.Services.AddScoped<IdentifierAssignmentService>();
         builder.Services.AddSingleton<InMemorySerialSchemes>();
