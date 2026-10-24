@@ -345,6 +345,7 @@ public static class ReferenceFallback
     {
         "production_order" => "MO-",
         "receipt" => "GR-",
+        "delivery" => "DN-",
         "shipment" => "DN-",
         "invoice" => "IN-",
         "transfer" => "TR-",

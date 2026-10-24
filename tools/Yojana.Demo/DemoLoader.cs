@@ -278,7 +278,7 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
     {
         var unit = Units("DW-300")[40];
         var postedAt = DemoDates.At(today.AddDays(-2), 8);
-        var shipmentRef = Document("DN-3PL-2601", "shipment");
+        var shipmentRef = Document("DN-3PL-2601", "delivery");
         var shipment = new ShipmentDocument(shipmentRef, Party("C-NANDIRA").Id, postedAt,
             [new DocumentLine(1, Item("DW-300").Id, 1, [])], DemoIds.FromName("site:C-NANDIRA"),
             Party("L-PARCELORA").Id, CustomerPoRef: "PO-NANDIRA-3PL-01");
@@ -870,7 +870,7 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
         {
             var legalEntityId = LegalEntityFor(sale.Country);
             var shippedAt = DemoDates.At(today.AddDays(-sale.DaysAgo), 9);
-            var shipmentRef = Document(sale.ShipmentNumber, "shipment");
+            var shipmentRef = Document(sale.ShipmentNumber, "delivery");
             var orderRef = new DocumentRef("sales_order", DemoIds.FromName("order:" + sale.Key));
             var lines = LinesFor(sale.Units);
             var shipment = new ShipmentDocument(shipmentRef, sale.InvoiceParty.Id, shippedAt, lines,
@@ -1986,7 +1986,7 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
     {
         using var scope = TenantScope();
         var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
-        var labelledTypes = new[] { "production_order", "receipt", "shipment", "invoice", "delivery_confirmation" };
+        var labelledTypes = new[] { "production_order", "receipt", "delivery", "invoice", "delivery_confirmation" };
         var live = await db.Events.AsNoTracking()
             .Where(row => row.DocumentId != null && labelledTypes.Contains(row.DocumentType!))
             .Select(row => new { Type = row.DocumentType!, Id = row.DocumentId!.Value })
@@ -2001,7 +2001,7 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
             .ToDictionary(row => (row.Type, row.Id));
 
         var orphaned = labels.Values
-            .Where(row => row.Type is "receipt" or "shipment" && !recorded.Contains((row.Type, row.Id)))
+            .Where(row => row.Type is "receipt" or "delivery" && !recorded.Contains((row.Type, row.Id)))
             .Select(row => row.Number).OrderBy(number => number, StringComparer.Ordinal).ToList();
         if (orphaned.Count > 0)
             throw new InvalidOperationException("document labels without recorded units: " + string.Join(", ", orphaned));

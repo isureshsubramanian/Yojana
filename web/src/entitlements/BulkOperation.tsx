@@ -22,8 +22,8 @@ const OPERATIONS = [
   ["entitlement.supersede", "Supersede"], ["entitlement.void", "Void"], ["entitlement.close", "Close"], ["entitlement.backfill", "Backfill"],
 ] as const;
 /** Documents whose units a selection can address, and documents a bulk change can cite as its source. Codes are the recorded event document types (DocumentPrefix in Ports/DefaultReferencePorts.cs). */
-const SELECTION_DOCUMENTS = ["shipment", "sales_order", "invoice", "production_order", "receipt", "return"] as const;
-const SOURCE_DOCUMENTS = ["invoice", "sales_order", "shipment"] as const;
+const SELECTION_DOCUMENTS = ["delivery", "sales_order", "invoice", "production_order", "receipt", "return"] as const;
+const SOURCE_DOCUMENTS = ["invoice", "sales_order", "delivery"] as const;
 /** AmendmentReason.All in Yojana.Serialisation.Contracts/EntitlementVocabulary.cs: the reasons an amendment policy prices. */
 export const BULK_REASONS = [
   ["purchase", "Purchase"], ["goodwill", "Goodwill"], ["correction", "Correction"], ["statutory_extension", "Statutory extension"],

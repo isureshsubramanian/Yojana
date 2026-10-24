@@ -13,6 +13,13 @@ import {
 
 export type DocumentValue = { type: string; id: string };
 
+// Contract example types plus document references recorded by Serialisation. Keeping this boundary narrow makes a
+// picker alias fail type-checking instead of silently selecting no units.
+export const DOCUMENT_PICKER_TYPES = [
+  "adjustment", "delivery", "invoice", "lot", "production_order", "receipt", "return", "sales_order", "stocktake", "transfer",
+] as const;
+export type DocumentPickerType = (typeof DOCUMENT_PICKER_TYPES)[number];
+
 type ReferenceNamesResponse = {
   items: Record<string, ItemReferenceLabel>;
   parties: Record<string, PartyReferenceLabel>;
@@ -141,7 +148,7 @@ export function LocationField({ id, label, value, onChange, optional, hint, kind
 }
 
 /** A document of one of the given types (e.g. ["production_order"]), chosen by its number; the value is the document reference. */
-export function DocumentField({ id, label, types, value, onChange, optional, hint }: FieldProps<DocumentValue> & { types: readonly string[] }) {
+export function DocumentField({ id, label, types, value, onChange, optional, hint }: FieldProps<DocumentValue> & { types: readonly DocumentPickerType[] }) {
   const [selectedType, setSelectedType] = useState(value?.type ?? types[0] ?? "");
   useEffect(() => { if (value?.type) setSelectedType(value.type); }, [value?.type]);
   const names = useReferenceNames({ documents: [value] });
