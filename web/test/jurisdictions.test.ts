@@ -113,3 +113,14 @@ test("currency choices are ISO codes with names and keep an unlisted saved value
   assert.ok(options.some((option) => option.code === "XTS"));
   assert.deepEqual(options.map((option) => option.code), [...options.map((option) => option.code)].sort());
 });
+
+test("new rules and new versions are edited in the drawer with the save below the form, not in a card under the grid", async () => {
+  const { readFileSync } = await import("node:fs");
+  const source = readFileSync(new URL("../src/jurisdictions/Jurisdictions.tsx", import.meta.url), "utf8");
+  const openEditor = source.slice(source.indexOf("const openEditor"), source.indexOf("const edit ="));
+  assert.ok(openEditor.includes("openDrawer(") && openEditor.includes('<RuleEditor key={draft.ruleId ?? "new"}'), "editor opens in the drawer");
+  assert.match(source, /onClick=\{\(\) => openEditor\(\{ \.\.\.newRule/);
+  const actions = source.slice(source.indexOf("<FormActions>"), source.indexOf("</FormActions>"));
+  assert.ok(actions.startsWith('<FormActions><button type="button" className="btn primary"') && actions.includes('<Icon name="check" />Save version</button>'), "labelled save below the form");
+  assert.doesNotMatch(source, /<section className="card top"><div className="card-header"><div><h2>\{draft\.ruleId/);
+});
