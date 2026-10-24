@@ -72,14 +72,12 @@ public sealed class GatewayEndToEndTests(IntegrationHostFixture fixture)
             "Fictional rack server", OpenEnum.Known("serial"), "EA", false));
         var cancellation = await Accept(tenant, connection, "receipt-cancellation", "GR-CANCEL-1", "001",
             new DocumentCancelled(document, OpenEnum.Known("cancelled")), At.AddHours(1));
+        // Acceptance also queues a background translation, so the direct call may find the message already held;
+        // the held status is the assertion.
         using (var hold = fixture.ScopeFor(tenant))
-        {
-            var result = await hold.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync<GatewayTranslationResult>(
+            _ = await hold.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync<GatewayTranslationResult>(
                 new TranslateInboundMessage(cancellation.InboundMessageId),
                 new DeliveryOptions { TenantId = tenant.ToString() });
-            Assert.False(result.Translated);
-            Assert.Contains("bounded_wait", result.Exceptions);
-        }
         await WaitForStatusAsync(tenant, cancellation.InboundMessageId, InboundTranslationStatus.Held);
 
         await AcceptAndTranslate(tenant, connection, "receipt", "GR-WAIT-1", "001", new GoodsReceiptPosted(
@@ -93,6 +91,36 @@ public sealed class GatewayEndToEndTests(IntegrationHostFixture fixture)
             (await serialisation.Current.SingleAsync(x => x.UnitId == unit)).LifecycleStatus);
         Assert.Equal(1, await serialisation.Events.CountAsync(x => x.UnitId == unit
             && x.EventType == UnitEventType.ReceiptReversed));
+    }
+
+    [DatabaseFact]
+    public async Task Cancellation_delivered_again_after_it_was_applied_completes_without_waiting()
+    {
+        var tenant = await fixture.NewTenantAsync("cancelagain");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        var itemExternal = "HW-SWITCH-" + Guid.NewGuid().ToString("N")[..6];
+        var serial = "SW-CANCEL-" + Guid.NewGuid().ToString("N")[..8];
+        var document = Doc("receipt", "GR-AGAIN-1");
+        await AcceptAndTranslate(tenant, connection, "item", itemExternal, "001", new ItemUpserted(itemExternal,
+            "Fictional network switch", OpenEnum.Known("serial"), "EA", false));
+        await AcceptAndTranslate(tenant, connection, "receipt", "GR-AGAIN-1", "001", new GoodsReceiptPosted(
+            document, "FIC-VENDOR-3", [Line(itemExternal, serial, "WH-3")]), At);
+        await AcceptAndTranslate(tenant, connection, "receipt-cancellation", "GR-CANCEL-3", "001",
+            new DocumentCancelled(document, OpenEnum.Known("cancelled")), At.AddHours(1));
+
+        var again = await AcceptAndTranslate(tenant, connection, "receipt-cancellation", "GR-CANCEL-3", "002",
+            new DocumentCancelled(document, OpenEnum.Known("cancelled")), At.AddHours(2));
+
+        await WaitForStatusAsync(tenant, again.InboundMessageId, InboundTranslationStatus.Completed);
+        using var check = fixture.ScopeFor(tenant);
+        var serialisation = check.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var unit = await serialisation.Identifiers.Where(x => x.RawValue == serial).Select(x => x.UnitId).SingleAsync();
+        Assert.Equal(LifecycleStatus.Reversed,
+            (await serialisation.Current.SingleAsync(x => x.UnitId == unit)).LifecycleStatus);
+        Assert.Equal(1, await serialisation.Events.CountAsync(x => x.UnitId == unit
+            && x.EventType == UnitEventType.ReceiptReversed));
+        Assert.False(await check.ServiceProvider.GetRequiredService<IntegrationDbContext>().ResequenceItems
+            .AnyAsync(x => x.ConnectionId == connection));
     }
 
     [DatabaseFact]
@@ -126,7 +154,7 @@ public sealed class GatewayEndToEndTests(IntegrationHostFixture fixture)
 
         var original = await AcceptAndTranslate(tenant, connection, "receipt", "GR-LATE-1", "001",
             new GoodsReceiptPosted(document, "FIC-VENDOR-2", [Line(itemExternal, serial, "WH-2")]), At.AddDays(2));
-        Assert.Contains("cancelled_before_applied", original.Exceptions);
+        await WaitForStatusAsync(tenant, original.InboundMessageId, InboundTranslationStatus.Completed);
         using var check = fixture.ScopeFor(tenant);
         Assert.False(await check.ServiceProvider.GetRequiredService<SerialisationDbContext>().Identifiers
             .AnyAsync(x => x.RawValue == serial));

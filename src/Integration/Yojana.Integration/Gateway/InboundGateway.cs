@@ -303,7 +303,10 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
         CancellationToken cancellationToken)
     {
         var message = Message<DocumentCancelled>(row);
-        if (!await OriginalWasAppliedAsync(row.ConnectionId, message.Payload.DocumentRef, cancellationToken))
+        // The canonical document keeps only its latest message, so once a cancellation is applied the original no
+        // longer shows there; a re-delivered cancellation must not wait for an original it already followed.
+        if (!await OriginalWasAppliedAsync(row.ConnectionId, message.Payload.DocumentRef, cancellationToken)
+            && !await CancellationWasAppliedAsync(row.ConnectionId, message.Payload.DocumentRef, cancellationToken))
         {
             var dependency = BoundedWaitResequencer.DocumentDependencyKey(
                 DocumentExternalId(message.Payload.DocumentRef));
@@ -350,14 +353,17 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
                 && message.TranslatedAt != null), cancellationToken);
     }
 
-    private async Task<bool> WasCancelledBeforeAppliedAsync(InboundMessage row, CancellationToken cancellationToken)
+    private async Task<bool> WasCancelledBeforeAppliedAsync(InboundMessage row, CancellationToken cancellationToken) =>
+        DocumentReference(row) is { } document
+        && await CancellationWasAppliedAsync(row.ConnectionId, document, cancellationToken);
+
+    private async Task<bool> CancellationWasAppliedAsync(Guid connectionId, ExternalDocumentRef document,
+        CancellationToken cancellationToken)
     {
-        var document = DocumentReference(row);
-        if (document is null) return false;
-        var id = await references.FindAsync(row.ConnectionId, "document", DocumentExternalId(document),
+        var id = await references.FindAsync(connectionId, "document", DocumentExternalId(document),
             cancellationToken);
         return id is not null && await db.CanonicalDocuments.AsNoTracking().AnyAsync(x =>
-            x.TenantId == tenant.TenantId && x.ConnectionId == row.ConnectionId && x.DocumentId == id
+            x.TenantId == tenant.TenantId && x.ConnectionId == connectionId && x.DocumentId == id
             && x.MessageType == nameof(DocumentCancelled)
             && db.InboundMessages.Any(message => message.TenantId == x.TenantId
                 && message.InboundMessageId == x.SourceInboundMessageId
