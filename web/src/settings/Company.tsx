@@ -3,10 +3,15 @@ import { ApiError } from "../api/client";
 import { FormActions } from "../components";
 import { useSession } from "../session/session";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
+import { useLegalEntities, legalEntitiesApi } from "../api/legalEntities";
+import { LegalEntityField } from "../corrections/ReferenceFields";
 import { companyApi, companyLine, type CompanyMailSettings } from "./companyApi";
 
 export function Component() {
   const permitted = useSession().roles.includes("tenant_administrator");
+  const { value: legalEntities, error: legalEntityError, setValue: setLegalEntities } = useLegalEntities(permitted);
+  const [defaultLegalEntityId, setDefaultLegalEntityId] = useState("");
+  useEffect(() => { if (legalEntities?.defaultId) setDefaultLegalEntityId((current) => current || legalEntities.defaultId!); }, [legalEntities?.defaultId]);
   const [settings, setSettings] = useState<CompanyMailSettings | null>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -22,7 +27,10 @@ export function Component() {
   }, [permitted]);
   const save = async () => {
     if (!settings) return; setBusy(true); setSaved(false); setError(null);
-    try { setSettings(await companyApi.saveMail(settings)); setSaved(true); }
+    try {
+      const [mail, entities] = await Promise.all([companyApi.saveMail(settings), legalEntitiesApi.setDefault(defaultLegalEntityId)]);
+      setSettings(mail); setLegalEntities(entities); setSaved(true);
+    }
     catch (reason) { setError(reason instanceof ApiError && reason.status === 409 ? "Someone else changed these settings. Reload before saving." : reason instanceof ApiError ? reason.detail : "Company settings could not be saved."); }
     finally { setBusy(false); }
   };
@@ -38,9 +46,12 @@ export function Component() {
     <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Settings", to: "/settings" }, { label: "Company" }]} />
     <PageHeader eyebrow="Settings · tenant administrator" title="Company" sub="How the company appears on every e-mail it sends, account mail and customer mail alike. Every change is recorded in Security events." />
     {!permitted && <div className="note bad"><strong>Tenant administrator access is required.</strong></div>}
-    {error && <div className="note bad" role="alert">{error}</div>}
+    {!!(error || legalEntityError) && <div className="note bad" role="alert">{error ?? "Legal entities could not be loaded."}</div>}
     {permitted && !settings && !error && <p className="muted">Loading company settings…</p>}
     {settings && <div className="stack top" style={{ maxWidth: 900 }}>
+      <section className="card" aria-labelledby="company-legal-entity"><div className="card-header"><h2 id="company-legal-entity">Legal entity</h2><span className="meta">used when a screen does not offer a choice</span></div><div className="card-body"><div className="form-grid">
+        <div className="span"><LegalEntityField id="company-default-legal-entity" label="Default legal entity" value={defaultLegalEntityId || null} onChange={(value) => setDefaultLegalEntityId(value ?? "")} hint="Every screen command is stamped on the server; tenants with one legal entity use it automatically." /></div>
+      </div></div></section>
       <section className="card" aria-labelledby="company-name"><div className="card-header"><h2 id="company-name">Name and footer</h2></div><div className="card-body"><div className="form-grid">
         <div className="field span"><span className="lbl">Company name</span><span className="fixed-value">{settings.companyName}</span><span className="help">Set when the company was created; the e-mail header shows it beside its initials.</span></div>
         <label className="field span"><span className="lbl">Footer line</span><input className="input" maxLength={120} value={settings.footerLine} placeholder="Service operations · Bengaluru, India" onChange={(event) => setSettings({ ...settings, footerLine: event.target.value })} /><span className="help">Shown after the company name at the foot of every e-mail; up to 120 characters, plain text. Leave empty to show the name alone.</span></label>
@@ -55,7 +66,7 @@ export function Component() {
         <div className="card-footer"><button className="btn sm" type="button" onClick={() => void sendTest()}>Send a test message to me</button><span className="grow" />{test && <span className="muted" role="status">{test}</span>}</div>
       </section>
       <p className="hint">No logo and no pictures in e-mail: the header shows the company's initials, so every mail program displays it.</p>
-      <FormActions status={saved ? "Saved. New e-mails use these settings from now on." : null}><button className="btn primary" type="button" disabled={busy || !settings || tooLong} onClick={() => void save()}>{busy ? "Saving…" : "Save"}</button></FormActions>
+      <FormActions status={saved ? "Saved. New commands and e-mails use these settings from now on." : null}><button className="btn primary" type="button" disabled={busy || !settings || !defaultLegalEntityId || tooLong} onClick={() => void save()}>{busy ? "Saving…" : "Save"}</button></FormActions>
     </div>}
   </main>;
 }

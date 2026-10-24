@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { selections, DEFAULT_LEGAL_ENTITY, RELEASE_OPERATION, now, type BulkExecutionResult, type BulkOperationArguments, type BulkPreviewResult, type ResolveSelectionSetResult, type SelectionSource, type UnitOutcome } from "../api/units";
+import { selections, RELEASE_OPERATION, now, type BulkExecutionResult, type BulkOperationArguments, type BulkPreviewResult, type ResolveSelectionSetResult, type SelectionSource, type UnitOutcome } from "../api/units";
+import { LegalEntityPicker, useLegalEntities } from "../api/legalEntities";
 import { SelectionPreview, Shortcut, StatusBadge, useModEnter, type PreviewOutcome, type PreviewResult } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
@@ -26,6 +27,9 @@ function toPreview(r: BulkPreviewResult): PreviewResult {
 /** Selection-set preview (P1 screen 6): address units by document, customer, item, dates, list or range; the command computes every outcome; execute is one transaction. */
 export function Component() {
   const actor = useActor();
+  const { value: legalEntities } = useLegalEntities();
+  const [legalEntityId, setLegalEntityId] = useState("");
+  useEffect(() => { if (legalEntities?.defaultId) setLegalEntityId((current) => current || legalEntities.defaultId!); }, [legalEntities?.defaultId]);
   const person = usePeople([actor]);
   useLegacyParam("serials", "serials");
   const handed = useHandoff().serials ?? "";
@@ -73,8 +77,8 @@ export function Component() {
   }), [kind, docType, docId, partyRef, itemId, from, to, eventType, list, scheme, rangeStart, rangeEnd]);
 
   const args = useMemo<BulkOperationArguments | null>(() => GUID.test(sourceDocId)
-    ? { eventTime: now(), actorRef: actor, legalEntityId: DEFAULT_LEGAL_ENTITY, sourceDocument: { type: sourceDocType, id: sourceDocId }, reason, note: note || null, extra: signature ? { release_signature_ref: signature } : null }
-    : null, [sourceDocType, sourceDocId, reason, note, signature, actor]);
+    ? { eventTime: now(), actorRef: actor, ...(legalEntities && legalEntities.entities.length > 1 ? { legalEntityId } : {}), sourceDocument: { type: sourceDocType, id: sourceDocId }, reason, note: note || null, extra: signature ? { release_signature_ref: signature } : null }
+    : null, [sourceDocType, sourceDocId, reason, note, signature, actor, legalEntities, legalEntityId]);
 
   const resolve = async () => {
     setBusy(true); setError(null); setExecuted(null); setPreview(null);
@@ -131,6 +135,7 @@ export function Component() {
             <div className="card-header"><h2 id="h-set">Selection set</h2><span className="meta">Step 1 of 2</span></div>
             <div className="card-body">
               <div className="form-grid">
+                {legalEntities && legalEntities.entities.length > 1 && <LegalEntityPicker id="release-legal-entity" label="Legal entity" value={legalEntityId} entities={legalEntities.entities} onChange={setLegalEntityId} hint="the company releasing these units" />}
                 <div className="field span">
                   <span className="lbl">Address units by</span>
                   <div className="segmented plain" role="group" aria-label="Selection source" style={{ flexWrap: "wrap" }}>

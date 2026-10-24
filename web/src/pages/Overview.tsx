@@ -11,6 +11,7 @@ import { TrainingWelcomeCard } from "../questions/TrainingWelcomeCard";
 import { erpChangeApi } from "../integration/erpChangeApi";
 import { erpChangeWorkSummary } from "../integration/erpChangeModel";
 import type { ErpChangeMyWorkView } from "../integration/erpChangeTypes";
+import { useLegalEntities } from "../api/legalEntities";
 
 export function loader({ request }: { request: Request }) {
   return api<Overview>("/api/shell/overview", { signal: request.signal });
@@ -41,6 +42,7 @@ export function Component() {
         />
         <div className="stack">
           <TrainingWelcomeCard />
+          <LegalEntitySetupNotice />
           <ErpChangeHomeNotice />
           <KpiStrip kpis={overview.kpis} />
           {overview.panels.length > 0 && (
@@ -63,6 +65,16 @@ export function Component() {
       </Rail>
     </>
   );
+}
+
+function LegalEntitySetupNotice() {
+  const administrator = useSession().roles.includes("tenant_administrator");
+  const { value } = useLegalEntities(administrator);
+  if (!administrator || !value || value.defaultId) return null;
+  return <section className="card" aria-labelledby="legal-entity-setup-notice"><div className="card-header">
+    <h2 id="legal-entity-setup-notice">Choose the company screens act for</h2>
+    <Link className="btn primary" to="/settings/company">Open Company settings</Link>
+  </div><div className="card-body"><p className="muted">{value.entities.length === 0 ? "This tenant has no active legal entity. Add one before recording screen commands." : "This tenant has several legal entities and no default. Screen commands will wait until a tenant administrator chooses one."}</p></div></section>;
 }
 
 function ErpChangeHomeNotice() {

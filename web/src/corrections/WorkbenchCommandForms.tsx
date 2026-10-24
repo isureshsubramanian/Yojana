@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
-import { DEFAULT_LEGAL_ENTITY, newCommandId, selections } from "../api/units";
+import { newCommandId, selections } from "../api/units";
 import { ErrorNote, useActor } from "../units/common";
 import { humanise, shortId, splitSerials } from "../units/format";
 import { DocumentField, ItemField, UnitField, useReferenceNames, type DocumentValue } from "./ReferenceFields";
@@ -421,7 +421,7 @@ function focusNextSerial(event: KeyboardEvent<HTMLInputElement>, form: string, a
 
 function cleanSerials(values: string[]): string[] { return splitSerials(values.join("\n")); }
 
-function context() { return { legalEntityId: DEFAULT_LEGAL_ENTITY, eventTime: new Date().toISOString() }; }
+function context() { return { eventTime: new Date().toISOString() }; }
 
 function datetimeInput(value = new Date().toISOString()): string {
   const date = new Date(value);

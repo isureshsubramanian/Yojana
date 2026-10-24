@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { DEFAULT_LEGAL_ENTITY, newCommandId, now, type DocumentRef, type HistoryRow } from "../api/units";
+import { newCommandId, now, type DocumentRef, type HistoryRow } from "../api/units";
 import { Shortcut, StatusBadge, useModEnter } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
@@ -132,7 +132,7 @@ export function Component() {
     if (!command) return null;
     if (STRUCTURED_COMMANDS.includes(command as typeof STRUCTURED_COMMANDS[number])) return structuredArguments ? { ...structuredArguments, ...(corrects ? { correction: { corrects_correction_id: corrects } } : {}) } : null;
     if (!unitId) return null;
-    const base: Record<string, unknown> = { event_time: now(), actor_ref: "", legal_entity_id: DEFAULT_LEGAL_ENTITY, unit_id: unitId };
+    const base: Record<string, unknown> = { event_time: now(), actor_ref: "", unit_id: unitId };
     if (corrects) base.correction = { corrects_correction_id: corrects };
     switch (command) {
       case "correct_identifier": return args.type && args.value?.trim() ? { ...base, identifier_type: args.type, new_raw_value: args.value.trim() } : null;

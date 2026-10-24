@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { DEFAULT_LEGAL_ENTITY, newCommandId, now } from "../api/units";
+import { newCommandId, now } from "../api/units";
 import { DataGrid, KpiStrip, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
 import { Rail } from "../shell/Drawer";
 import { openDrawer } from "../shell/drawerStore";
@@ -38,7 +38,7 @@ export function Component() {
 
   const loadReport = async (id = productionOrderId) => { if (!GUID.test(id)) return; setBusy(true); setError(null); try { setReport(await correctionsApi.awaitingVendorSerial(id)); } catch (reason) { setError(reason); } finally { setBusy(false); } };
   useEffect(() => { if (GUID.test(productionOrderId)) void loadReport(productionOrderId); }, []); // initial route handoff only
-  const command = useMemo<AssignIdentifiers | null>(() => !GUID.test(productionOrderId) || parsed.lines.length === 0 || parsed.errors.length > 0 ? null : { commandId, productionOrder: { type: "production_order", id: productionOrderId }, mode, lines: parsed.lines, reason, eventTime: now(), actorRef: "", legalEntityId: DEFAULT_LEGAL_ENTITY, issuerPartyRef: null, qualifier: null, note: evidence || null }, [productionOrderId, parsed, commandId, mode, reason, evidence]);
+  const command = useMemo<AssignIdentifiers | null>(() => !GUID.test(productionOrderId) || parsed.lines.length === 0 || parsed.errors.length > 0 ? null : { commandId, productionOrder: { type: "production_order", id: productionOrderId }, mode, lines: parsed.lines, reason, eventTime: now(), actorRef: "", issuerPartyRef: null, qualifier: null, note: evidence || null }, [productionOrderId, parsed, commandId, mode, reason, evidence]);
   const runPreview = async () => { if (!command) return; setBusy(true); setError(null); setCommitted(null); try { const result = await correctionsApi.previewIdentifiers(command); setPreview(result); setPage(1); setFilter(result.lines.some((row) => row.outcome === "rejected") ? "rejected" : "assign"); } catch (reason) { setError(reason); } finally { setBusy(false); } };
   const commit = async () => { if (!command || !preview || preview.preview.refusal || assigning === 0) return; setBusy(true); setError(null); try { const result = await correctionsApi.assignIdentifiers(command); setCommitted(result); setPreview({ ...preview, lines: result.lines, remainingCount: result.remainingCount, awaitingVendorSerialUnitIds: result.awaitingVendorSerialUnitIds, reversal: result.reversal }); setCommandId(newCommandId()); setReport(await correctionsApi.awaitingVendorSerial(productionOrderId)); } catch (reason) { setError(reason); } finally { setBusy(false); } };
   const sourceRows = preview?.lines ?? [];

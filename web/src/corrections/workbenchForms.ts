@@ -3,7 +3,6 @@ import type { DocumentValue } from "./ReferenceFields";
 export const EMPTY_COMMAND_ID = "00000000-0000-0000-0000-000000000000";
 
 export interface WorkbenchFormContext {
-  legalEntityId: string;
   eventTime: string;
 }
 
@@ -89,7 +88,6 @@ export function buildCorrectAsBuiltArguments(value: CorrectAsBuiltFormValue, con
     }],
     reason: "",
     actor_ref: "",
-    legal_entity_id: context.legalEntityId,
   };
 }
 
@@ -101,7 +99,6 @@ export function buildLateSerializationArguments(value: LateSerializationFormValu
     effective_at: value.effectiveAt,
     reason: "",
     actor_ref: "",
-    legal_entity_id: context.legalEntityId,
     source_document: value.sourceDocument,
     stock: value.stock.map((row) => ({
       commission_command_id: row.commissionCommandId,
@@ -135,7 +132,6 @@ export function buildCorrectDocumentSerialsArguments(value: CorrectDocumentSeria
     reason: "",
     event_time: context.eventTime,
     actor_ref: "",
-    legal_entity_id: context.legalEntityId,
   };
 }
 
@@ -149,7 +145,6 @@ export function buildCorrectSourceDocumentArguments(value: CorrectSourceDocument
     reason: "",
     event_time: context.eventTime,
     actor_ref: "",
-    legal_entity_id: context.legalEntityId,
   };
 }
 
@@ -162,6 +157,5 @@ export function buildCorrectReplacementLinkArguments(value: CorrectReplacementLi
     reason: "",
     event_time: context.eventTime,
     actor_ref: "",
-    legal_entity_id: context.legalEntityId,
   };
 }

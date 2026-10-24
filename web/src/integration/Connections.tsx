@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useBlocker } from "react-router";
 import { type GridColumn } from "../components";
-import { DEFAULT_LEGAL_ENTITY } from "../api/units";
 import { useSession } from "../session/session";
 import { ErrorNote, Kv } from "../units/common";
 import { degradationLabel, human, recordLabel } from "./model";
@@ -38,7 +37,7 @@ function ConnectionsScreen() {
     <TransportPanel admin={admin} />
   </Frame>;
 }
-export interface RegistrationBody { requestId: string; connectorCode: string; displayLabel: string; legalEntityId: string; connectorSettings: Record<string, string>; credentials: { purpose: string; secret: string; replaceBy: string | null }[] }
+export interface RegistrationBody { requestId: string; connectorCode: string; displayLabel: string; connectorSettings: Record<string, string>; credentials: { purpose: string; secret: string; replaceBy: string | null }[] }
 // The ERP change start form reuses this form; it submits the same body as part of its own request.
 export function Registration({ complete, submit = async body => (await adminApi.register(body)).connectionId, title = "Register connection", submitLabel = "Register and test sign-in", success = "Connection registered. Review the smoke-read results and onboarding checklist." }: { complete: (id: string) => void; submit?: (body: RegistrationBody) => Promise<string>; title?: string; submitLabel?: string; success?: string }) {
   const fetch = useCallback((cursor?: string, signal?: AbortSignal) => adminApi.registrationConnectors(cursor, signal), []); const catalogue = useCursorPage<RegistrationConnector>(fetch);
@@ -47,7 +46,7 @@ export function Registration({ complete, submit = async body => (await adminApi.
   const onSite = connector?.form.settings.some(field => field.type === "route" && settings[field.code] === "site_relay") ?? false;
   return <Panel title={title}><div className="note">Use a dedicated integration identity. Secrets are typed once, encrypted on the server and never returned. A site relay can keep credentials at the customer site.</div>
     <section className="card" aria-label="Connector catalogue"><PagedGrid source={catalogue} columns={[{ key: "name", label: "Connector from tenant catalogue", width: 75, render: x => x.displayName }, { key: "code", label: "Code", width: 25, mono: true, render: x => x.code }]} rowId={x => x.code} select={choose} selected={connector?.code} empty="No enabled connectors available for registration." /></section>
-    {connector && <form className="stack" onSubmit={e => { e.preventDefault(); const credentials = onSite ? [] : [{ purpose: connector.form.credentialPurpose, secret: JSON.stringify(secrets), replaceBy: replaceBy ? new Date(replaceBy).toISOString() : null }]; setSecrets({}); void action.run(async () => { complete(await submit({ requestId, connectorCode: connector.code, displayLabel: label.trim(), legalEntityId: DEFAULT_LEGAL_ENTITY, connectorSettings: settings, credentials })); }, success); }}>
+    {connector && <form className="stack" onSubmit={e => { e.preventDefault(); const credentials = onSite ? [] : [{ purpose: connector.form.credentialPurpose, secret: JSON.stringify(secrets), replaceBy: replaceBy ? new Date(replaceBy).toISOString() : null }]; setSecrets({}); void action.run(async () => { complete(await submit({ requestId, connectorCode: connector.code, displayLabel: label.trim(), connectorSettings: settings, credentials })); }, success); }}>
       <label className="field"><span className="lbl">Name</span><input className="input" required maxLength={160} value={label} onChange={e => setLabel(e.target.value)} /></label>
       <div className="integration-form-grid">{connector.form.settings.map(field => <label className="field" key={field.code}><span className="lbl">{field.label}</span>{field.type === "route" ? <select className="select" value={settings[field.code] ?? "direct"} onChange={e => { const route = e.target.value; setSettings(x => ({ ...x, [field.code]: route })); if (route === "site_relay") setSecrets({}); }}><option value="direct">Direct from server</option><option value="site_relay">Customer site relay</option></select> : <input className="input" type={field.type} required value={settings[field.code] ?? ""} onChange={e => setSettings(x => ({ ...x, [field.code]: e.target.value }))} />}</label>)}</div>
       {!onSite && <>{connector.form.secretFields.map(field => <label className="field" key={field.code}><span className="lbl">{field.label}</span><input className="input" type={field.type} autoComplete="off" required value={secrets[field.code] ?? ""} onChange={e => setSecrets(x => ({ ...x, [field.code]: e.target.value }))} /></label>)}<label className="field"><span className="lbl">Replace by (optional; otherwise tenant policy applies)</span><input className="input" type="datetime-local" value={replaceBy} onChange={e => setReplaceBy(e.target.value)} /></label></>}

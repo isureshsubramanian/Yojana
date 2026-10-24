@@ -294,7 +294,8 @@ public sealed record AllocateSerialRange(
     Guid? AllocatedToPartyRef = null,
     string? Note = null,
     bool ConfirmedNotModelNumber = false,
-    string? ModelNumberConfirmationReason = null);
+    string? ModelNumberConfirmationReason = null,
+    Guid LegalEntityId = default);
 
 public sealed record AllocateSerialRangeResult(Guid RangeId, string Scheme, string? StartValue, string? EndValue, int Count, bool Randomised, IReadOnlyList<string> Serials, bool StartMoved, string? RequestedStart);
 

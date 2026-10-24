@@ -1,5 +1,5 @@
 import { api } from "../api/client";
-import { DEFAULT_LEGAL_ENTITY, newCommandId, now } from "../api/units";
+import { newCommandId, now } from "../api/units";
 import type { CertificatePage, CompareResult, ComparisonHistoryPage, DisclosurePolicy, FeedMessageHistoryPage, ImportFileHistoryPage, ImportJob, ImportPage, ImportRowPage, ImportRunResult, InstalledBasePage, InternalLookup, PortalContext, PortalLookup, PortalUnit, PortalRegistrationResult, PortalRmaResult, PublicLookup, ReconciliationPage, ReferenceOption, SerialListResult, ServiceHistoryPage, WhereUsedResult, XrefPage } from "./types";
 
 export function query(values: Record<string, string | number | boolean | null | undefined>): string { const params = new URLSearchParams(); for (const [key, value] of Object.entries(values)) if (value !== null && value !== undefined && value !== "") params.set(key, String(value)); const text = params.toString(); return text ? `?${text}` : ""; }
@@ -19,13 +19,13 @@ export const p7Api = {
   comparisonHistory: (filters: Record<string, string | undefined>, cursor?: string, signal?: AbortSignal) => api<ComparisonHistoryPage>(`/api/imports/history/comparisons${query({ ...filters, cursor, take: 50 })}`, { signal }),
   importJob: (id: string, signal?: AbortSignal) => api<ImportJob>(`/api/imports/${id}`, { signal }),
   importRows: (id: string, cursor?: string, signal?: AbortSignal) => api<ImportRowPage>(`/api/imports/${id}/rows${query({ cursor, take: 100 })}`, { signal }),
-  runImport: async (file: File, mode: "apply" | "compare" = "apply") => api<ImportRunResult>("/api/imports/run", { method: "POST", body: { commandId: newCommandId(), source: "user_upload", file: { fileName: file.name, format: file.name.split(".").pop()?.toLowerCase(), content: await fileBytes(file) }, eventTime: now(), legalEntityId: DEFAULT_LEGAL_ENTITY, mapping: { serial: "Serial", orderNumber: "Order" }, mappingName: "standard_serial_list", mode } }),
+  runImport: async (file: File, mode: "apply" | "compare" = "apply") => api<ImportRunResult>("/api/imports/run", { method: "POST", body: { commandId: newCommandId(), source: "user_upload", file: { fileName: file.name, format: file.name.split(".").pop()?.toLowerCase(), content: await fileBytes(file) }, eventTime: now(), mapping: { serial: "Serial", orderNumber: "Order" }, mappingName: "standard_serial_list", mode } }),
   compare: (jobAId: string, jobBId: string) => api<CompareResult>("/api/imports/compare", { method: "POST", body: { commandId: newCommandId(), jobAId, jobBId, selectionId: null } }),
-  review: (jobId: string, overrides: { rowResultId: string; action: string }[]) => api(`/api/imports/${jobId}/review`, { method: "POST", body: { commandId: newCommandId(), jobId, overrides, eventTime: now(), legalEntityId: DEFAULT_LEGAL_ENTITY } }),
+  review: (jobId: string, overrides: { rowResultId: string; action: string }[]) => api(`/api/imports/${jobId}/review`, { method: "POST", body: { commandId: newCommandId(), jobId, overrides, eventTime: now() } }),
   references: (kind: "party" | "document", text: string, type?: string, signal?: AbortSignal) => api<{ results: ReferenceOption[] }>(`/api/serialisation/reference-search${query({ kind, type, q: text, take: 20 })}`, { signal }),
   reconcile: (partyRef: string, importJobId: string) => api<ReconciliationPage>("/api/customer-reconciliations", { method: "POST", body: { commandId: newCommandId(), partyRef, source: { importJobId }, assertedAt: now(), take: 50, after: null } }),
   reconciliation: (id: string, after?: string, signal?: AbortSignal) => api<ReconciliationPage>(`/api/customer-reconciliations/${id}${query({ after, take: 50 })}`, { signal }),
-  verifyAssertion: (id: string, evidenceRef: string, evidenceDate: string, unitAtCustomerSite: boolean) => api(`/api/customer-reconciliations/assertions/${id}/verify`, { method: "POST", body: { commandId: newCommandId(), evidenceRef, evidenceDate, legalEntityId: DEFAULT_LEGAL_ENTITY, unitAtCustomerSite } }),
+  verifyAssertion: (id: string, evidenceRef: string, evidenceDate: string, unitAtCustomerSite: boolean) => api(`/api/customer-reconciliations/assertions/${id}/verify`, { method: "POST", body: { commandId: newCommandId(), evidenceRef, evidenceDate, unitAtCustomerSite } }),
   rejectAssertion: (id: string, reason: string) => api(`/api/customer-reconciliations/assertions/${id}/reject`, { method: "POST", body: { commandId: newCommandId(), reason } }),
   publicLookup: (tenant: string, identifier: string, type?: string, signal?: AbortSignal) => api<PublicLookup>(`/api/public/portal/${encodeURIComponent(tenant)}/resolve${query({ identifier, type })}`, { signal }),
   portalContext: (signal?: AbortSignal) => api<PortalContext>("/api/portal/context", { signal }),
