@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.Coexistence;
 
@@ -29,10 +30,12 @@ public static class CoexistenceEndpoints
             CoexistenceDriftService drift, CancellationToken ct) => Invoke(() => drift.ScanAsync(connectionId, ct)));
         group.MapPost("/connections/{connectionId:guid}/stop-sync", (Guid connectionId, StopSync request,
             ClaimsPrincipal user, SyncControl control, CancellationToken ct) =>
-                Invoke(() => control.StopAsync(connectionId, request, Actor(user), ct)));
+                Invoke(() => control.StopAsync(connectionId, request, Actor(user), ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
         group.MapPost("/connections/{connectionId:guid}/resume-sync", (Guid connectionId, ResumeSync request,
             ClaimsPrincipal user, SyncControl control, CancellationToken ct) =>
-                Invoke(() => control.ResumeAsync(connectionId, request, Actor(user), ct)));
+                Invoke(() => control.ResumeAsync(connectionId, request, Actor(user), ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
         group.MapGet("/coexistence/conflicts", (Guid? connectionId, string? status, string? cursor, int? take,
             CoexistenceConflicts conflicts, CancellationToken ct) =>
                 Invoke(() => conflicts.ListAsync(connectionId, status, cursor, take ?? 50, ct)));
@@ -109,6 +112,16 @@ public static class CoexistenceEndpoints
         catch (TenantSettingVersionConflictException)
         {
             return Results.Conflict(new { error = "warranty_contract_setting_changed" });
+        }
+        catch (CommandRefusedException ex)
+        {
+            return Results.Problem(title: ex.Rule, detail: ex.Message,
+                statusCode: ex.Rule.EndsWith("not_found", StringComparison.Ordinal) ? 404 : 422,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["rule"] = ex.Rule,
+                    ["unblockingStep"] = ex.UnblockingStep,
+                });
         }
     }
 }

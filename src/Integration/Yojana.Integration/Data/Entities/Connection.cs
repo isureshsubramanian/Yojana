@@ -17,6 +17,16 @@ public sealed class Connection : ITenantScoped
     public bool? LastSmokeReadSucceeded { get; set; }
     public string? LastSmokeReadFailureCode { get; set; }
     public string? LastSmokeReadFailureDetail { get; set; }
+    public DateTime? SyncStoppedAt { get; set; }
+    public string? SyncStoppedBy { get; set; }
+    public string? SyncStopReason { get; set; }
+    public DateTime? SyncResumedAt { get; set; }
+    public string NotificationControlState { get; set; } = NotificationControlStates.NotSupported;
+    public string? NotificationControlFailureCode { get; set; }
+    public string? NotificationControlAction { get; set; }
+    public DateTime? NotificationControlNextAttemptAt { get; set; }
+    public int NotificationControlAttemptCount { get; set; }
+    public long NotificationControlRevision { get; set; }
     public DateTime? ArchivedAt { get; set; }
 }
 
@@ -26,4 +36,18 @@ public static class ConnectionStatus
     public const string Paused = "paused";
     public const string Active = "active";
     public const string Archived = "archived";
+}
+
+public static class NotificationControlStates
+{
+    public const string Pending = "pending";
+    public const string Held = "held";
+    public const string NotHeld = "not_held";
+    public const string NotSupported = "not_supported";
+}
+
+public static class NotificationControlActions
+{
+    public const string Suspend = "suspend";
+    public const string Resume = "resume";
 }

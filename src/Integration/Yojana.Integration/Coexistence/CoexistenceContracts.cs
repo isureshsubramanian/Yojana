@@ -146,8 +146,8 @@ public sealed record StopSync(string Reason);
 
 public sealed record ResumeSync(string? Note = null);
 
-public sealed record SyncControlResult(Guid ConnectionId, string SyncState, bool NotificationsHeld,
-    int WaitingOutbound, string? Warning = null);
+public sealed record SyncControlResult(Guid ConnectionId, string SyncState, string Notifications,
+    int WaitingOutbound, string? FailureCode = null, string? Warning = null);
 
 public sealed record StartParallelRun(int Days, DateOnly? StartDate = null);
 

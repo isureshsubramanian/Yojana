@@ -39,7 +39,7 @@ public sealed record ConnectionKpis(int Connections, int Live, int Paused, long 
 public sealed record ConnectionPage(IReadOnlyList<ConnectionSummary> Items, string? NextCursor, ConnectionKpis Kpis);
 public sealed record ConnectionSummary(Guid ConnectionId, string ConnectionName, string ConnectorCode,
     string ConnectorName, string Status, bool IsLive, string OutboundMode, bool ReadOnly,
-    ConnectionHealthView Health, bool AcceptancePassed);
+    ConnectionHealthView Health, bool AcceptancePassed, ConnectionSyncState? Sync = null);
 public sealed record ConnectionHealthView(string Status, bool IsLive, DateTime? LastInboundAt,
     DateTime? CheckedUpTo, string NotificationState, long ReceivedToday, long ReceivedLast30Days,
     int WaitingToSend, DateTime? OldestWaitingAt, double? OldestWaitingAgeSeconds, int MaxOutboxAgeSeconds,
@@ -52,7 +52,12 @@ public sealed record RecordTypeHealth(string RecordType, string NotificationStat
     long ReceivedToday, int NeedAttention, string? SourceEntity = null,
     string? LastErrorCode = null, string? LastErrorDetail = null);
 public sealed record ConnectionHealthDetail(Guid ConnectionId, string ConnectionName, ConnectionHealthView Health,
-    IReadOnlyList<RecordTypeHealth> RecordTypes, ConnectionHandOverNote? HandOver = null);
+    IReadOnlyList<RecordTypeHealth> RecordTypes, ConnectionHandOverNote? HandOver = null,
+    ConnectionSyncState? Sync = null);
+
+public sealed record ConnectionSyncState(string State, DateTime? StoppedAt, string? StoppedByName,
+    string? StopReason, DateTime? ResumedAt, bool CatchingUp, string Notifications,
+    string? NotificationFailureCode, int WaitingOutbound);
 
 /// <summary>
 /// A stopped connection waiting for a person to resume it after the final migration load handed it a starting point
@@ -78,12 +83,13 @@ public sealed record ConnectionDetail(ConnectionSummary Connection, DateTime Cre
     IReadOnlyList<CredentialState> Credentials, ConnectorOnboardingChecklist Checklist,
     string LifecycleStatus, int ReconciliationWindowDays, DateOnly ReconciliationToday,
     Yojana.Integration.Connectors.ConnectionAuthorisationView? Authorisation = null,
-    Yojana.Integration.Connectors.ConnectionFeatures? Features = null);
+    Yojana.Integration.Connectors.ConnectionFeatures? Features = null,
+    ConnectionSyncState? Sync = null);
 public sealed record ConnectionEventView(long Sequence, string Kind, DateTime OccurredAt, string ActorName, string Summary);
 public sealed record ConnectionEventPage(IReadOnlyList<ConnectionEventView> Items, string? NextCursor);
 public sealed record TenantConnectionStatus(Guid ConnectionId, string ConnectionName, string Status, bool IsLive,
     DateTime? CheckedUpTo, int WaitingToSend, int MessagesNeedingAttention, int OpenManualTasks,
-    int ConnectionAttention, DateTime UpdatedAt);
+    int ConnectionAttention, DateTime UpdatedAt, ConnectionSyncState? Sync = null);
 public sealed record TenantStatusPage(IReadOnlyList<TenantConnectionStatus> Items, string? NextCursor, ConnectionKpis Kpis);
 
 public sealed record RegistrationConnector(string Code, string DisplayName,

@@ -570,6 +570,39 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("bit")
                         .HasColumnName("last_smoke_read_succeeded");
 
+                    b.Property<string>("NotificationControlAction")
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .HasColumnName("notification_control_action");
+
+                    b.Property<int>("NotificationControlAttemptCount")
+                        .HasColumnType("int")
+                        .HasColumnName("notification_control_attempt_count");
+
+                    b.Property<string>("NotificationControlFailureCode")
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("notification_control_failure_code");
+
+                    b.Property<DateTime?>("NotificationControlNextAttemptAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("notification_control_next_attempt_at");
+
+                    b.Property<long>("NotificationControlRevision")
+                        .HasColumnType("bigint")
+                        .HasColumnName("notification_control_revision");
+
+                    b.Property<string>("NotificationControlState")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(24)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(24)")
+                        .HasDefaultValue("not_supported")
+                        .HasColumnName("notification_control_state");
+
                     b.Property<bool>("RegistrationCompleted")
                         .HasColumnType("bit")
                         .HasColumnName("registration_completed");
@@ -584,6 +617,24 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("nvarchar(24)")
                         .HasColumnName("status");
 
+                    b.Property<DateTime?>("SyncResumedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("sync_resumed_at");
+
+                    b.Property<string>("SyncStopReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("sync_stop_reason");
+
+                    b.Property<DateTime?>("SyncStoppedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("sync_stopped_at");
+
+                    b.Property<string>("SyncStoppedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("sync_stopped_by");
+
                     b.HasKey("TenantId", "ConnectionId")
                         .HasName("pk_connection");
 
@@ -597,11 +648,18 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "ConnectorCode", "ConnectionId")
                         .HasDatabaseName("ix_connection_tenant_id_connector_code_connection_id");
 
+                    b.HasIndex("TenantId", "NotificationControlNextAttemptAt", "ConnectionId")
+                        .HasDatabaseName("ix_connection_tenant_id_notification_control_next_attempt_at_connection_id");
+
                     b.HasIndex("TenantId", "Status", "CreatedAt", "ConnectionId")
                         .HasDatabaseName("ix_connection_tenant_id_status_created_at_connection_id");
 
                     b.ToTable("connection", "integration", t =>
                         {
+                            t.HasCheckConstraint("ck_connection_notification_control_action", "notification_control_action IS NULL OR notification_control_action IN ('suspend','resume')");
+
+                            t.HasCheckConstraint("ck_connection_notification_control_state", "notification_control_state IN ('pending','held','not_held','not_supported')");
+
                             t.HasCheckConstraint("ck_connection_status", "status IN ('active','paused','registering','archived')");
                         });
                 });

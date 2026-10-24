@@ -343,15 +343,29 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
         });
         modelBuilder.Entity<Connection>(b =>
         {
-            b.ToTable("connection", table => table.HasCheckConstraint("ck_connection_status", "status IN ('active','paused','registering','archived')"));
+            b.ToTable("connection", table =>
+            {
+                table.HasCheckConstraint("ck_connection_status", "status IN ('active','paused','registering','archived')");
+                table.HasCheckConstraint("ck_connection_notification_control_state",
+                    "notification_control_state IN ('pending','held','not_held','not_supported')");
+                table.HasCheckConstraint("ck_connection_notification_control_action",
+                    "notification_control_action IS NULL OR notification_control_action IN ('suspend','resume')");
+            });
             b.HasKey(x => new { x.TenantId, x.ConnectionId }).IsClustered(false);
             b.Property(x => x.ConnectorCode).HasMaxLength(16);
             b.Property(x => x.DisplayLabel).HasMaxLength(160);
             b.Property(x => x.Status).HasMaxLength(24);
             b.Property(x => x.LastSmokeReadFailureCode).HasMaxLength(40).IsUnicode(false);
             b.Property(x => x.LastSmokeReadFailureDetail).HasMaxLength(200);
+            b.Property(x => x.SyncStoppedBy).HasMaxLength(320);
+            b.Property(x => x.SyncStopReason).HasMaxLength(2000);
+            b.Property(x => x.NotificationControlState).HasMaxLength(24).IsUnicode(false)
+                .HasDefaultValue(NotificationControlStates.NotSupported);
+            b.Property(x => x.NotificationControlFailureCode).HasMaxLength(40).IsUnicode(false);
+            b.Property(x => x.NotificationControlAction).HasMaxLength(16).IsUnicode(false);
             b.HasIndex(x => new { x.TenantId, x.Status, x.CreatedAt, x.ConnectionId });
             b.HasIndex(x => new { x.TenantId, x.ConnectorCode, x.ConnectionId });
+            b.HasIndex(x => new { x.TenantId, x.NotificationControlNextAttemptAt, x.ConnectionId });
             b.HasIndex(x => new { x.TenantId, x.RegistrationRequestId }).IsUnique()
                 .HasFilter("[registration_request_id] IS NOT NULL");
         });
