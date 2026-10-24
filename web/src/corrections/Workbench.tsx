@@ -10,7 +10,13 @@ import { Breadcrumbs } from "../shell/PageHeader";
 import { usePeople } from "../people/people";
 import { ErrorNote, Kv, Section } from "../units/common";
 import { fmtDate, fmtDateTime, humanise, outcomeTone, sentence, shortId, statusLabel, statusTone } from "../units/format";
-import { DocumentField, ItemField, useReferenceNames } from "./ReferenceFields";
+import { DOCUMENT_PICKER_TYPES, DocumentField, ItemField, useReferenceNames, type DocumentPickerType, type DocumentValue } from "./ReferenceFields";
+
+// A lot is not a document with lines; every other recorded document type can be an entry point. The documents that
+// usually carry serial lines come first, so the picker opens on delivery as the free-text box did.
+const FIRST_ENTRY_TYPES: readonly DocumentPickerType[] = ["delivery", "receipt", "transfer", "return"];
+const ENTRY_DOCUMENT_TYPES: readonly DocumentPickerType[] = [...FIRST_ENTRY_TYPES,
+  ...DOCUMENT_PICKER_TYPES.filter((type) => type !== "lot" && !FIRST_ENTRY_TYPES.includes(type))];
 import {
   DEDICATED_SCREENS, commandName, recordedRows, workbenchApi,
   type WorkbenchCandidate, type WorkbenchChoice, type WorkbenchChoiceOption, type WorkbenchEntry, type WorkbenchEvidenceRef, type WorkbenchPicker,
@@ -31,7 +37,7 @@ export function Component() {
   const handedEntry = useHandoff().entry ?? "";
   const [entryValue, setEntryValue] = useState(handedEntry);
   useEffect(() => { if (handedEntry) setEntryValue(handedEntry); }, [handedEntry]);
-  const [documentType, setDocumentType] = useState("delivery");
+  const [entryDocument, setEntryDocument] = useState<DocumentValue | null>(null);
   const [candidates, setCandidates] = useState<WorkbenchCandidate[]>([]);
   const [unitId, setUnitId] = useState<string | null>(params.get("unit"));
   const [resolvedEntry, setResolvedEntry] = useState<WorkbenchEntry | null>(null);
@@ -67,17 +73,18 @@ export function Component() {
     ],
   });
 
-  const resolve = async (value = entryValue) => {
-    if (!value.trim()) return;
+  const resolve = async (value = entryValue, document = entryDocument) => {
+    if (entryKind === "document_line" ? !document : !value.trim()) return;
     setBusy(true); setError(null); setCandidates([]); setUnitId(null); setResolvedEntry(null); setResolvedSelectionId(null); reset();
     try {
       const entry = entryKind === "document_line"
-        ? { kind: entryKind, document: { type: documentType, id: value.trim() } }
+        ? { kind: entryKind, document: document! }
         : entryKind === "selection_set" ? { kind: entryKind, selectionId: value.trim() } : { kind: entryKind, value: value.trim() };
       const result = await workbenchApi.resolve(entry);
       setCandidates(result.candidates); setResolvedEntry(result.entry); setResolvedSelectionId(result.selectionId);
       setUnitId(result.candidates.length === 1 ? result.candidates[0]!.resolvedUnitId : null);
-      if (result.candidates.length === 0) setError(new Error(`Nothing resolves from "${value.trim()}". Superseded serials, asset tags and licence ids are accepted.`));
+      // A document or selection entry resolves to a selection of its units, not to single candidates.
+      if (result.candidates.length === 0 && !result.selectionId) setError(new Error(entryKind === "document_line" ? "No serialised units are recorded on that document." : `Nothing resolves from "${value.trim()}". Superseded serials, asset tags and licence ids are accepted.`));
     } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
   useEffect(() => { if (entryValue && !unitId) void resolve(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -234,15 +241,19 @@ export function Component() {
 
       <section className="card" style={{ marginBottom: "var(--gap)" }}>
         <div className="card-body" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          {entryKind === "document_line" && <input className="input" style={{ width: 140 }} aria-label="Document type" value={documentType} onChange={(event) => setDocumentType(event.target.value)} />}
-          <form className="scanbox lg" style={{ flex: "1 1 320px", maxWidth: 460, margin: 0 }} onSubmit={(event) => { event.preventDefault(); void resolve(); }}>
+          {entryKind === "document_line" ? <div style={{ flex: "1 1 420px", maxWidth: 560 }}>
+            <DocumentField id="wb-entry-document" label="Document" types={ENTRY_DOCUMENT_TYPES} value={entryDocument} onChange={(document) => { setEntryDocument(document); if (document) void resolve(entryValue, document); }} />
+          </div> : <form className="scanbox lg" style={{ flex: "1 1 320px", maxWidth: 460, margin: 0 }} onSubmit={(event) => { event.preventDefault(); void resolve(); }}>
             <Icon name="scan" />
-            <input className="input" data-scan-focus aria-label="Serial, tag, document or selection" placeholder={entryKind === "identifier" ? "Scan or type a serial, asset tag or licence id" : entryKind === "document_line" ? "Document id" : "Selection set id"} value={entryValue} onChange={(event) => setEntryValue(event.target.value)} />
+            <input className="input" data-scan-focus aria-label="Serial, tag, document or selection" placeholder={entryKind === "identifier" ? "Scan or type a serial, asset tag or licence id" : "Selection set id"} value={entryValue} onChange={(event) => setEntryValue(event.target.value)} />
             <span className="scan-hint"><Shortcut keys="/" /></span>
-          </form>
+          </form>}
           <div className="segmented plain" role="group" aria-label="Entry">{ENTRY_KINDS.map(([id, label]) => <button key={id} type="button" aria-pressed={entryKind === id} onClick={() => setEntryKind(id)}>{label}</button>)}</div>
           <span className="hint" style={{ marginLeft: "auto" }}>Accepts superseded serials, asset tags and licence ids.{primary ? ` Resolved: ${humanise(primary.type)}, current.` : ""}</span>
         </div>
+        {entryKind === "document_line" && resolvedSelectionId && candidates.length === 0 && <div className="card-body" style={{ paddingTop: 0 }}>
+          <div className="note info"><strong>Document chosen.</strong>&nbsp;Its recorded units are carried into the correction you pick below.</div>
+        </div>}
         {candidates.length > 1 && <div className="card-body" style={{ paddingTop: 0 }}>
           <div className="note info"><strong>{candidates.length} units match.</strong>&nbsp;Pick one:&nbsp;{candidates.map((c) => <button key={c.unitId} type="button" className={`chip${unitId === c.resolvedUnitId ? " on" : ""}`} onClick={() => setUnitId(c.resolvedUnitId)}>{c.displayIdentifier ?? shortId(c.unitId)}{c.mergedAlias ? " · merged alias" : ""}</button>)}</div>
         </div>}

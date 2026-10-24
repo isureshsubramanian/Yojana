@@ -23,3 +23,10 @@ test("every command a choice can run has a readable name, including hand-offs an
   for (const command of [...literal, ...handoff]) assert.match(editor, new RegExp(`"${command.replace(".", "\\.")}": (?:\\{ label: )?"[A-Z]`), command);
   assert.match(editor, /row\.commands\.map\(commandLabel\)/);
 });
+
+test("a document-line entry is chosen with the document picker by number, never a typed type and raw id", async () => {
+  const { readFileSync } = await import("node:fs");
+  const source = readFileSync(new URL("../src/corrections/Workbench.tsx", import.meta.url), "utf8");
+  assert.ok(source.includes('<DocumentField id="wb-entry-document" label="Document" types={ENTRY_DOCUMENT_TYPES}'), "document picker");
+  assert.ok(!source.includes('aria-label="Document type"') && !source.includes('"Document id"'), "no free-text type or id");
+});
