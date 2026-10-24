@@ -75,6 +75,34 @@ public sealed class ScanParserTests
         Assert.Null(scan.SymbologyIdentifier);
     }
 
+    [Theory]
+    [InlineData("1721 0000007724188-P001291")]
+    [InlineData("1721 0000007724188-P001297")]
+    public void A_memory_module_serial_that_starts_with_ai_like_digits_stays_plain(string raw)
+    {
+        // Real laptop memory module QR payloads (owner's DS2208 scans, 2026-10-25).
+        var scan = ScanParser.Parse(raw);
+        Assert.Equal(ScanFormat.Plain, scan.Format);
+        Assert.Equal(raw, scan.Cleaned);
+        Assert.False(scan.HasErrors);
+    }
+
+    [Fact]
+    public void A_carton_code_carrying_only_a_gtin_parses_as_gs1()
+    {
+        var scan = ScanParser.Parse("0104043752177374");
+        Assert.Equal(ScanFormat.Gs1, scan.Format);
+        Assert.Equal("04043752177374", scan["01"]);
+        Assert.False(scan.HasErrors);
+    }
+
+    [Fact]
+    public void Sixteen_digits_starting_01_with_a_wrong_gtin_check_digit_stay_plain()
+    {
+        var scan = ScanParser.Parse("0104043752177375");
+        Assert.Equal(ScanFormat.Plain, scan.Format);
+    }
+
     [Fact]
     public void A_gs1_scan_with_a_bad_check_digit_reports_the_error_on_that_element()
     {

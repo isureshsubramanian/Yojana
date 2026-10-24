@@ -58,11 +58,14 @@ public static partial class ScanParser
             return new ScanResult(ScanFormat.Mh10, raw, cleaned, aim, ParseMh10(cleaned), recovered);
         }
 
-        var gs1Form = aim is "]d2" or "]C1" or "]Q3" or "]e0" || cleaned.StartsWith('(') || cleaned.Contains(Gs) || LooksLikeGs1(cleaned);
-        if (gs1Form)
+        // A symbology prefix, brackets or a separator says the scanner sent GS1; digits alone only suggest it.
+        var declaredGs1 = aim is "]d2" or "]C1" or "]Q3" or "]e0" || cleaned.StartsWith('(') || cleaned.Contains(Gs);
+        if (declaredGs1 || LooksLikeGs1(cleaned))
         {
             var elements = Gs1ElementStrings.Parse(cleaned);
-            if (elements.Count > 0)
+            // An undeclared string that does not parse cleanly is a manufacturer serial that happens to start with AI-like
+            // digits (memory module labels such as "1721 0000007724188-P001291"), so it falls through to plain.
+            if (elements.Count > 0 && (declaredGs1 || elements.All(e => e.Errors.Count == 0)))
             {
                 return new ScanResult(ScanFormat.Gs1, raw, cleaned, aim, elements.Select(e => new ScanField(e.ApplicationIdentifier, e.Value, e.Description, e.Errors)).ToList(), recovered);
             }
@@ -175,6 +178,7 @@ public static partial class ScanParser
     [GeneratedRegex(@"^(?<di>\d{0,3}[A-Z])(?<value>.*)$", RegexOptions.Singleline)]
     private static partial Regex Mh10Field();
 
-    [GeneratedRegex(@"^(00\d{18}|01\d{14}|02\d{14}|1[0-7]|2[0-1]|240|241|253|254|255|8003|8004|8006|8010|8017|8018|90)\d")]
+    // A fixed-length opener (SSCC, GTIN) may be the whole scan, as on a carton label carrying only its GTIN.
+    [GeneratedRegex(@"^(?:(?:00\d{18}|01\d{14}|02\d{14})(?:\d|$)|(?:1[0-7]|2[0-1]|240|241|253|254|255|8003|8004|8006|8010|8017|8018|90)\d)")]
     private static partial Regex Gs1Opener();
 }
