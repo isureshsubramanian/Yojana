@@ -23,6 +23,7 @@ public sealed class ConnectionPollWatermark : ITenantScoped
     public DateTime NextPollAt { get; set; }
     public DateTime? LastPolledAt { get; set; }
     public string? LastError { get; set; }
+    public string? LastErrorCode { get; set; }
     public long Revision { get; set; }
 }
 

@@ -308,6 +308,11 @@ public sealed class ConnectorEdgeScenarioRunner(IntegrationHostFixture fixture)
         var commandId = await StageReplacementAsync(connection, harness, "FIC-OUTAGE", ct);
         using var scope = fixture.ScopeFor(connection.TenantId);
         var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var gateway = await db.ConnectionGatewaySettings.SingleAsync(row =>
+            row.ConnectionId == connection.ConnectionId, ct);
+        gateway.SyncStartMode = "today";
+        gateway.SyncStartConfiguredAt = fixture.Clock.UtcNow;
+        await db.SaveChangesAsync(ct);
         await scope.ServiceProvider.GetRequiredService<ITenantSettings>()
             .SetAsync(OutboxRelaySettings.ConnectionKey(connection.ConnectionId), "1", ct);
         await scope.ServiceProvider.GetRequiredService<ReconciliationService>().RunAsync(

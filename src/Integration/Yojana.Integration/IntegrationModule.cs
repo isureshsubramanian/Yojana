@@ -58,6 +58,8 @@ public static class IntegrationModule
         builder.Services.AddScoped<IConnectionBusyObserver, ConnectionBusyAuditObserver>();
         builder.Services.AddScoped<ConnectionCommands>();
         builder.Services.AddScoped<ConnectionQueries>();
+        builder.Services.AddScoped<ConnectionOnboarding>();
+        builder.Services.AddScoped<ConnectionCertificatePins>();
         builder.Services.AddScoped<ConnectionHealthSettings>();
         builder.Services.AddScoped<ConnectionHealthProjection>();
         builder.Services.AddScoped<ExtensionStatusService>();
@@ -136,6 +138,8 @@ public static class IntegrationModule
         builder.Services.AddScoped<Cx01Adapter>();
         builder.Services.AddKeyedScoped<IConnectorAdapter>(Cx01Capabilities.ConnectorCode, (services, _) =>
             services.GetRequiredService<Cx01Adapter>());
+        builder.Services.AddKeyedScoped<IConnectorWatermarkSeed>(Cx01Capabilities.ConnectorCode, (services, _) =>
+            services.GetRequiredService<Cx01Adapter>());
         builder.Services.AddKeyedScoped<IOutboundConnector>(Cx01Capabilities.ConnectorCode, (services, _) =>
             services.GetRequiredService<Cx01Adapter>());
         builder.Services.AddScoped<Cx01Onboarding>();
@@ -171,6 +175,8 @@ public static class IntegrationModule
         builder.Services.AddScoped<Cx02Adapter>();
         builder.Services.AddKeyedScoped<IConnectorAdapter>(Cx02Capabilities.ConnectorCode, (services, _) =>
             services.GetRequiredService<Cx02Adapter>());
+        builder.Services.AddKeyedScoped<IConnectorWatermarkSeed>(Cx02Capabilities.ConnectorCode, (services, _) =>
+            services.GetRequiredService<Cx02Adapter>());
         builder.Services.AddKeyedScoped<IOutboundConnector>(Cx02Capabilities.ConnectorCode, (services, _) =>
             services.GetRequiredService<Cx02Adapter>());
         builder.Services.AddKeyedScoped<IOutboundCompletenessCheck, Cx02OutboundCompleteness>(
@@ -199,6 +205,8 @@ public static class IntegrationModule
             Cx04ConsentExpiryJob.JobName, Cx04ConsentExpiryJob.Cron));
         builder.Services.AddScoped<Cx04Adapter>();
         builder.Services.AddKeyedScoped<IConnectorAdapter>(Cx04Capabilities.ConnectorCode, (services, _) =>
+            services.GetRequiredService<Cx04Adapter>());
+        builder.Services.AddKeyedScoped<IConnectorWatermarkSeed>(Cx04Capabilities.ConnectorCode, (services, _) =>
             services.GetRequiredService<Cx04Adapter>());
         builder.Services.AddScoped<ICx04OutboundFacts, Cx04OutboundFacts>();
         builder.Services.AddScoped<Cx04OutboundDocuments>();

@@ -1,11 +1,13 @@
 namespace Yojana.Relay.Contracts;
 
-public sealed record RelayPoll(int Capacity, string AgentVersion, string HostName, string? ErpVersion = null);
+public sealed record RelayPoll(int Capacity, string AgentVersion, string HostName, string? ErpVersion = null,
+    int ProtocolVersion = RelayProtocol.Version);
 public sealed record RelayPollReply(IReadOnlyList<RelayWork> Items);
 public sealed record RelayWork(Guid RequestId, Guid LeaseId, string Method, string RelativePath, string Query,
     IReadOnlyDictionary<string, string[]> Headers, byte[] Body, DateTime ExpiresAtUtc);
 public sealed record RelayResult(Guid RequestId, Guid LeaseId, int Status,
-    IReadOnlyDictionary<string, string[]> Headers, byte[] Body, bool Denied = false);
+    IReadOnlyDictionary<string, string[]> Headers, byte[] Body, bool Denied = false,
+    string? FailureCode = null, string? FailureDetail = null, int ProtocolVersion = 1);
 public sealed record RelayWebhook(string Method, string Query, IReadOnlyDictionary<string, string[]> Headers, byte[] Body);
 public sealed record RelayWebhookReply(int Status, IReadOnlyDictionary<string, string[]> Headers, byte[] Body);
 public sealed record RelayPathRule(string Method, string Pattern);

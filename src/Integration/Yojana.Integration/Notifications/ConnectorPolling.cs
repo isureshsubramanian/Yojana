@@ -38,6 +38,17 @@ public interface IConnectorPoller
     string? StartingWatermark(DateTime sourceLocalTime) => null;
 }
 
+/// <summary>Connector-owned translation between UTC start instants and opaque remote watermark formats.</summary>
+public interface IConnectorWatermarkSeed
+{
+    string ConnectorCode { get; }
+    string WatermarkAt(DateTime utcInstant);
+    DateTime? InstantOf(string watermark);
+    bool IsMasterData(string entityType);
+    Task<Connections.FullHistoryEstimate> EstimateFullHistoryAsync(Guid connectionId,
+        CancellationToken cancellationToken) => Task.FromResult(new Connections.FullHistoryEstimate("unknown", null));
+}
+
 public sealed class ConnectionPollingService(
     IntegrationDbContext db,
     ITenantContext tenant,
@@ -52,7 +63,11 @@ public sealed class ConnectionPollingService(
         var now = clock.UtcNow;
         var due = await db.ConnectionPollWatermarks.Where(x => x.TenantId == tenant.TenantId
                 && x.NextPollAt <= now && db.Connections.Any(connection => connection.TenantId == x.TenantId
-                    && connection.ConnectionId == x.ConnectionId && connection.Status == ConnectionStatus.Active))
+                    && connection.ConnectionId == x.ConnectionId && connection.Status == ConnectionStatus.Active)
+                && (x.Watermark != null && x.Watermark != ""
+                    || x.CanonicalMessage == "ItemUpserted" || x.CanonicalMessage == "PartyUpserted"
+                    || db.ConnectionGatewaySettings.Any(setting => setting.TenantId == x.TenantId
+                        && setting.ConnectionId == x.ConnectionId && setting.SyncStartMode != null)))
             .OrderBy(x => x.NextPollAt).ThenBy(x => x.ConnectionId).ThenBy(x => x.EntityType)
             .Take(100).ToListAsync(cancellationToken);
         var connectorCodes = await db.Connections.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
@@ -78,12 +93,16 @@ public sealed class ConnectionPollingService(
                 state.Watermark = result.NextWatermark ?? state.Watermark;
                 state.LastPolledAt = now;
                 state.LastError = null;
+                state.LastErrorCode = null;
                 state.NextPollAt = now.AddSeconds(state.IntervalSeconds);
                 state.Revision++;
             }
-            catch (Exception exception) when (exception is not OperationCanceledException)
+            catch (Exception exception) when (exception is not OperationCanceledException
+                || !cancellationToken.IsCancellationRequested)
             {
-                state.LastError = Error(exception);
+                var failure = Yojana.Relay.Contracts.RemoteFailureClassifier.Classify(exception);
+                state.LastErrorCode = failure.Code;
+                state.LastError = failure.Detail;
                 state.NextPollAt = now.AddSeconds(Math.Min(state.IntervalSeconds, 300));
                 state.Revision++;
             }
@@ -92,11 +111,6 @@ public sealed class ConnectionPollingService(
         return accepted;
     }
 
-    private static string Error(Exception exception)
-    {
-        var value = $"{exception.GetType().Name}: {exception.Message}";
-        return value.Length <= 2000 ? value : value[..2000];
-    }
 }
 
 [DisallowConcurrentExecution]

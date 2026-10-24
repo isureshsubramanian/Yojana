@@ -31,7 +31,8 @@ public sealed class Cx01Adapter(
     ICx01SurveyReader surveyReader,
     ICx01TrackingPermissionSink trackingPermissions,
     Cx01OutboundDocuments? documents = null,
-    Cx01NativeWarrantyWriter? nativeWarranty = null) : IConnectorAdapter, IOutboundConnector
+    Cx01NativeWarrantyWriter? nativeWarranty = null) : IConnectorAdapter, IOutboundConnector,
+    IConnectorWatermarkSeed
 {
     public string ConnectorCode => Cx01Capabilities.ConnectorCode;
     public bool OwnsConnectionLane => true;
@@ -44,6 +45,34 @@ public sealed class Cx01Adapter(
     public string? StartingWatermark(DateTime sourceLocalTime) =>
         new Cx01Watermark(new DateTimeOffset(DateTime.SpecifyKind(sourceLocalTime, DateTimeKind.Unspecified),
             TimeSpan.Zero), "").ToString();
+
+    public string WatermarkAt(DateTime utcInstant) => StartingWatermark(utcInstant)!;
+    public DateTime? InstantOf(string watermark) => Cx01Watermark.Parse(watermark) is var value
+        && value != Cx01Watermark.Empty ? value.Timestamp.UtcDateTime : null;
+    public bool IsMasterData(string entityType) => entityType is "items" or "item"
+        or "business_partners" or "business_partner" or "Items" or "BusinessPartners";
+
+    public async Task<Connections.FullHistoryEstimate> EstimateFullHistoryAsync(Guid connectionId,
+        CancellationToken cancellationToken)
+    {
+        var counts = new Dictionary<string, long>(StringComparer.Ordinal);
+        try
+        {
+            foreach (var entity in Cx01Protocol.Entities)
+            {
+                using var response = await client.GetAsync(connectionId,
+                    Cx01Protocol.Collection(entity.Value) + "?$count=true&$top=0", cancellationToken);
+                if (!response.RootElement.TryGetProperty("@odata.count", out var count) || !count.TryGetInt64(out var value))
+                    return new("unknown", null);
+                counts[entity.Key] = value;
+            }
+            return new("known", counts.Values.Sum(), counts);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return new("unknown", null);
+        }
+    }
 
     public async Task<ConnectorPollResult> PollAsync(ConnectorPollRequest request,
         CancellationToken cancellationToken)

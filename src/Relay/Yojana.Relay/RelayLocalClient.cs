@@ -17,6 +17,7 @@ public sealed class RelayLocalClient : IDisposable
     private DateTime sessionExpires;
     private DateTime keepAliveAt;
     private TimeSpan sessionTimeout = TimeSpan.FromMinutes(30);
+    private (string Expected, string Presented)? certificateMismatch;
 
     public RelayLocalClient(RelayAgentConfiguration configuration, RelaySecrets secrets, HttpMessageHandler? handler = null,
         Func<string, string, Uri>? resolveTarget = null)
@@ -30,7 +31,8 @@ public sealed class RelayLocalClient : IDisposable
             AllowAutoRedirect = false, UseCookies = configuration.Credentials == "site", CookieContainer = new(),
             ConnectTimeout = TimeSpan.FromSeconds(10),
             SslOptions = new() { RemoteCertificateValidationCallback =
-                RelayCertificatePin.Validator(configuration.ServiceCertificateSha256) },
+                ServiceCertificatePin.Validator(configuration.ServiceCertificateSha256,
+                    (expected, presented) => certificateMismatch = (expected, presented)) },
         }) { Timeout = TimeSpan.FromSeconds(60) };
     }
 
@@ -56,17 +58,28 @@ public sealed class RelayLocalClient : IDisposable
             return await ResultAsync(first, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch (Exception ex) { return Failure(work, ex); }
+        catch (Exception ex) { return Failure(work, Translate(ex)); }
 
-        RelayResult Result(int status, bool denied = false) => new(work.RequestId, work.LeaseId, status,
-            new Dictionary<string, string[]>(), [], denied);
-        async Task<RelayResult> ResultAsync(HttpResponseMessage response, CancellationToken token) =>
-            new(work.RequestId, work.LeaseId, (int)response.StatusCode,
+        RelayResult Result(int status, bool denied = false)
+        {
+            var failure = RemoteFailureClassifier.Classify((HttpStatusCode)status,
+                denied ? "The relay path policy refused this request." : null);
+            return new(work.RequestId, work.LeaseId, status, new Dictionary<string, string[]>(), [], denied,
+                failure.Code, failure.Detail, RelayProtocol.Version);
+        }
+        async Task<RelayResult> ResultAsync(HttpResponseMessage response, CancellationToken token)
+        {
+            var body = await RelayBounds.ReadAsync(await response.Content.ReadAsStreamAsync(token),
+                RelayBounds.BodyLimit, token);
+            var failure = response.IsSuccessStatusCode ? null
+                : RemoteFailureClassifier.Classify(response.StatusCode, Detail(body));
+            return new(work.RequestId, work.LeaseId, (int)response.StatusCode,
                 response.Headers.Concat(response.Content.Headers)
                     .Where(pair => configuration.Declaration.ResponseHeaders.Contains(pair.Key, StringComparer.OrdinalIgnoreCase)
                         && (configuration.Credentials == "cloud" || !pair.Key.Equals("Set-Cookie", StringComparison.OrdinalIgnoreCase)))
                     .ToDictionary(pair => pair.Key, pair => pair.Value.ToArray(), StringComparer.OrdinalIgnoreCase),
-                await RelayBounds.ReadAsync(await response.Content.ReadAsStreamAsync(token), RelayBounds.BodyLimit, token));
+                body, false, failure?.Code, failure?.Detail, RelayProtocol.Version);
+        }
     }
 
     private Task<HttpResponseMessage> SendAsync(RelayWork work, CancellationToken ct)
@@ -119,38 +132,57 @@ public sealed class RelayLocalClient : IDisposable
 
     public async Task KeepAliveAsync(CancellationToken ct)
     {
-        if (configuration.Credentials != "site") return;
-        if (sessionExpires == default) { await EnsureSessionAsync(false, ct); return; }
-        if (keepAliveAt > DateTime.UtcNow) return;
-        var declaration = configuration.Declaration.Session;
-        await EnsureSessionAsync(false, ct);
-        using var response = await client.GetAsync(new Uri(configuration.ServiceUrl.GetLeftPart(UriPartial.Authority)
-            + declaration.KeepAlivePath), ct);
-        if (response.StatusCode == HttpStatusCode.Unauthorized) await EnsureSessionAsync(true, ct);
-        else response.EnsureSuccessStatusCode();
-        sessionExpires = DateTime.UtcNow + sessionTimeout;
-        keepAliveAt = DateTime.UtcNow + sessionTimeout / 2;
+        try
+        {
+            if (configuration.Credentials != "site") return;
+            if (sessionExpires == default) { await EnsureSessionAsync(false, ct); return; }
+            if (keepAliveAt > DateTime.UtcNow) return;
+            var declaration = configuration.Declaration.Session;
+            await EnsureSessionAsync(false, ct);
+            using var response = await client.GetAsync(new Uri(configuration.ServiceUrl.GetLeftPart(UriPartial.Authority)
+                + declaration.KeepAlivePath), ct);
+            if (response.StatusCode == HttpStatusCode.Unauthorized) await EnsureSessionAsync(true, ct);
+            else response.EnsureSuccessStatusCode();
+            sessionExpires = DateTime.UtcNow + sessionTimeout;
+            keepAliveAt = DateTime.UtcNow + sessionTimeout / 2;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception exception) { throw Translate(exception); }
     }
 
-    // Only the fault's type name leaves the site (never its message, which may carry local paths or data), so the
-    // cloud can tell a certificate or connection failure from an agent bug.
-    public static RelayResult Failure(RelayWork work, Exception? fault = null) => new(work.RequestId, work.LeaseId, 503,
-        new Dictionary<string, string[]> { ["Content-Type"] = ["application/json"] },
-        JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string>
-        {
-            ["error"] = "relay_local_fault",
-            ["kind"] = Kind(fault),
-        }));
-
-    private static string Kind(Exception? fault) => fault switch
+    public static RelayResult Failure(RelayWork work, Exception? fault = null)
     {
-        null => "unknown",
-        HttpRequestException { InnerException: System.Security.Authentication.AuthenticationException } =>
-            "certificate_rejected",
-        HttpRequestException => "local_service_unreachable",
-        TaskCanceledException => "local_service_timeout",
-        _ => fault.GetType().Name,
-    };
+        var failure = fault is null ? RemoteFailureClassifier.FromWire(null, null)
+            : RemoteFailureClassifier.Classify(fault);
+        return new(work.RequestId, work.LeaseId, 503,
+            new Dictionary<string, string[]> { ["Content-Type"] = ["application/json"] },
+            JsonSerializer.SerializeToUtf8Bytes(new { error = "relay_local_fault" }), false,
+            failure.Code, failure.Detail, RelayProtocol.Version);
+    }
+
+    private static string? Detail(byte[] body)
+    {
+        try
+        {
+            using var json = JsonDocument.Parse(body);
+            var root = json.RootElement;
+            if (root.TryGetProperty("error", out var error))
+            {
+                if (error.ValueKind == JsonValueKind.String) return error.GetString();
+                if (error.ValueKind == JsonValueKind.Object && error.TryGetProperty("message", out var message))
+                    return message.GetString();
+            }
+            return root.TryGetProperty("message", out var value) ? value.GetString() : null;
+        }
+        catch (JsonException) { return null; }
+    }
+
+    private Exception Translate(Exception exception)
+    {
+        if (certificateMismatch is not { } mismatch) return exception;
+        certificateMismatch = null;
+        return new CertificateRejectedException(mismatch.Expected, mismatch.Presented, exception);
+    }
 
     public void Dispose() { client.Dispose(); sessionLock.Dispose(); }
 }

@@ -65,6 +65,14 @@ public sealed class RelayRequestQueue(IntegrationDbContext db, ITenantContext te
                     foreach (var pair in result.Headers.Where(pair => declaration.ResponseHeaders.Contains(pair.Key, StringComparer.OrdinalIgnoreCase)))
                         if (!response.Headers.TryAddWithoutValidation(pair.Key, pair.Value))
                             response.Content.Headers.TryAddWithoutValidation(pair.Key, pair.Value);
+                    if (result.Status >= 400)
+                    {
+                        var failure = result.ProtocolVersion >= RelayProtocol.Version
+                            ? RemoteFailureClassifier.FromWire(result.FailureCode, result.FailureDetail)
+                            : RemoteFailureClassifier.FromWire(null, result.FailureDetail);
+                        response.Headers.TryAddWithoutValidation("X-Yojana-Failure-Code", failure.Code);
+                        response.Headers.TryAddWithoutValidation("X-Yojana-Failure-Detail", failure.Detail);
+                    }
                     return response;
                 }
                 await Task.Delay(waitMilliseconds, ct);
@@ -136,7 +144,10 @@ public sealed class RelayRequestQueue(IntegrationDbContext db, ITenantContext te
     {
         if (result.Body.Length > BodyLimit || result.Status is < 100 or > 599 || result.Headers.Count > 32
             || result.Headers.Any(pair => pair.Key.Length > 160 || pair.Value.Length > 16
-                || pair.Value.Any(value => value.Length > 8192 || value.Any(char.IsControl))))
+                || pair.Value.Any(value => value.Length > 8192 || value.Any(char.IsControl)))
+            || result.ProtocolVersion >= RelayProtocol.Version
+                && (!RemoteFailureCode.IsKnown(result.FailureCode) && result.Status >= 400
+                    || result.FailureDetail is { Length: > RemoteFailureClassifier.DetailLimit }))
             throw new InvalidDataException("relay_result_invalid");
         await using var lease = await ConnectionOperationLock.AcquireAsync(db, tenant.TenantId,
             $"relay-queue:{relay.ConnectionId:N}", ct);

@@ -16,6 +16,7 @@ using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Platform.Scheduling;
 using Yojana.Platform.Tenancy;
+using Yojana.Relay.Contracts;
 
 namespace Yojana.Integration.Connectors.CX01;
 
@@ -32,12 +33,24 @@ public sealed class Cx01Transport(
     IClock clock,
     IConnectionThrottleDelay delay,
     IConnectionRetryJitter jitter,
+    ConnectionCertificatePins? certificatePins = null,
     IConnectionBusyObserver? busy = null) : ICx01Transport, IDisposable
 {
-    private readonly ConcurrentDictionary<ConnectionWorkerKey, HttpMessageInvoker> clients = new();
+    private readonly ConcurrentDictionary<(ConnectionWorkerKey Key, string? Pin), HttpMessageInvoker> clients = new();
+    private readonly ConcurrentDictionary<(ConnectionWorkerKey Key, string? Pin),
+        (string Expected, string Presented)> mismatches = new();
 
-    public Task<HttpResponseMessage> SendAsync(ConnectionWorkerKey workerKey, HttpRequestMessage request,
-        CancellationToken cancellationToken) => Client(workerKey).SendAsync(request, cancellationToken);
+    public async Task<HttpResponseMessage> SendAsync(ConnectionWorkerKey workerKey, HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        var pin = certificatePins is null ? null : await certificatePins.ReadAsync(workerKey.ConnectionId, cancellationToken);
+        var route = (workerKey, pin);
+        try { return await Client(route).SendAsync(request, cancellationToken); }
+        catch (HttpRequestException exception) when (mismatches.TryRemove(route, out var mismatch))
+        {
+            throw new CertificateRejectedException(mismatch.Expected, mismatch.Presented, exception);
+        }
+    }
 
     public void Dispose()
     {
@@ -45,20 +58,30 @@ public sealed class Cx01Transport(
         clients.Clear();
     }
 
-    private HttpMessageInvoker Client(ConnectionWorkerKey key) => clients.GetOrAdd(key, workerKey =>
+    private HttpMessageInvoker Client((ConnectionWorkerKey Key, string? Pin) route)
     {
-        var rateLimited = new ConnectionRateLimitedHandler(workerKey, profiles, workers, clock, delay, jitter, busy: busy)
+        if (clients.TryGetValue(route, out var existing)) return existing;
+        var sockets = new SocketsHttpHandler
         {
-            InnerHandler = new SocketsHttpHandler
+            AutomaticDecompression = DecompressionMethods.All,
+            PooledConnectionLifetime = TimeSpan.FromMinutes(15),
+            ConnectTimeout = TimeSpan.FromSeconds(30),
+            UseCookies = false,
+            SslOptions = new()
             {
-                AutomaticDecompression = DecompressionMethods.All,
-                PooledConnectionLifetime = TimeSpan.FromMinutes(15),
-                ConnectTimeout = TimeSpan.FromSeconds(30),
-                UseCookies = false,
+                RemoteCertificateValidationCallback = ServiceCertificatePin.Validator(route.Pin,
+                    (expected, presented) => mismatches[route] = (expected, presented)),
             },
         };
-        return new HttpMessageInvoker(rateLimited, true);
-    });
+        var rateLimited = new ConnectionRateLimitedHandler(route.Key, profiles, workers, clock, delay, jitter, busy: busy)
+        {
+            InnerHandler = sockets,
+        };
+        var created = new HttpMessageInvoker(rateLimited, true);
+        var winner = clients.GetOrAdd(route, created);
+        if (!ReferenceEquals(created, winner)) created.Dispose();
+        return winner;
+    }
 }
 
 public sealed class Cx01SessionRegistry
@@ -88,15 +111,20 @@ public sealed class Cx01RemoteException(
     string operation,
     string? remoteCode = null,
     string? remoteMessage = null,
-    IReadOnlyList<string>? details = null)
+    IReadOnlyList<string>? details = null,
+    string? failureCode = null,
+    string? failureDetail = null)
     : Exception(remoteMessage is null
         ? $"CX01 {operation} failed with HTTP status {(int)statusCode}."
-        : $"CX01 {operation} failed: {remoteMessage}")
+        : $"CX01 {operation} failed: {remoteMessage}"), IRemoteFailureSource
 {
     public HttpStatusCode StatusCode { get; } = statusCode;
     public string? RemoteCode { get; } = remoteCode;
     public string? RemoteMessage { get; } = remoteMessage;
     public IReadOnlyList<string> Details { get; } = details ?? [];
+    public HttpStatusCode FailureStatusCode => StatusCode;
+    public string? FailureDetail => failureDetail ?? RemoteMessage;
+    public string? FailureCode => failureCode;
     public bool IsRecordGone => StatusCode == HttpStatusCode.NotFound;
     public bool IsBusinessRejection => (int)StatusCode is >= 400 and < 500
         && StatusCode is not (HttpStatusCode.Unauthorized or HttpStatusCode.RequestTimeout
@@ -337,7 +365,8 @@ public sealed class Cx01Client(
             }
         }
         catch (JsonException) { }
-        throw new Cx01RemoteException(response.StatusCode, operation, Cap(code, 120), Cap(message, 2_000), details);
+        throw new Cx01RemoteException(response.StatusCode, operation, Cap(code, 120), Cap(message, 2_000), details,
+            Header(response, "X-Yojana-Failure-Code"), Header(response, "X-Yojana-Failure-Detail"));
     }
 
     private static string? Text(JsonElement value, string property) =>
@@ -346,6 +375,9 @@ public sealed class Cx01Client(
 
     private static string? Cap(string? value, int length) => value is null || value.Length <= length
         ? value : value[..length];
+
+    private static string? Header(HttpResponseMessage response, string name) =>
+        response.Headers.TryGetValues(name, out var values) ? values.FirstOrDefault() : null;
 }
 
 public sealed class Cx01SessionMaintenance(

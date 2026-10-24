@@ -52,6 +52,9 @@ public sealed class Cx01ConnectionLifecycleAdapter(Cx01Settings settings, Cx01Cl
     public async Task<JsonElement> ReadSettingsAsync(Guid connectionId, CancellationToken ct) =>
         Cx01Settings.ToJson(await settings.GetAsync(connectionId, ct));
 
+    public async Task<Uri?> ServiceUriAsync(Guid connectionId, CancellationToken ct) =>
+        (await settings.GetAsync(connectionId, ct)).ServiceUri;
+
     public async Task<ConnectionProbe?> LatestProbeAsync(Guid connectionId, CancellationToken ct)
     {
         var result = await survey.LatestAsync(connectionId, ct);

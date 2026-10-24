@@ -15,6 +15,8 @@ public sealed class Connection : ITenantScoped
     public bool RegistrationCompleted { get; set; }
     public DateTime? LastSmokeReadAt { get; set; }
     public bool? LastSmokeReadSucceeded { get; set; }
+    public string? LastSmokeReadFailureCode { get; set; }
+    public string? LastSmokeReadFailureDetail { get; set; }
     public DateTime? ArchivedAt { get; set; }
 }
 

@@ -62,8 +62,64 @@ public sealed class SiteRelayTests
         Assert.True(RelayCertificatePin.Validator(string.Join(':', pin.Chunk(2).Select(x => new string(x))))(
             this, certificate, null, untrusted));
         Assert.False(RelayCertificatePin.Validator(new string('A', 64))(this, certificate, null, untrusted));
+        Assert.False(RelayCertificatePin.Validator(new string('A', 64))(this, certificate, null,
+            System.Net.Security.SslPolicyErrors.None));
         Assert.True(RelayCertificatePin.Validator(null)(this, certificate, null, System.Net.Security.SslPolicyErrors.None));
         Assert.Throws<InvalidOperationException>(() => RelayCertificatePin.Normalise("not-a-pin"));
+    }
+
+    [Fact]
+    public async Task Pinned_self_signed_https_accepts_the_matching_leaf_and_rejects_a_mismatch()
+    {
+        using var key = RSA.Create(2048);
+        var request = new System.Security.Cryptography.X509Certificates.CertificateRequest("CN=fictional-service.test",
+            key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+        var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var endpoint = (System.Net.IPEndPoint)listener.LocalEndpoint;
+        var server = ServeAsync(listener, certificate, 2);
+        try
+        {
+            using var matching = new HttpClient(new SocketsHttpHandler
+            {
+                SslOptions = new() { RemoteCertificateValidationCallback =
+                    ServiceCertificatePin.Validator(ServiceCertificatePin.Fingerprint(certificate)) },
+            });
+            Assert.Equal(HttpStatusCode.OK, (await matching.GetAsync($"https://127.0.0.1:{endpoint.Port}/")).StatusCode);
+            using var mismatch = new HttpClient(new SocketsHttpHandler
+            {
+                SslOptions = new() { RemoteCertificateValidationCallback =
+                    ServiceCertificatePin.Validator(new string('A', 64)) },
+            });
+            await Assert.ThrowsAsync<HttpRequestException>(() => mismatch.GetAsync($"https://127.0.0.1:{endpoint.Port}/"));
+        }
+        finally
+        {
+            listener.Stop();
+            await server;
+        }
+
+        static async Task ServeAsync(System.Net.Sockets.TcpListener listener,
+            System.Security.Cryptography.X509Certificates.X509Certificate2 certificate, int connections)
+        {
+            for (var index = 0; index < connections; index++)
+            {
+                try
+                {
+                    using var socket = await listener.AcceptTcpClientAsync();
+                    await using var tls = new System.Net.Security.SslStream(socket.GetStream());
+                    await tls.AuthenticateAsServerAsync(certificate, false,
+                        System.Security.Authentication.SslProtocols.None, false);
+                    var buffer = new byte[4096];
+                    _ = await tls.ReadAsync(buffer);
+                    await tls.WriteAsync("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray());
+                }
+                catch (System.Security.Authentication.AuthenticationException) { }
+                catch (ObjectDisposedException) { return; }
+                catch (System.Net.Sockets.SocketException) { return; }
+            }
+        }
     }
 
     [Theory]

@@ -131,6 +131,24 @@ test("connections enables pushed native warranty fields only when the connector 
   assert.match(adminApi, /\$\{connection\(id\)\}\/coexistence/);
 });
 
+test("connection onboarding exposes start modes, certificate confirmation and guarded re-baselining", () => {
+  for (const label of ["Start reading changes from", "Today", "A date", "Full history", "Read items and business partners in full", "Server certificate", "Fetch certificate", "Confirm pin", "Clear pin", "Re-baseline reading", "Re-baseline and skip the gap"])
+    assert.match(connections, new RegExp(label));
+  assert.match(connections, /<FormActions/);
+  assert.match(connections, /adminApi\.fullHistoryEstimate/);
+  assert.match(connections, /adminApi\.saveOnboarding/);
+  assert.match(connections, /adminApi\.fetchCertificate/);
+  assert.match(connections, /adminApi\.rebaseline/);
+  for (const path of ["/onboarding", "/full-history-estimate", "/fetch-certificate", "/rebaseline"])
+    assert.ok(adminApi.includes(path), path);
+});
+
+test("connection health shows classified failures for the connection and each entity", () => {
+  assert.match(health, /health\.lastErrorCode/);
+  assert.match(health, /x\.lastErrorCode/);
+  assert.match(health, /x\.lastErrorDetail/);
+});
+
 test("reconciliation details have independent server continuations and location filter", () => {
   assert.match(adminApi, /\/entity-days\$\{query\(\{ cursor, take: 12 \}\)\}/);
   assert.match(adminApi, /\/locations\$\{query\(\{ cursor, take: 12, differences \}\)\}/);

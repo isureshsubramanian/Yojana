@@ -6,7 +6,20 @@ namespace Yojana.Integration.Connections;
 
 public sealed record RegisterConnection(Guid RequestId, string ConnectorCode, string DisplayLabel,
     Guid LegalEntityId, JsonElement ConnectorSettings, IReadOnlyList<RegisterCredential> Credentials,
-    ConnectionThrottleProfile? Throttle = null);
+    ConnectionThrottleProfile? Throttle = null, ConnectionSyncStart? SyncStart = null,
+    string? ServiceCertificateSha256 = null);
+public sealed record ConnectionSyncStart(string Mode = "today", DateOnly? Date = null,
+    bool MasterDataFull = true);
+public sealed record UpdateConnectionOnboarding(ConnectionSyncStart SyncStart,
+    string? ServiceCertificateSha256 = null);
+public sealed record RebaselineConnection(IReadOnlyList<string>? Entities, DateTime To, string Reason);
+public sealed record RebaselineResult(Guid ConnectionId, IReadOnlyList<string> Entities,
+    DateTime To, bool ChangesInGapSkipped = true);
+public sealed record FullHistoryEstimate(string Status, long? Records,
+    IReadOnlyDictionary<string, long>? Entities = null);
+public sealed record ServiceCertificateView(string Subject, string Issuer, DateTime ValidFrom,
+    DateTime ValidTo, string Sha256Fingerprint);
+public sealed record FetchServiceCertificate(Uri ServiceUri);
 public sealed record RegisterCredential(string Purpose, string Secret, DateTime? ExpiresAt = null,
     DateTime? ReplaceBy = null);
 public sealed record ArchiveConnection(bool Force = false, string? Reason = null);
@@ -36,7 +49,8 @@ public sealed record ConnectionHealthView(string Status, bool IsLive, DateTime? 
     DateTime UpdatedAt, bool RelayConnected = false);
 public sealed record RecordTypeHealth(string RecordType, string NotificationState, string? Watermark,
     DateTime? CheckedUpTo, double? BehindSeconds, int IntervalSeconds, int OverlapSeconds,
-    long ReceivedToday, int NeedAttention, string? SourceEntity = null);
+    long ReceivedToday, int NeedAttention, string? SourceEntity = null,
+    string? LastErrorCode = null, string? LastErrorDetail = null);
 public sealed record ConnectionHealthDetail(Guid ConnectionId, string ConnectionName, ConnectionHealthView Health,
     IReadOnlyList<RecordTypeHealth> RecordTypes, ConnectionHandOverNote? HandOver = null);
 
@@ -57,7 +71,8 @@ public sealed record CapabilityView(string CanonicalMessage, string SupportLevel
 public sealed record ConnectionSettingsView(string OutboundMode, bool ReadOnly, string NativeWarrantyObjectMode,
     string WarrantyContractsMaintainedIn,
     int OrderingWaitMinutes, ConnectionHealthThresholds Health, ConnectionThrottleProfile? Throttle,
-    JsonElement? ConnectorSettings, IReadOnlyList<DegradationRuleSetting> DegradationRules);
+    JsonElement? ConnectorSettings, IReadOnlyList<DegradationRuleSetting> DegradationRules,
+    ConnectionSyncStart? SyncStart = null, string? ServiceCertificateSha256 = null);
 public sealed record ConnectionDetail(ConnectionSummary Connection, DateTime CreatedAt, DateTime? ArchivedAt,
     IReadOnlyList<CapabilityView> Capabilities, ConnectionSettingsView Settings,
     IReadOnlyList<CredentialState> Credentials, ConnectorOnboardingChecklist Checklist,

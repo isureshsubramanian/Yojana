@@ -78,6 +78,9 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     public int LoginCount { get; private set; }
     public int ExpireAfterAuthenticatedRequests { get; set; } = int.MaxValue;
     public bool RateLimitNextRequest { get; set; }
+    public HttpStatusCode? RejectNextLoginWith { get; set; }
+    public HttpStatusCode? RejectNextRequestWith { get; set; }
+    public TimeSpan DelayNextRequest { get; set; }
     public bool SameWarehouseReturnPosted { get; set; }
     public bool DeliveryCancelled { get; set; }
     public bool SubscriptionStopped { get; set; }
@@ -213,6 +216,13 @@ internal sealed class Cx01Simulator : IAsyncDisposable
             if (request.Url?.AbsolutePath == Cx01Protocol.Login)
             {
                 LoginCount++;
+                if (RejectNextLoginWith is { } loginStatus)
+                {
+                    RejectNextLoginWith = null;
+                    response.StatusCode = (int)loginStatus;
+                    await ErrorAsync(response, ((int)loginStatus).ToString(), "Fictional login refusal");
+                    return;
+                }
                 authenticatedRequests = 0;
                 session = "session-" + LoginCount;
                 response.Headers.Add("Set-Cookie", Cx01Protocol.SessionCookie + "=" + session
@@ -238,6 +248,20 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                 response.StatusCode = (int)HttpStatusCode.TooManyRequests;
                 response.Headers["Retry-After"] = "0";
                 response.Close();
+                return;
+            }
+            if (DelayNextRequest > TimeSpan.Zero)
+            {
+                var delay = DelayNextRequest;
+                DelayNextRequest = TimeSpan.Zero;
+                await Task.Delay(delay, stop.Token);
+            }
+            if (RejectNextRequestWith is { } requestStatus)
+            {
+                RejectNextRequestWith = null;
+                response.StatusCode = (int)requestStatus;
+                await ErrorAsync(response, ((int)requestStatus).ToString(), requestStatus == HttpStatusCode.BadRequest
+                    ? "Property 'UpdateTime' of 'StockTransfer' is invalid" : "Fictional remote failure");
                 return;
             }
             if (ServiceUnavailableResponses > 0)

@@ -19,6 +19,7 @@ public interface IConnectionLifecycleAdapter
     Task<ConnectionProbe> SmokeReadAsync(Guid connectionId, CancellationToken ct);
     Task<JsonElement> ReadSettingsAsync(Guid connectionId, CancellationToken ct);
     Task<ConnectionProbe?> LatestProbeAsync(Guid connectionId, CancellationToken ct);
+    Task<Uri?> ServiceUriAsync(Guid connectionId, CancellationToken ct) => Task.FromResult<Uri?>(null);
     Task<ConnectionAuthorisationView?> AuthorisationAsync(Guid connectionId, CancellationToken ct) =>
         Task.FromResult<ConnectionAuthorisationView?>(null);
     Task UnsubscribeAsync(Guid connectionId, CancellationToken ct);
