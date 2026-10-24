@@ -146,7 +146,7 @@ public sealed class WarrantySalesLineTests(SerialisationHostFixture fixture)
     {
         var tenant = await fixture.NewTenantAsync("wd");
         var policy = await PolicyAsync(tenant, "extended_term", true, 12);
-        var shipmentRef = new DocumentRef("shipment", Guid.NewGuid());
+        var shipmentRef = new DocumentRef("delivery", Guid.NewGuid());
         var item = Guid.NewGuid();
         var serial = "WD-" + Guid.NewGuid().ToString("N");
         await InvokeAsync<CommissionUnitsResult>(tenant, new CommissionUnits(Guid.NewGuid(), item, UnitOrigin.Purchased,

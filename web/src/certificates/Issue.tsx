@@ -16,7 +16,7 @@ import { certificateEventLabel } from "./format";
 import "./certificates.css";
 
 const PAGE = 50;
-const SOURCES = [["work_order", "Work order"], ["sales_order", "Sales order"], ["delivery", "Delivery"], ["serial_list", "Serial list"]] as const;
+const SOURCES = [["production_order", "Work order"], ["sales_order", "Sales order"], ["delivery", "Delivery"], ["serial_list", "Serial list"]] as const;
 const FORMS = [["coc", "Certificate of conformity"], ["generic_release", "Generic release record"], ["dhr_extract", "Production-history extract"]] as const;
 
 export function Component() {

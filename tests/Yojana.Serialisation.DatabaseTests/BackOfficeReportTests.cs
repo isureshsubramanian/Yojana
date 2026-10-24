@@ -153,8 +153,8 @@ public sealed class BackOfficeReportTests(SerialisationHostFixture fixture)
         var firstOwner = Guid.NewGuid();
         var secondOwner = Guid.NewGuid();
         var unit = await UnitAsync(tenant, item, "RPTINT001");
-        var firstDelivery = new DocumentRef("shipment", Guid.NewGuid());
-        var secondDelivery = new DocumentRef("shipment", Guid.NewGuid());
+        var firstDelivery = new DocumentRef("delivery", Guid.NewGuid());
+        var secondDelivery = new DocumentRef("delivery", Guid.NewGuid());
         var first = await InvokeAsync<OpenOwnershipResult>(tenant, new OpenOwnership(Guid.NewGuid(), unit, firstOwner,
             PartyType.Customer, EpisodeReason.Sale, At.AddHours(1), "sales", Entity, Document: firstDelivery));
         var second = await InvokeAsync<OpenOwnershipResult>(tenant, new OpenOwnership(Guid.NewGuid(), unit, secondOwner,

@@ -33,6 +33,7 @@ public sealed class ReferencePortTests
 
     [Theory]
     [InlineData("receipt", "GR-")]
+    [InlineData("delivery", "DN-")]
     [InlineData("shipment", "DN-")]
     [InlineData("invoice", "IN-")]
     [InlineData("transfer", "TR-")]

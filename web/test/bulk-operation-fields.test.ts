@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const screen = readFileSync(new URL("../src/entitlements/BulkOperation.tsx", import.meta.url), "utf8");
+const referenceFields = readFileSync(new URL("../src/corrections/ReferenceFields.tsx", import.meta.url), "utf8");
 
 test("bulk operation asks for records by number, code or name, never by a typed id", () => {
   assert.doesNotMatch(screen, /placeholder="UUID/);
@@ -20,4 +21,17 @@ test("bulk reasons are exactly the amendment reasons the server accepts", () => 
   const screenCodes = [...(/BULK_REASONS = \[([\s\S]*?)\] as const/.exec(screen)?.[1] ?? "").matchAll(/\["([a-z_]+)", "/g)].map((match) => match[1]).sort();
   assert.ok(server.length > 0);
   assert.deepEqual(screenCodes, server);
+});
+
+test("document pickers offer only document types recorded by the contract or Serialisation", () => {
+  // Fixed from Integration contract examples and Serialisation DocumentRef literals. Additions need matching
+  // recording evidence; DocumentField's DocumentPickerType makes every picker use this catalogue.
+  const recorded = [
+    "adjustment", "delivery", "invoice", "lot", "production_order", "receipt", "return", "sales_order", "stocktake", "transfer",
+  ];
+  const catalogue = /DOCUMENT_PICKER_TYPES = \[([\s\S]*?)\] as const/.exec(referenceFields)?.[1] ?? "";
+  const pickerTypes = [...catalogue.matchAll(/"([a-z_]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(pickerTypes, recorded);
+  assert.match(referenceFields, /types: readonly DocumentPickerType\[\]/);
+  assert.doesNotMatch(screen, /["'](?:goods_receipt|shipment)["']/);
 });
