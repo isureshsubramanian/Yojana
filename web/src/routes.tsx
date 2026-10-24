@@ -32,7 +32,7 @@ export const router = createBrowserRouter([
   { path: "/reset-password", lazy: () => import("./pages/ResetPassword"), errorElement: <ErrorPage /> },
   { path: "/accept-invitation", lazy: () => import("./pages/AcceptInvitation"), errorElement: <ErrorPage /> },
   // Public: the licences require the notices to be readable by anyone who receives the software, signed in or not.
-  { path: "/third-party-notices", lazy: () => import("./pages/ThirdPartyNotices"), errorElement: <ErrorPage /> },
+  { path: "/legal/third-party-notices", lazy: () => import("./pages/PublicNotices"), errorElement: <ErrorPage /> },
   { path: "/public/:tenantCode/lookup", lazy: () => import("./p7/PublicLookup"), errorElement: <ErrorPage /> },
   {
     id: ROOT_ROUTE_ID,
@@ -60,6 +60,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, lazy: () => import("./pages/Overview") },
           { path: "search", lazy: () => import("./pages/Search") },
+          { path: "third-party-notices", lazy: () => import("./pages/ThirdPartyNotices") },
           { path: "questions", lazy: () => import("./questions/MyQuestions") },
           { path: "knowledge", lazy: () => import("./questions/KnowledgeBase") },
           { path: "knowledge/entries/review", lazy: () => import("./questions/EntryEditor") },

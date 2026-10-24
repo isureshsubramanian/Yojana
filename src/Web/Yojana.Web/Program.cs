@@ -145,7 +145,7 @@ app.MapGet("/notices", (HttpContext http) =>
 {
     var download = http.Request.Query.ContainsKey("download");
     if (!download && http.Request.Headers.Accept.ToString().Contains("text/html", StringComparison.OrdinalIgnoreCase))
-        return Results.Redirect("/third-party-notices");
+        return Results.Redirect("/legal/third-party-notices");
     var path = Path.Combine(AppContext.BaseDirectory, "Notices", "THIRD-PARTY-NOTICES.txt");
     if (!File.Exists(path)) return Results.Problem("notices file missing from the artefact", statusCode: 500);
     if (download) http.Response.Headers.ContentDisposition = "attachment; filename=THIRD-PARTY-NOTICES.txt";

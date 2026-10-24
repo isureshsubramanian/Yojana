@@ -1,13 +1,21 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { Link } from "react-router";
-import { BareFrame } from "../shell/Frame";
 import { Icon } from "../shell/Icons";
+import { Breadcrumbs } from "../shell/PageHeader";
 import { filterNotices, licenceCounts, parseNotices, shortLicence, type NoticesDocument } from "./noticesModel";
 import "./notices.css";
 
 // The page reads the shipped THIRD-PARTY-NOTICES.txt from /notices (public, as the licences require) and lays it out;
-// the file stays the single source and "Download as text" serves it unchanged.
+// the file stays the single source and "Download as text" serves it unchanged. Signed in, it opens inside the app frame
+// (this route); signed out, PublicNotices shows the same view in the bare frame.
 export function Component() {
+  return <main className="content" id="main" tabIndex={-1}>
+    <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Third-party notices" }]} />
+    <NoticesView />
+  </main>;
+}
+
+export function NoticesView({ back }: { back?: { label: string; to: string } }) {
   const [doc, setDoc] = useState<NoticesDocument | null>(null);
   const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState("");
@@ -34,10 +42,10 @@ export function Component() {
     if (next) { setSelected(next.name); document.getElementById(optionId(next.name))?.focus(); }
   };
 
-  return <BareFrame wide><div className="notices-page">
+  return <div className="notices-page">
     <div className="page-header"><div><div className="eyebrow">Yojana · legal</div><h1>Third-party notices</h1>
       <p className="sub">Yojana includes the components below. Each is listed with its licence and the copyright its authors declared. Listing a licensor is a licence requirement, not an endorsement.</p></div>
-      <div className="actions"><Link className="btn ghost" to="/">Back to Yojana</Link><a className="btn" href="/notices?download" download="THIRD-PARTY-NOTICES.txt"><Icon name="down" />Download as text</a></div></div>
+      <div className="actions">{back && <Link className="btn ghost" to={back.to}>{back.label}</Link>}<a className="btn" href="/notices?download" download="THIRD-PARTY-NOTICES.txt"><Icon name="down" />Download as text</a></div></div>
     {failed && <div className="note warn" role="alert"><strong>The notices could not be loaded.</strong>&nbsp;<a href="/notices?download">Download the text file</a> instead.</div>}
     {!doc && !failed && <div className="note" role="status">Loading notices…</div>}
     {doc && <>
@@ -64,7 +72,7 @@ export function Component() {
           </div></section>}
       </div>
     </>}
-  </div></BareFrame>;
+  </div>;
 }
 
 function optionId(name: string): string { return `notice-${name.replace(/[^A-Za-z0-9]+/g, "-")}`; }

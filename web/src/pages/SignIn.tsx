@@ -48,7 +48,7 @@ export function Component() {
       {passkeysSupported() && <button type="button" className="btn block" onClick={() => void withPasskey()}><Icon name="key" />Sign in with a passkey</button>}
       <button type="button" className="btn block" disabled title="Single sign-on is configured per tenant">Continue with single sign-on</button>
       <div className="scanbox"><Icon name="scan" /><input className="input" type="password" aria-label="Scan operator badge" placeholder="Scan operator badge at a station" disabled /></div>
-    </form>}</div><div className="card-footer" style={{ justifyContent: "center", gap: 20 }}><Link to="/third-party-notices" className="muted">Third-party notices</Link><a href="/health" className="muted" target="_blank" rel="noopener">Status</a></div></section>}
+    </form>}</div><div className="card-footer" style={{ justifyContent: "center", gap: 20 }}><Link to="/legal/third-party-notices" className="muted">Third-party notices</Link><a href="/health" className="muted" target="_blank" rel="noopener">Status</a></div></section>}
     <p className="hint" style={{ textAlign: "center", marginTop: 16 }}>Yojana 0.1 · session cookie only · no tracking</p></div></BareFrame>;
 }
 
