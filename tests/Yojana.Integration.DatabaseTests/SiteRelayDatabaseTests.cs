@@ -124,6 +124,9 @@ public sealed class SiteRelayDatabaseTests(IntegrationHostFixture fixture)
         var (tenant, connection, _) = await RegisterAsync(simulator.BaseUri, new("https://product.example"), timeout: 1);
         using var scope = fixture.ScopeFor(tenant);
         var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var gateway = await db.ConnectionGatewaySettings.SingleAsync(x => x.ConnectionId == connection);
+        gateway.SyncStartMode = "today";
+        gateway.SyncStartConfiguredAt = fixture.Clock.UtcNow;
         var before = await db.ConnectionPollWatermarks.SingleOrDefaultAsync(x => x.ConnectionId == connection && x.EntityType == "deliveries");
         if (before is null)
         {

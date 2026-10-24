@@ -555,6 +555,17 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("last_smoke_read_at");
 
+                    b.Property<string>("LastSmokeReadFailureCode")
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("last_smoke_read_failure_code");
+
+                    b.Property<string>("LastSmokeReadFailureDetail")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("last_smoke_read_failure_detail");
+
                     b.Property<bool?>("LastSmokeReadSucceeded")
                         .HasColumnType("bit")
                         .HasColumnName("last_smoke_read_succeeded");
@@ -811,6 +822,12 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("legal_entity_id");
 
+                    b.Property<bool>("MasterDataFull")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("master_data_full");
+
                     b.Property<string>("NativeWarrantyObjectMode")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -840,12 +857,37 @@ namespace Yojana.Integration.Migrations
                         .HasColumnType("bit")
                         .HasColumnName("read_only");
 
+                    b.Property<string>("ServiceCertificateSha256")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("service_certificate_sha256")
+                        .IsFixedLength();
+
+                    b.Property<DateTime?>("SyncStartConfiguredAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("sync_start_configured_at");
+
+                    b.Property<DateOnly?>("SyncStartDate")
+                        .HasColumnType("date")
+                        .HasColumnName("sync_start_date");
+
+                    b.Property<string>("SyncStartMode")
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("sync_start_mode");
+
                     b.HasKey("TenantId", "ConnectionId")
                         .HasName("pk_connection_gateway_setting");
 
                     b.ToTable("connection_gateway_setting", "integration", t =>
                         {
                             t.HasCheckConstraint("ck_connection_gateway_ordering_wait", "ordering_wait_minutes BETWEEN 0 AND 1440");
+
+                            t.HasCheckConstraint("ck_connection_gateway_sync_start_date", "(sync_start_mode = 'date' AND sync_start_date IS NOT NULL) OR (sync_start_mode <> 'date' AND sync_start_date IS NULL) OR sync_start_mode IS NULL");
+
+                            t.HasCheckConstraint("ck_connection_gateway_sync_start_mode", "sync_start_mode IS NULL OR sync_start_mode IN ('today','date','full_history')");
                         });
                 });
 
@@ -1173,6 +1215,12 @@ namespace Yojana.Integration.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)")
                         .HasColumnName("last_error");
+
+                    b.Property<string>("LastErrorCode")
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)")
+                        .HasColumnName("last_error_code");
 
                     b.Property<DateTime?>("LastPolledAt")
                         .HasColumnType("datetime2(3)")

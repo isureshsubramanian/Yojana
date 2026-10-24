@@ -12,6 +12,7 @@ using Yojana.Integration.Security.Cryptography;
 using Yojana.Integration.Security.Workers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Relay.Contracts;
 
 namespace Yojana.Integration.Connectors.CX04;
 
@@ -23,15 +24,29 @@ public interface ICx04Transport
 
 public sealed class Cx04Transport(ConnectionThrottleProfiles profiles,
     IConnectionThrottleWorkerRegistry workers, IClock clock, IConnectionThrottleDelay delay,
-    IConnectionRetryJitter jitter, IConnectionBusyObserver? busy = null) : ICx04Transport, IDisposable
+    IConnectionRetryJitter jitter, ConnectionCertificatePins? certificatePins = null,
+    IConnectionBusyObserver? busy = null) : ICx04Transport, IDisposable
 {
-    private readonly ConcurrentDictionary<ConnectionWorkerKey, HttpMessageInvoker> clients = new();
+    private readonly ConcurrentDictionary<(ConnectionWorkerKey Key, string? Pin), HttpMessageInvoker> clients = new();
+    private readonly ConcurrentDictionary<(ConnectionWorkerKey Key, string? Pin),
+        (string Expected, string Presented)> mismatches = new();
 
-    public Task<HttpResponseMessage> SendAsync(ConnectionWorkerKey key, HttpRequestMessage request,
-        CancellationToken cancellationToken) => Client(key).SendAsync(request, cancellationToken);
+    public async Task<HttpResponseMessage> SendAsync(ConnectionWorkerKey key, HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        var pin = certificatePins is null ? null : await certificatePins.ReadAsync(key.ConnectionId, cancellationToken);
+        var route = (key, pin);
+        try { return await Client(route).SendAsync(request, cancellationToken); }
+        catch (HttpRequestException exception) when (mismatches.TryRemove(route, out var mismatch))
+        {
+            throw new CertificateRejectedException(mismatch.Expected, mismatch.Presented, exception);
+        }
+    }
 
-    private HttpMessageInvoker Client(ConnectionWorkerKey key) => clients.GetOrAdd(key, workerKey =>
-        new HttpMessageInvoker(new ConnectionRateLimitedHandler(workerKey, profiles, workers, clock, delay, jitter,
+    private HttpMessageInvoker Client((ConnectionWorkerKey Key, string? Pin) route)
+    {
+        if (clients.TryGetValue(route, out var existing)) return existing;
+        var created = new HttpMessageInvoker(new ConnectionRateLimitedHandler(route.Key, profiles, workers, clock, delay, jitter,
             busy: busy)
         {
             InnerHandler = new SocketsHttpHandler
@@ -40,8 +55,17 @@ public sealed class Cx04Transport(ConnectionThrottleProfiles profiles,
                 PooledConnectionLifetime = TimeSpan.FromMinutes(15),
                 ConnectTimeout = TimeSpan.FromSeconds(30),
                 UseCookies = false,
+                SslOptions = new()
+                {
+                    RemoteCertificateValidationCallback = ServiceCertificatePin.Validator(route.Pin,
+                        (expected, presented) => mismatches[route] = (expected, presented)),
+                },
             },
-        }, true));
+        }, true);
+        var winner = clients.GetOrAdd(route, created);
+        if (!ReferenceEquals(created, winner)) created.Dispose();
+        return winner;
+    }
 
     public void Dispose()
     {
@@ -60,11 +84,15 @@ internal sealed record Cx04TokenSecret(string AccessToken, string RefreshToken, 
 internal sealed record Cx04TokenResponse(string AccessToken, string? RefreshToken, int ExpiresIn,
     string? TokenType, string? Scope);
 
-public sealed class Cx04RemoteException(HttpStatusCode statusCode, string operation, string? code = null)
-    : Exception($"CX04 {operation} failed with HTTP status {(int)statusCode}.")
+public sealed class Cx04RemoteException(HttpStatusCode statusCode, string operation, string? code = null,
+    string? failureCode = null, string? failureDetail = null)
+    : Exception($"CX04 {operation} failed with HTTP status {(int)statusCode}."), IRemoteFailureSource
 {
     public HttpStatusCode StatusCode { get; } = statusCode;
     public string? Code { get; } = code;
+    public HttpStatusCode FailureStatusCode => StatusCode;
+    public string? FailureDetail => failureDetail ?? Code ?? Message;
+    public string? FailureCode => failureCode;
     public bool IsNotFound => StatusCode == HttpStatusCode.NotFound;
     public bool IsRejected => StatusCode is HttpStatusCode.BadRequest or (HttpStatusCode)422;
 }
@@ -310,6 +338,8 @@ public sealed class Cx04Client(ITenantContext tenant, IClock clock, IntegrationD
     {
         if (response.IsSuccessStatusCode) return;
         await response.Content.LoadIntoBufferAsync(ct);
-        throw new Cx04RemoteException(response.StatusCode, operation);
+        throw new Cx04RemoteException(response.StatusCode, operation, null,
+            response.Headers.TryGetValues("X-Yojana-Failure-Code", out var codes) ? codes.FirstOrDefault() : null,
+            response.Headers.TryGetValues("X-Yojana-Failure-Detail", out var details) ? details.FirstOrDefault() : null);
     }
 }

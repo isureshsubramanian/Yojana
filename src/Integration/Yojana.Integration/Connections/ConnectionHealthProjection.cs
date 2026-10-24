@@ -62,6 +62,11 @@ public sealed class ConnectionHealthProjection(IntegrationDbContext db, ITenantC
         var maxAge = await outboxSettings.MaxAgeAsync(connectionId, ct);
         var polls = await db.ConnectionPollWatermarks.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
             && x.ConnectionId == connectionId).ToListAsync(ct);
+        var syncConfigured = await db.ConnectionGatewaySettings.AsNoTracking().Where(x =>
+                x.TenantId == tenant.TenantId && x.ConnectionId == connectionId)
+            .Select(x => x.SyncStartMode != null).SingleAsync(ct);
+        var syncStartMissing = !syncConfigured && polls.Any(x => string.IsNullOrWhiteSpace(x.Watermark)
+            && x.CanonicalMessage is not (nameof(ItemUpserted) or nameof(PartyUpserted)));
         var sources = await db.ConnectionNotificationSources.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
             && x.ConnectionId == connectionId).ToListAsync(ct);
         var watchdog = await db.ConnectionNotificationWatchdogs.AsNoTracking().SingleOrDefaultAsync(x =>
@@ -142,16 +147,22 @@ public sealed class ConnectionHealthProjection(IntegrationDbContext db, ITenantC
             ? null : polls.Min(x => x.LastPolledAt);
         row.MaxOutboxAgeSeconds = checked((int)maxAge.TotalSeconds);
         var smokeFailed = connection.LastSmokeReadSucceeded == false;
-        var pollFailed = polls.Any(x => x.LastError != null);
+        var failedPoll = polls.Where(x => x.LastError != null).OrderByDescending(x => x.LastPolledAt)
+            .ThenBy(x => x.EntityType).FirstOrDefault();
+        var pollFailed = failedPoll is not null;
         var outboundFailed = await waiting.AnyAsync(x => x.LastFailure != null, ct);
-        row.LastErrorCode = smokeFailed ? "smoke_read_failed" : pollFailed ? "poll_failed"
+        row.LastErrorCode = syncStartMissing ? "sync_start_required"
+            : smokeFailed ? connection.LastSmokeReadFailureCode ?? "unknown"
+            : pollFailed ? failedPoll!.LastErrorCode ?? "unknown"
             : check?.Status == "failed" ? "daily_check_failed" : outboundFailed ? "outbound_retry_failed" : null;
         row.LastErrorMessage = row.LastErrorCode switch
         {
-            "smoke_read_failed" => "The read-only connection check failed. Verify connection settings and permissions, then retry.",
-            "poll_failed" => "A scheduled read failed; its checked-up-to marker has not advanced.",
+            "sync_start_required" => "Choose where document change reading starts before the first scheduled read.",
             "outbound_retry_failed" => "A waiting outbound command failed and will be retried within its maximum age.",
             "daily_check_failed" => "The daily check failed. Review its report before activation.",
+            _ when smokeFailed => FailureMessage(connection.LastSmokeReadFailureCode,
+                connection.LastSmokeReadFailureDetail),
+            _ when pollFailed => FailureMessage(failedPoll!.LastErrorCode, failedPoll.LastError),
             _ => null,
         };
         if (row.LastErrorCode is null
@@ -166,6 +177,7 @@ public sealed class ConnectionHealthProjection(IntegrationDbContext db, ITenantC
             polls.Count > 0, row.LastDailyCheckResult, row.LastDailyCheckAt, row.OpenDeadLetters,
             row.OpenManualTasks, row.OldestWaitingAt, maxAge, row.NotificationState, credentialDue,
             row.CallsCap is { } cap && row.CallsUsed * 100L >= cap * (long)row.CallAlertPercent, pollFailed, connection.CreatedAt), thresholds, now);
+        if (syncStartMissing && connection.Status == ConnectionStatus.Active) row.Status = "degraded";
         if (authorisation?.Status == "reconsent_required")
         {
             row.Status = "reconsent_required";
@@ -212,6 +224,15 @@ public sealed class ConnectionHealthProjection(IntegrationDbContext db, ITenantC
             poll.IntervalSeconds, poll.OverlapSeconds,
             counts.FirstOrDefault(x => x.MessageType == (poll.CanonicalMessage ?? poll.EntityType))?.Today ?? 0,
             attention.FirstOrDefault(x => x.RecordType == (poll.CanonicalMessage ?? poll.EntityType))?.Count ?? 0, poll.EntityType)).ToList();
+        records = records.Select(record =>
+        {
+            var poll = polls.FirstOrDefault(value => value.EntityType == record.SourceEntity);
+            return poll?.LastError is null ? record : record with
+            {
+                LastErrorCode = poll.LastErrorCode ?? "unknown",
+                LastErrorDetail = FailureMessage(poll.LastErrorCode, poll.LastError),
+            };
+        }).ToList();
         records.AddRange(types.Where(type => !records.Any(record => record.RecordType == type)
                 && InboundTypes.Contains(type))
             .Select(type => new RecordTypeHealth(type, "not_subscribed", null, row.CheckedUpTo,
@@ -233,6 +254,37 @@ public sealed class ConnectionHealthProjection(IntegrationDbContext db, ITenantC
                 "system:connection-health", now, details), token);
     }
     private sealed record DailyInboundCount(DateTime Day, long Count);
+
+    private static string FailureMessage(string? code, string? detail) =>
+        $"{FailureSentence(code)} {Yojana.Relay.Contracts.RemoteFailureClassifier.Sanitise(detail)} {NextStep(code)}";
+
+    private static string FailureSentence(string? code) => code switch
+    {
+        "unreachable" => "The service could not be reached.",
+        "tls_handshake" => "The secure connection could not be established.",
+        "certificate_rejected" => "The server certificate was rejected.",
+        "authentication_refused" => "The service refused the sign-in.",
+        "authorisation_refused" => "The signed-in identity lacks permission.",
+        "request_refused" => "The service refused the request.",
+        "rate_limited" => "The service is limiting requests.",
+        "timeout" => "The service did not respond in time.",
+        "remote_error" => "The remote service reported an error.",
+        _ => "The remote call failed for an unknown reason.",
+    };
+
+    private static string NextStep(string? code) => code switch
+    {
+        "unreachable" => "Check the address, network route and service availability.",
+        "tls_handshake" => "Check TLS support and the server certificate chain.",
+        "certificate_rejected" => "Fetch the certificate and confirm the expected fingerprint.",
+        "authentication_refused" => "Check the dedicated integration credentials.",
+        "authorisation_refused" => "Grant the integration identity the required read permissions.",
+        "request_refused" => "Review the field or endpoint named in the detail.",
+        "rate_limited" => "Reduce the call rate or wait before retrying.",
+        "timeout" => "Check service load and the network, then retry.",
+        "remote_error" => "Check the remote service health and retry.",
+        _ => "Review the connection settings and retry.",
+    };
 }
 
 [DisallowConcurrentExecution]

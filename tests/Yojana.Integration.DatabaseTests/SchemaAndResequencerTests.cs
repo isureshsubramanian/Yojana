@@ -71,6 +71,13 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
         Assert.Contains("desk", columns);
         var healthColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'connection_health'").ToListAsync();
         AssertSuperset(healthColumns, "tenant_id", "inbound_count_date_utc", "completed_inbound_days_json");
+        var connectionColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'connection'").ToListAsync();
+        AssertSuperset(connectionColumns, "last_smoke_read_failure_code", "last_smoke_read_failure_detail");
+        var gatewayColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'connection_gateway_setting'").ToListAsync();
+        AssertSuperset(gatewayColumns, "sync_start_mode", "sync_start_date", "sync_start_configured_at",
+            "master_data_full", "service_certificate_sha256");
+        var watermarkColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'connection_poll_watermark'").ToListAsync();
+        Assert.Contains("last_error_code", watermarkColumns);
         var authorisationColumns = await db.Database.SqlQueryRaw<string>("SELECT COLUMN_NAME AS Value FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = 'cx04_authorisation_state' ORDER BY ORDINAL_POSITION").ToListAsync();
         Assert.Equal("tenant_id", authorisationColumns[0]);
         AssertSuperset(authorisationColumns, "reminder_days_sent_json", "signed_in_by", "signed_in_at",

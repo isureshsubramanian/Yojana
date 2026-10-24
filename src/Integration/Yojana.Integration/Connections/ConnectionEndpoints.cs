@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.Connections;
 
@@ -20,8 +21,27 @@ public static class ConnectionEndpoints
         group.MapPost("", (RegisterConnection request, ClaimsPrincipal user, ConnectionCommands commands, CancellationToken ct) =>
             Invoke(() => commands.RegisterAsync(request, Actor(user), ct)))
             .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        group.MapPost("/fetch-certificate", (FetchServiceCertificate request,
+            ConnectionCommands commands, CancellationToken ct) =>
+            Invoke(() => commands.PreviewCertificateAsync(request, ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
         group.MapPost("/{connectionId:guid}/smoke-read", (Guid connectionId, ConnectionCommands commands, CancellationToken ct) =>
             Invoke(() => commands.SmokeReadAsync(connectionId, ct)));
+        group.MapPut("/{connectionId:guid}/onboarding", (Guid connectionId, UpdateConnectionOnboarding request,
+            ClaimsPrincipal user, ConnectionCommands commands, CancellationToken ct) =>
+            Invoke(() => commands.UpdateOnboardingAsync(connectionId, request, Actor(user), ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        group.MapGet("/{connectionId:guid}/full-history-estimate", (Guid connectionId,
+            ConnectionCommands commands, CancellationToken ct) =>
+            Invoke(() => commands.EstimateFullHistoryAsync(connectionId, ct)));
+        group.MapPost("/{connectionId:guid}/fetch-certificate", (Guid connectionId,
+            ConnectionCommands commands, CancellationToken ct) =>
+            Invoke(() => commands.FetchCertificateAsync(connectionId, ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        group.MapPost("/{connectionId:guid}/rebaseline", (Guid connectionId, RebaselineConnection request,
+            ClaimsPrincipal user, ConnectionCommands commands, CancellationToken ct) =>
+            Invoke(() => commands.RebaselineAsync(connectionId, request, Actor(user), ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
         group.MapPost("/{connectionId:guid}/archive", (Guid connectionId, ArchiveConnection request,
             ClaimsPrincipal user, ConnectionCommands commands, CancellationToken ct) => Invoke(() =>
                 commands.ArchiveAsync(connectionId, request, Actor(user),
@@ -46,6 +66,15 @@ public static class ConnectionEndpoints
                 statusCode: ex.Rule.EndsWith("not_found", StringComparison.Ordinal) ? 404
                     : ex.Rule.EndsWith("forbidden", StringComparison.Ordinal) ? 403 : 422,
                 extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+        }
+        catch (CommandRefusedException ex)
+        {
+            return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: 409,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["rule"] = ex.Rule,
+                    ["unblockingStep"] = ex.UnblockingStep,
+                });
         }
     }
 }

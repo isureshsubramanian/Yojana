@@ -22,7 +22,7 @@ public sealed class Cx02Adapter(
     GatewayReferenceStore references,
     Cx02Settings settings,
     Cx02Client client,
-    Cx02OutboundDocuments documents) : IConnectorAdapter, IOutboundConnector
+    Cx02OutboundDocuments documents) : IConnectorAdapter, IOutboundConnector, IConnectorWatermarkSeed
 {
     public string ConnectorCode => Cx02Capabilities.ConnectorCode;
     public bool OwnsConnectionLane => true;
@@ -36,6 +36,11 @@ public sealed class Cx02Adapter(
 
     public string? StartingWatermark(DateTime sourceLocalTime) =>
         new Cx02Watermark(new DateTimeOffset(DateTime.SpecifyKind(sourceLocalTime, DateTimeKind.Utc)), "").ToString();
+
+    public string WatermarkAt(DateTime utcInstant) => StartingWatermark(utcInstant)!;
+    public DateTime? InstantOf(string watermark) => Cx02Watermark.Parse(watermark) is var value
+        && value != Cx02Watermark.Empty ? value.Timestamp.UtcDateTime : null;
+    public bool IsMasterData(string entityType) => entityType is "items" or "customers";
 
     public async Task<ConnectorPollResult> PollAsync(ConnectorPollRequest request,
         CancellationToken cancellationToken)

@@ -76,6 +76,14 @@ public sealed class ConnectorPollingTests(IntegrationHostFixture fixture)
             CancellationToken.None);
 
         var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var gateways = await db.ConnectionGatewaySettings
+            .Where(row => row.ConnectionId == fakeConnection || row.ConnectionId == cx01Connection)
+            .ToListAsync();
+        foreach (var gateway in gateways)
+        {
+            gateway.SyncStartMode = "today";
+            gateway.SyncStartConfiguredAt = fixture.Clock.UtcNow;
+        }
         db.ConnectionPollWatermarks.AddRange(
             Due(tenant, fakeConnection, "deliveries", fixture.Clock.UtcNow),
             Due(tenant, cx01Connection, "deliveries", fixture.Clock.UtcNow));

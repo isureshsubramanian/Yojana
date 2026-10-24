@@ -348,6 +348,8 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.ConnectorCode).HasMaxLength(16);
             b.Property(x => x.DisplayLabel).HasMaxLength(160);
             b.Property(x => x.Status).HasMaxLength(24);
+            b.Property(x => x.LastSmokeReadFailureCode).HasMaxLength(40).IsUnicode(false);
+            b.Property(x => x.LastSmokeReadFailureDetail).HasMaxLength(200);
             b.HasIndex(x => new { x.TenantId, x.Status, x.CreatedAt, x.ConnectionId });
             b.HasIndex(x => new { x.TenantId, x.ConnectorCode, x.ConnectionId });
             b.HasIndex(x => new { x.TenantId, x.RegistrationRequestId }).IsUnique()
@@ -489,12 +491,22 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
         });
         modelBuilder.Entity<ConnectionGatewaySetting>(b =>
         {
-            b.ToTable("connection_gateway_setting", table => table.HasCheckConstraint("ck_connection_gateway_ordering_wait", "ordering_wait_minutes BETWEEN 0 AND 1440"));
+            b.ToTable("connection_gateway_setting", table =>
+            {
+                table.HasCheckConstraint("ck_connection_gateway_ordering_wait", "ordering_wait_minutes BETWEEN 0 AND 1440");
+                table.HasCheckConstraint("ck_connection_gateway_sync_start_mode",
+                    "sync_start_mode IS NULL OR sync_start_mode IN ('today','date','full_history')");
+                table.HasCheckConstraint("ck_connection_gateway_sync_start_date",
+                    "(sync_start_mode = 'date' AND sync_start_date IS NOT NULL) OR (sync_start_mode <> 'date' AND sync_start_date IS NULL) OR sync_start_mode IS NULL");
+            });
             b.HasKey(x => new { x.TenantId, x.ConnectionId });
             b.Property(x => x.OutboundMode).HasMaxLength(32);
             b.Property(x => x.NativeWarrantyObjectMode).HasMaxLength(32);
             b.Property(x => x.OrderingWaitMinutes).HasDefaultValue(15);
             b.Property(x => x.OnHandStatusMappingJson).HasColumnType("nvarchar(max)").HasDefaultValue("{}");
+            b.Property(x => x.SyncStartMode).HasMaxLength(20).IsUnicode(false);
+            b.Property(x => x.MasterDataFull).HasDefaultValue(true);
+            b.Property(x => x.ServiceCertificateSha256).HasMaxLength(64).IsFixedLength().IsUnicode(false);
         });
         modelBuilder.Entity<OutboundCommandRow>(b =>
         {
@@ -706,6 +718,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.CanonicalMessage).HasMaxLength(80);
             b.Property(x => x.Watermark).HasMaxLength(320);
             b.Property(x => x.LastError).HasMaxLength(2000);
+            b.Property(x => x.LastErrorCode).HasMaxLength(40).IsUnicode(false);
             b.HasIndex(x => new { x.TenantId, x.NextPollAt, x.ConnectionId, x.EntityType });
         });
         modelBuilder.Entity<ConnectionNotificationReceipt>(b =>

@@ -11,13 +11,15 @@ using Yojana.Integration.Security.Cryptography;
 using Yojana.Integration.Security.Workers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Relay.Contracts;
 
 namespace Yojana.Integration.Connections;
 
 public sealed class ConnectionCommands(IntegrationDbContext db, ITenantContext tenant, IClock clock,
     IServiceProvider services, ConnectionCredentialProtector protector, IConnectionCredentialStore credentials,
     ConnectionThrottleProfiles throttles, ConnectorOnboardingChecklistGenerator checklist,
-    ConnectionHealthProjection health, ConnectionHealthSettings settings, IConnectionAuditSink audit)
+    ConnectionHealthProjection health, ConnectionHealthSettings settings, IConnectionAuditSink audit,
+    ConnectionOnboarding onboarding)
 {
     public async Task<RegistrationResult> RegisterAsync(RegisterConnection request, string actor, CancellationToken ct)
     {
@@ -55,6 +57,8 @@ public sealed class ConnectionCommands(IntegrationDbContext db, ITenantContext t
             || request.Credentials.Any(x => string.IsNullOrWhiteSpace(x.Secret) || string.IsNullOrWhiteSpace(x.Purpose)
                 || x.Purpose.Length > 100 || x.Secret.Length > 64000))
             throw new ConnectionRuleException("connection_credentials_invalid", "Supply the required credentials once per purpose.");
+        if (request.SyncStart is not null) ConnectionOnboarding.Validate(request.SyncStart);
+        _ = ConnectionOnboarding.NormaliseCertificatePin(request.ServiceCertificateSha256);
         if (connection is null)
         {
             connection = new()
@@ -68,6 +72,7 @@ public sealed class ConnectionCommands(IntegrationDbContext db, ITenantContext t
             {
                 TenantId = tenant.TenantId, ConnectionId = connection.ConnectionId, LegalEntityId = request.LegalEntityId,
                 OutboundMode = adapter.DefaultOutboundMode, ReadOnly = true, NativeWarrantyObjectMode = "frozen",
+                MasterDataFull = true,
             });
             await db.SaveChangesAsync(ct);
 
@@ -117,6 +122,18 @@ public sealed class ConnectionCommands(IntegrationDbContext db, ITenantContext t
                 });
         connection.Status = adapter.InitialConnectionStatus;
         await db.SaveChangesAsync(ct);
+        var savedOnboarding = await db.ConnectionGatewaySettings.AsNoTracking()
+            .Where(x => x.TenantId == tenant.TenantId && x.ConnectionId == connection.ConnectionId)
+            .Select(x => new { x.SyncStartMode, x.SyncStartDate, x.MasterDataFull,
+                x.ServiceCertificateSha256 }).SingleAsync(ct);
+        var requestedSync = request.SyncStart ?? (savedOnboarding.SyncStartMode is null
+            ? new ConnectionSyncStart()
+            : new ConnectionSyncStart(savedOnboarding.SyncStartMode, savedOnboarding.SyncStartDate,
+                savedOnboarding.MasterDataFull));
+        if (savedOnboarding.SyncStartMode is null || request.SyncStart is not null
+            || request.ServiceCertificateSha256 is not null)
+            await onboarding.ApplyAsync(connection, requestedSync,
+                request.ServiceCertificateSha256 ?? savedOnboarding.ServiceCertificateSha256, actor, ct);
         // A relay is provisioned after registration. Do not hold the connection operation lock while
         // waiting for an agent that cannot yet have been registered by the administrator.
         var profile = services.GetKeyedService<Yojana.Integration.Relays.IRelayConnectorProfile>(connection.ConnectorCode);
@@ -144,11 +161,15 @@ public sealed class ConnectionCommands(IntegrationDbContext db, ITenantContext t
         {
             probe = await adapter.SmokeReadAsync(connection.ConnectionId, ct);
             connection.LastSmokeReadSucceeded = true;
+            connection.LastSmokeReadFailureCode = null;
+            connection.LastSmokeReadFailureDetail = null;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
-            // Remote text can contain credentials or connection details. Only a stable local error reaches health.
+            var failure = RemoteFailureClassifier.Classify(ex);
             connection.LastSmokeReadSucceeded = false;
+            connection.LastSmokeReadFailureCode = failure.Code;
+            connection.LastSmokeReadFailureDetail = failure.Detail;
         }
         connection.LastSmokeReadAt = clock.UtcNow;
         await db.SaveChangesAsync(ct);
@@ -173,6 +194,47 @@ public sealed class ConnectionCommands(IntegrationDbContext db, ITenantContext t
         probe ??= await Adapter(connection.ConnectorCode).LatestProbeAsync(connection.ConnectionId, ct);
         return new(connection.ConnectionId, state, checks, probe?.SurveySummary);
     }
+
+    public async Task<ConnectionDetail> UpdateOnboardingAsync(Guid id, UpdateConnectionOnboarding request,
+        string actor, CancellationToken ct)
+    {
+        Actor(actor);
+        await using var operation = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId, id, ct);
+        var connection = await ConnectionAsync(id, ct);
+        if (connection.Status == ConnectionStatus.Archived)
+            throw new ConnectionRuleException("connection_archived", "An archived connection cannot be edited.");
+        await onboarding.ApplyAsync(connection, request.SyncStart, request.ServiceCertificateSha256, actor, ct);
+        await health.RefreshAsync(id, ct);
+        return await services.GetRequiredService<ConnectionQueries>().DetailAsync(id, ct);
+    }
+
+    public async Task<RebaselineResult> RebaselineAsync(Guid id, RebaselineConnection request,
+        string actor, CancellationToken ct)
+    {
+        Actor(actor);
+        await using var operation = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId, id, ct);
+        var connection = await ConnectionAsync(id, ct);
+        if (connection.Status == ConnectionStatus.Archived)
+            throw new ConnectionRuleException("connection_archived", "An archived connection cannot be re-baselined.");
+        var result = await onboarding.RebaselineAsync(connection, request, actor, ct);
+        await health.RefreshAsync(id, ct);
+        return result;
+    }
+
+    public async Task<FullHistoryEstimate> EstimateFullHistoryAsync(Guid id, CancellationToken ct)
+    {
+        var connection = await ConnectionAsync(id, ct);
+        return await onboarding.EstimateAsync(connection, ct);
+    }
+
+    public async Task<ServiceCertificateView> FetchCertificateAsync(Guid id, CancellationToken ct)
+    {
+        var connection = await ConnectionAsync(id, ct);
+        return await onboarding.FetchCertificateAsync(connection, ct);
+    }
+
+    public Task<ServiceCertificateView> PreviewCertificateAsync(FetchServiceCertificate request,
+        CancellationToken ct) => onboarding.FetchCertificateAsync(request.ServiceUri, ct);
 
     public async Task<ArchiveConnectionResult> ArchiveAsync(Guid id, ArchiveConnection request,
         string actor, bool isAdministrator, CancellationToken ct)

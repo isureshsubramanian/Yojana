@@ -69,6 +69,9 @@ public sealed class RelayAgent(RelayAgentConfiguration configuration, RelayCloud
                     try { result = await local.ExecuteAsync(work, deadline.Token); }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
                     catch (Exception ex) { result = RelayLocalClient.Failure(work, ex); }
+                    if (result.FailureCode is { } failureCode)
+                        logger.LogWarning("Relay local request failed: {FailureCode} — {FailureDetail}",
+                            failureCode, result.FailureDetail);
                     // A result upload is retried; the local request is never repeated because an upload failed.
                     var uploadFailures = 0;
                     while (!deadline.IsCancellationRequested)
@@ -107,8 +110,12 @@ public sealed class RelayAgent(RelayAgentConfiguration configuration, RelayCloud
         {
             try { await local.KeepAliveAsync(ct); }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
-            catch (Exception)
-            { logger.LogWarning("Relay local session unavailable; authentication will retry after back-off."); }
+            catch (Exception exception)
+            {
+                var failure = RemoteFailureClassifier.Classify(exception);
+                logger.LogWarning("Relay local session unavailable: {FailureCode} — {FailureDetail}; authentication will retry after back-off.",
+                    failure.Code, failure.Detail);
+            }
             try { await Task.Delay(TimeSpan.FromSeconds(15), ct); }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
         }

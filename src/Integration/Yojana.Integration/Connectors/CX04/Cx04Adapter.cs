@@ -32,12 +32,18 @@ internal readonly record struct Cx04Watermark(DateTimeOffset Timestamp, string E
 }
 
 public sealed class Cx04Adapter(ITenantContext tenant, IClock clock, IntegrationDbContext db,
-    GatewayReferenceStore references, Cx04Settings settings, Cx04Client client) : IConnectorAdapter
+    GatewayReferenceStore references, Cx04Settings settings, Cx04Client client) : IConnectorAdapter,
+    IConnectorWatermarkSeed
 {
     public string ConnectorCode => Cx04Capabilities.ConnectorCode;
     public bool OwnsConnectionLane => true;
     public string? StartingWatermark(DateTime sourceLocalTime) =>
         new Cx04Watermark(new(DateTime.SpecifyKind(sourceLocalTime, DateTimeKind.Utc)), "").ToString();
+
+    public string WatermarkAt(DateTime utcInstant) => StartingWatermark(utcInstant)!;
+    public DateTime? InstantOf(string watermark) => Cx04Watermark.Parse(watermark) is var value
+        && value != Cx04Watermark.Empty ? value.Timestamp.UtcDateTime : null;
+    public bool IsMasterData(string entityType) => entityType is "items" or "parties";
 
     public async Task<ConnectorPollResult> PollAsync(ConnectorPollRequest request, CancellationToken cancellationToken)
     {

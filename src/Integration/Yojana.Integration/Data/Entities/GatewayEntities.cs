@@ -78,6 +78,11 @@ public sealed class ConnectionGatewaySetting : ITenantScoped
     public bool ReadOnly { get; set; }
     public int OrderingWaitMinutes { get; set; } = 15;
     public string OnHandStatusMappingJson { get; set; } = "{}";
+    public string? SyncStartMode { get; set; }
+    public DateOnly? SyncStartDate { get; set; }
+    public DateTime? SyncStartConfiguredAt { get; set; }
+    public bool MasterDataFull { get; set; } = true;
+    public string? ServiceCertificateSha256 { get; set; }
 }
 
 public sealed class OutboundCommandRow : ITenantScoped

@@ -9,6 +9,8 @@ using Yojana.Integration.Security.Cryptography;
 using Yojana.Integration.Security.Workers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Integration.Connections;
+using Yojana.Relay.Contracts;
 
 namespace Yojana.Integration.Connectors.CX02;
 
@@ -24,12 +26,30 @@ public sealed class Cx02Transport(
     IClock clock,
     IConnectionThrottleDelay delay,
     IConnectionRetryJitter jitter,
+    ConnectionCertificatePins? certificatePins = null,
+    Cx02Settings? connectionSettings = null,
     IConnectionBusyObserver? busy = null) : ICx02Transport, IDisposable
 {
-    private readonly ConcurrentDictionary<ConnectionWorkerKey, HttpMessageInvoker> clients = new();
+    private readonly ConcurrentDictionary<(ConnectionWorkerKey Key, bool Pinned, string? Pin), HttpMessageInvoker> clients = new();
+    private readonly ConcurrentDictionary<(ConnectionWorkerKey Key, bool Pinned, string? Pin),
+        (string Expected, string Presented)> mismatches = new();
 
-    public Task<HttpResponseMessage> SendAsync(ConnectionWorkerKey key, HttpRequestMessage request,
-        CancellationToken cancellationToken) => Client(key).SendAsync(request, cancellationToken);
+    public async Task<HttpResponseMessage> SendAsync(ConnectionWorkerKey key, HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        var service = connectionSettings is null ? null
+            : await connectionSettings.GetAsync(key.ConnectionId, cancellationToken);
+        var pinned = service is null
+            || StringComparer.OrdinalIgnoreCase.Equals(request.RequestUri?.Host, service.ServiceUri.Host);
+        var pin = pinned && certificatePins is not null
+            ? await certificatePins.ReadAsync(key.ConnectionId, cancellationToken) : null;
+        var route = (key, pinned, pin);
+        try { return await Client(route).SendAsync(request, cancellationToken); }
+        catch (HttpRequestException exception) when (mismatches.TryRemove(route, out var mismatch))
+        {
+            throw new CertificateRejectedException(mismatch.Expected, mismatch.Presented, exception);
+        }
+    }
 
     public void Dispose()
     {
@@ -37,8 +57,10 @@ public sealed class Cx02Transport(
         clients.Clear();
     }
 
-    private HttpMessageInvoker Client(ConnectionWorkerKey key) => clients.GetOrAdd(key, workerKey =>
-        new HttpMessageInvoker(new ConnectionRateLimitedHandler(workerKey, profiles, workers, clock, delay, jitter,
+    private HttpMessageInvoker Client((ConnectionWorkerKey Key, bool Pinned, string? Pin) route)
+    {
+        if (clients.TryGetValue(route, out var existing)) return existing;
+        var created = new HttpMessageInvoker(new ConnectionRateLimitedHandler(route.Key, profiles, workers, clock, delay, jitter,
             busy: busy)
         {
             InnerHandler = new SocketsHttpHandler
@@ -47,8 +69,17 @@ public sealed class Cx02Transport(
                 PooledConnectionLifetime = TimeSpan.FromMinutes(15),
                 ConnectTimeout = TimeSpan.FromSeconds(30),
                 UseCookies = false,
+                SslOptions = new()
+                {
+                    RemoteCertificateValidationCallback = ServiceCertificatePin.Validator(route.Pin,
+                        (expected, presented) => mismatches[route] = (expected, presented)),
+                },
             },
-        }, true));
+        }, true);
+        var winner = clients.GetOrAdd(route, created);
+        if (!ReferenceEquals(created, winner)) created.Dispose();
+        return winner;
+    }
 }
 
 public sealed class Cx02TokenRegistry
@@ -71,14 +102,18 @@ internal sealed class Cx02TokenState
 }
 
 public sealed class Cx02RemoteException(HttpStatusCode statusCode, string operation,
-    string? remoteCode = null, string? remoteMessage = null)
+    string? remoteCode = null, string? remoteMessage = null, string? failureCode = null,
+    string? failureDetail = null)
     : Exception(remoteMessage is null
         ? $"CX02 {operation} failed with HTTP status {(int)statusCode}."
-        : $"CX02 {operation} failed: {remoteMessage}")
+        : $"CX02 {operation} failed: {remoteMessage}"), IRemoteFailureSource
 {
     public HttpStatusCode StatusCode { get; } = statusCode;
     public string? RemoteCode { get; } = remoteCode;
     public string? RemoteMessage { get; } = remoteMessage;
+    public HttpStatusCode FailureStatusCode => StatusCode;
+    public string? FailureDetail => failureDetail ?? RemoteMessage;
+    public string? FailureCode => failureCode;
     public bool IsNotFound => StatusCode == HttpStatusCode.NotFound;
     public bool IsAuthenticationFailure => StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
         || RemoteCode?.StartsWith("Authentication_", StringComparison.Ordinal) == true;
@@ -323,7 +358,8 @@ public sealed class Cx02Client(
             }
         }
         catch (JsonException) { }
-        throw new Cx02RemoteException(response.StatusCode, operation, Cap(code, 120), Cap(message, 2_000));
+        throw new Cx02RemoteException(response.StatusCode, operation, Cap(code, 120), Cap(message, 2_000),
+            Header(response, "X-Yojana-Failure-Code"), Header(response, "X-Yojana-Failure-Detail"));
     }
 
     private static string? Text(JsonElement value, string property) =>
@@ -332,4 +368,7 @@ public sealed class Cx02Client(
 
     private static string? Cap(string? value, int length) => value is null || value.Length <= length
         ? value : value[..length];
+
+    private static string? Header(HttpResponseMessage response, string name) =>
+        response.Headers.TryGetValues(name, out var values) ? values.FirstOrDefault() : null;
 }

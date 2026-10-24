@@ -64,7 +64,7 @@ public sealed class ConnectionLifecycleTests(IntegrationHostFixture fixture)
         var result = await commands.RegisterAsync(simulator.RegistrationRequest(), Actor, default);
         Assert.Equal("down", result.HealthStatus);
         var queries = scope.ServiceProvider.GetRequiredService<ConnectionQueries>();
-        Assert.Equal("smoke_read_failed", (await queries.HealthAsync(result.ConnectionId, default)).Health.LastErrorCode);
+        Assert.Equal("authorisation_refused", (await queries.HealthAsync(result.ConnectionId, default)).Health.LastErrorCode);
         simulator.FailMetadataRead = false;
         var retried = await commands.SmokeReadAsync(result.ConnectionId, default);
         Assert.Equal("degraded", retried.HealthStatus);

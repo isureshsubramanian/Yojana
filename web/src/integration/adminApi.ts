@@ -1,5 +1,5 @@
 import { api } from "../api/client";
-import type { ApprovalView, ArchiveResult, Backfill, Checklist, CoexistenceSettings, ConnectionDetail, ConnectionEvent, ConnectionPage, CursorPage, EntityDay, FieldMap, FieldSource, HealthDetail, LocationCheck, RegistrationConnector, Relay, RelayIssued, Run, TenantStatusPage, TransportSettings, WarrantyContractSettings } from "./adminTypes";
+import type { ApprovalView, ArchiveResult, Backfill, Checklist, CoexistenceSettings, ConnectionDetail, ConnectionEvent, ConnectionPage, CursorPage, EntityDay, FieldMap, FieldSource, FullHistoryEstimate, HealthDetail, LocationCheck, RegistrationConnector, Relay, RelayIssued, Run, ServiceCertificate, SyncStart, TenantStatusPage, TransportSettings, WarrantyContractSettings } from "./adminTypes";
 const root = "/api/integration";
 function query(values: Record<string, string | number | boolean | undefined>) { const q = new URLSearchParams(); for (const [key, value] of Object.entries(values)) if (value !== undefined && value !== "") q.set(key, String(value)); return `?${q}`; }
 const connection = (id: string) => `${root}/connections/${id}`;
@@ -8,8 +8,13 @@ export const adminApi = {
   status: (cursor?: string, signal?: AbortSignal) => api<TenantStatusPage>(`${root}/status${query({ cursor, take: 12 })}`, { signal }),
   registrationConnectors: (cursor?: string, signal?: AbortSignal) => api<CursorPage<RegistrationConnector>>(`${root}/connections/registration-connectors${query({ cursor, take: 12 })}`, { signal }),
   register: (body: unknown) => api<{ connectionId: string; healthStatus: string }>(`${root}/connections`, { method: "POST", body }),
+  previewCertificate: (serviceUri: string) => api<ServiceCertificate>(`${root}/connections/fetch-certificate`, { method: "POST", body: { serviceUri } }),
   detail: (id: string, signal?: AbortSignal) => api<ConnectionDetail>(connection(id), { signal }),
   smoke: (id: string) => api(`${connection(id)}/smoke-read`, { method: "POST" }),
+  saveOnboarding: (id: string, syncStart: SyncStart, serviceCertificateSha256: string | null) => api<ConnectionDetail>(`${connection(id)}/onboarding`, { method: "PUT", body: { syncStart, serviceCertificateSha256 } }),
+  fullHistoryEstimate: (id: string) => api<FullHistoryEstimate>(`${connection(id)}/full-history-estimate`),
+  fetchCertificate: (id: string) => api<ServiceCertificate>(`${connection(id)}/fetch-certificate`, { method: "POST" }),
+  rebaseline: (id: string, entities: string[] | null, to: string, reason: string) => api(`${connection(id)}/rebaseline`, { method: "POST", body: { entities, to, reason } }),
   archive: (id: string, force = false, reason?: string) => api<ArchiveResult>(`${connection(id)}/archive`, { method: "POST", body: { force, reason } }),
   health: (id: string, signal?: AbortSignal) => api<HealthDetail>(`${connection(id)}/health`, { signal }),
   events: (id: string, cursor?: string, signal?: AbortSignal) => api<CursorPage<ConnectionEvent>>(`${connection(id)}/events${query({ cursor, take: 12 })}`, { signal }),

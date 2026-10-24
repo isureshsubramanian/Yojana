@@ -184,7 +184,7 @@ public sealed class IntegrationEndpointTests
         app.MapConnectionEndpoints();
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
             .OfType<RouteEndpoint>().ToList();
-        Assert.Equal(9, endpoints.Count);
+        Assert.Equal(14, endpoints.Count);
         var status = Assert.Single(endpoints, endpoint => endpoint.RoutePattern.RawText == "/api/integration/status");
         Assert.Contains(status.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             policy => policy.Policy == YojanaPolicy.IntegrationIndicator);
@@ -198,7 +198,16 @@ public sealed class IntegrationEndpointTests
         var smokeRead = Assert.Single(endpoints, endpoint => endpoint.RoutePattern.RawText!.EndsWith("/smoke-read", StringComparison.Ordinal));
         Assert.DoesNotContain(smokeRead.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             policy => policy.Policy == YojanaPolicy.TenantAdministrator);
-        foreach (var type in new[] { typeof(RegisterConnection), typeof(ArchiveConnection) })
+        foreach (var route in new[] { "/onboarding", "/fetch-certificate", "/rebaseline" })
+        {
+            var matches = endpoints.Where(candidate => candidate.RoutePattern.RawText!.EndsWith(route,
+                StringComparison.Ordinal)).ToList();
+            Assert.NotEmpty(matches);
+            Assert.All(matches, endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
+                policy => policy.Policy == YojanaPolicy.TenantAdministrator));
+        }
+        foreach (var type in new[] { typeof(RegisterConnection), typeof(ArchiveConnection),
+                     typeof(UpdateConnectionOnboarding), typeof(RebaselineConnection) })
             Assert.DoesNotContain(type.GetProperties(), property => property.Name.Contains("Actor", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(typeof(TenantConnectionStatus).GetProperties(), property =>
             property.Name.Contains("Error", StringComparison.OrdinalIgnoreCase)

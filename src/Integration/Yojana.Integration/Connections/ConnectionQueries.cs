@@ -114,7 +114,9 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
             capabilities, new(gateway.OutboundMode, gateway.ReadOnly, gateway.NativeWarrantyObjectMode,
                 (await warrantyContracts.GetAsync(ct)).MaintainedIn,
                 gateway.OrderingWaitMinutes, await healthSettings.GetAsync(id, ct),
-                (await throttles.GetAsync(new(tenant.TenantId, id), ct))?.Profile, connectorSettings, rules), secrets,
+                (await throttles.GetAsync(new(tenant.TenantId, id), ct))?.Profile, connectorSettings, rules,
+                gateway.SyncStartMode is null ? null : new ConnectionSyncStart(gateway.SyncStartMode,
+                    gateway.SyncStartDate, gateway.MasterDataFull), gateway.ServiceCertificateSha256), secrets,
             await checklist.GenerateAsync(id, ct), connection.Status,
             await reconciliationSettings.WindowDaysAsync(id, ct), await reconciliationDay.TodayAsync(id, ct),
             adapter is null ? null : await adapter.AuthorisationAsync(id, ct),
@@ -200,6 +202,8 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
         "ConsentReminderSettingsChanged" => "Connection consent reminder settings changed",
         "ConsentRenewed" => "Connection access renewed",
         "ExtensionChecked" => "Tenant-side extension checked",
+        "ConnectionSyncBaselined" => "Connection reading re-baselined",
+        "ConnectionCertificatePinned" => "Server certificate pin changed",
         _ => "Connection activity recorded",
     };
 
