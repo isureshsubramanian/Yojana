@@ -14,6 +14,19 @@ export function parseRuleValue(valueType: string, raw: string, language = "en", 
   return JSON.parse(clean) as unknown;
 }
 
+/** Structured (json) kinds that carry a unit take a bare number of that unit or an object with the extra detail, so the label names both. */
+export function ruleValueLabel(valueType: string | undefined, unit: string | null | undefined): string {
+  if (!unit) return "Value";
+  return valueType === "json" ? `Value (${unit}, or JSON with details)` : `Value (${unit})`;
+}
+
+export function ruleValuePlaceholder(valueType: string | undefined, unit: string | null | undefined): string {
+  if (valueType === "phrase_list" || valueType === "string_list") return "One value per line";
+  if (valueType !== "json") return "Rule value";
+  if (unit === "months") return 'Number of months, e.g. 24, or {"months": 24, ...}';
+  return unit ? `Number of ${unit}, or a JSON object` : "Valid JSON";
+}
+
 export function displayRuleValue(value: unknown): string {
   if (Array.isArray(value)) return value.join("\n");
   if (typeof value === "object" && value !== null && "text" in value) return String((value as { text: unknown }).text);

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
-import { addRegionMember, buildRegionGroupRequest, buildWhatAppliesRequest, effectiveRangeLabel, formatRuleValue, pageRules, parseRuleValue, ruleKindLabel, scopeDetails, starterName } from "../src/jurisdictions/model.ts";
+import { addRegionMember, buildRegionGroupRequest, buildWhatAppliesRequest, effectiveRangeLabel, formatRuleValue, pageRules, parseRuleValue, ruleKindLabel, ruleValueLabel, ruleValuePlaceholder, scopeDetails, starterName } from "../src/jurisdictions/model.ts";
 import type { JurisdictionRule } from "../src/jurisdictions/types.ts";
 import { countryLabel, filterCountryOptions } from "../src/reference/countries.ts";
 import { isSubdivisionCode, subdivisionParts } from "../src/reference/subdivisions.ts";
@@ -123,4 +123,12 @@ test("new rules and new versions are edited in the drawer with the save below th
   const actions = source.slice(source.indexOf("<FormActions>"), source.indexOf("</FormActions>"));
   assert.ok(actions.startsWith('<FormActions><button type="button" className="btn primary"') && actions.includes('<Icon name="check" />Save version</button>'), "labelled save below the form");
   assert.doesNotMatch(source, /<section className="card top"><div className="card-header"><div><h2>\{draft\.ruleId/);
+});
+
+test("a structured kind with a unit says it takes a number of that unit or JSON, and a bare number parses", () => {
+  assert.equal(ruleValueLabel("json", "months"), "Value (months, or JSON with details)");
+  assert.match(ruleValuePlaceholder("json", "months"), /e\.g\. 24/);
+  assert.equal(ruleValueLabel("months", "months"), "Value (months)");
+  assert.equal(ruleValuePlaceholder("json", null), "Valid JSON");
+  assert.equal(parseRuleValue("json", "24"), 24);
 });
