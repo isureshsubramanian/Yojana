@@ -554,7 +554,7 @@ internal readonly record struct Cx01Watermark(DateTimeOffset Timestamp, string K
 
     public static Cx01Watermark From(JsonElement value, string key)
     {
-        var date = value.TryGetProperty("UpdateDate", out var dateValue) ? dateValue.GetString() : null;
+        var date = value.TryGetProperty("UpdateDate", out var dateValue) ? Cx01Protocol.DatePart(dateValue.GetString()) : null;
         var time = value.TryGetProperty("UpdateTime", out var timeValue) ? timeValue.ToString() : "0";
         var digits = new string((time ?? "0").Where(char.IsAsciiDigit).ToArray()).PadLeft(6, '0');
         if (digits.Length > 6) digits = digits[^6..];

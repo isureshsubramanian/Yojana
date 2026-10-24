@@ -248,8 +248,8 @@ public sealed class Cx01NativeWarrantyWriter(IntegrationDbContext db, ITenantCon
         bool includeContract) => StringComparer.Ordinal.Equals(remote.Status, desired.Status)
             && (!includeContract || remote.WarrantyEndDate == desired.WarrantyEndDate);
 
-    private static DateOnly? Date(string? value) => DateOnly.TryParse(value, CultureInfo.InvariantCulture,
-        DateTimeStyles.AllowWhiteSpaces, out var parsed) ? parsed : null;
+    private static DateOnly? Date(string? value) => DateOnly.TryParse(Cx01Protocol.DatePart(value?.Trim()) ?? value,
+        CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out var parsed) ? parsed : null;
 
     private static string? Scalar(JsonElement row, string field)
     {

@@ -27,6 +27,16 @@ public sealed class Cx01AdapterTests
     public void A_page_link_relative_to_the_service_root_stays_under_it(string? link, string? expected) =>
         Assert.Equal(expected, Cx01Protocol.NextPage(link));
 
+    [Theory]
+    [InlineData("2026-10-24T00:00:00Z")]
+    [InlineData("2026-10-24")]
+    public void A_change_marker_reads_the_live_midnight_timestamp_date(string updateDate)
+    {
+        using var row = JsonDocument.Parse($$"""{"DocEntry":1291,"UpdateDate":"{{updateDate}}","UpdateTime":"23:03:57"}""");
+        Assert.Equal(new DateTimeOffset(2026, 10, 24, 23, 3, 57, TimeSpan.Zero), Cx01Watermark.From(row.RootElement, "1291").Timestamp);
+        Assert.Equal("2026-10-24T230357|1291", Cx01Mapper.ChangeMarker(row.RootElement, "1291"));
+    }
+
     [Fact]
     public async Task Session_carries_both_cookies_relogs_after_expiry_and_retries_throttling()
     {

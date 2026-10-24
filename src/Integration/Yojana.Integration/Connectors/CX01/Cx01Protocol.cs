@@ -40,6 +40,14 @@ internal static class Cx01Protocol
             ? absolute.PathAndQuery
         : link.StartsWith('/') ? link : Root + link;
 
+    /// <summary>
+    /// The calendar date of a remote date field. Version 2 of the service returns dates as midnight timestamps
+    /// ("2026-10-24T00:00:00Z"), not bare dates, so only the leading yyyy-MM-dd is the date.
+    /// </summary>
+    public static string? DatePart(string? value) =>
+        value is { Length: >= 10 } && DateOnly.TryParseExact(value[..10], "yyyy-MM-dd", CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out _) ? value[..10] : null;
+
     public static readonly IReadOnlyDictionary<string, Cx01EntityDefinition> Entities =
         new Dictionary<string, Cx01EntityDefinition>(StringComparer.Ordinal)
         {

@@ -284,7 +284,7 @@ internal static class Cx01Mapper
 
     public static string ChangeMarker(JsonElement value, string key)
     {
-        var date = Text(value, "UpdateDate") ?? Text(value, "CreateDate") ?? "0001-01-01";
+        var date = Cx01Protocol.DatePart(Text(value, "UpdateDate")) ?? Cx01Protocol.DatePart(Text(value, "CreateDate")) ?? "0001-01-01";
         var time = Text(value, "UpdateTime") ?? Text(value, "CreateTime") ?? "000000";
         return $"{date}T{NormaliseTime(time)}|{key}";
     }
