@@ -161,6 +161,15 @@ namespace Yojana.Platform.Data.Platform.Migrations
                         .HasColumnType("nvarchar(1000)")
                         .HasColumnName("reason");
 
+                    b.Property<string>("RefusalRecordsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("refusal_records_json");
+
+                    b.Property<DateOnly>("RequestReceivedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("request_received_on");
+
                     b.Property<string>("RequestReference")
                         .IsRequired()
                         .HasMaxLength(120)
@@ -216,12 +225,15 @@ namespace Yojana.Platform.Data.Platform.Migrations
                     b.HasIndex("TenantId", "RequestedAt", "ErasureId")
                         .HasDatabaseName("ix_erasure_request_tenant_id_requested_at_erasure_id");
 
+                    b.HasIndex("TenantId", "Status", "RequestReceivedOn", "ErasureId")
+                        .HasDatabaseName("ix_erasure_request_tenant_id_status_request_received_on_erasure_id");
+
                     b.HasIndex("TenantId", "SubjectKind", "SubjectId", "Status")
                         .HasDatabaseName("ix_erasure_request_tenant_id_subject_kind_subject_id_status");
 
                     b.ToTable("erasure_request", "platform", t =>
                         {
-                            t.HasCheckConstraint("ck_erasure_request_status", "status IN ('pending','running','completed','failed')");
+                            t.HasCheckConstraint("ck_erasure_request_status", "status IN ('pending','running','completed','failed','refused')");
 
                             t.HasCheckConstraint("ck_erasure_request_subject_kind", "subject_kind IN ('Party','User')");
                         });

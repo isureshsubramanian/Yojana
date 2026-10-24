@@ -88,6 +88,8 @@ export const settingsRegistry: SettingsRegistryEntry[] = [
     currentValue: signal => importFileSettingsApi.get(signal).then(value => `Archive after ${value.archiveAge} ${value.archiveAgeUnit} · ${value.archiveStores.length} stores`), route: () => import("./ImportFileSettings") },
   { group: "Data and knowledge", name: "Knowledge screen changes", description: "Mark a changed screen so its knowledge entries are reviewed", path: "/settings/knowledge-screen-changes", icon: "book", roles: administrator,
     summaryKey: "knowledge_screen_changes", summaryValue: line => ({ text: `${noun(count(line, "screensMarked"), "screen")} marked · ${noun(count(line, "entriesToReview"), "entry", "entries")} to review` }), route: () => import("./KnowledgeScreenChangesPage") },
+  { group: "Data and knowledge", name: "Privacy", description: "Personal-data erasure requests and their audit log", path: "/settings/privacy", icon: "shield", roles: administrator,
+    route: () => import("./Privacy") },
 ];
 
 export function visibleSettings(roles: readonly string[]): SettingsRegistryEntry[] {

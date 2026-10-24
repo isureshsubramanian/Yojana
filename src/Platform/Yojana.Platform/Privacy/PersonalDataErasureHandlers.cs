@@ -52,7 +52,8 @@ public static class ExecutePersonalDataErasureHandler
             var db = startScope.ServiceProvider.GetRequiredService<PlatformDbContext>();
             var row = await db.ErasureRequests.SingleOrDefaultAsync(x => x.TenantId == command.TenantId
                 && x.ErasureId == command.ErasureId, cancellationToken);
-            if (row is null || row.Status == ErasureRequestStatus.Completed && !command.ReplayCompleted) return;
+            if (row is null || row.Status == ErasureRequestStatus.Refused
+                || row.Status == ErasureRequestStatus.Completed && !command.ReplayCompleted) return;
             row.Status = ErasureRequestStatus.Running;
             row.StartedAt ??= startScope.ServiceProvider.GetRequiredService<IClock>().UtcNow;
             row.FailedAt = null;

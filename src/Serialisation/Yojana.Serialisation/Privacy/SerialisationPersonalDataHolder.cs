@@ -8,7 +8,6 @@ using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Imports;
-using ErasureRefusedException = Yojana.Platform.Contracts.CommandRefusedException;
 
 namespace Yojana.Serialisation.Privacy;
 
@@ -103,22 +102,30 @@ public sealed class SerialisationPersonalDataHolder(
 
     private async Task RefuseOpenObligationsAsync(Guid partyRef, CancellationToken cancellationToken)
     {
-        var openClaim = await db.Claims.AsNoTracking().AnyAsync(x => x.TenantId == tenant.TenantId
+        var openClaims = await db.Claims.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
             && (x.ClaimantPartyRef == partyRef || x.SettlementPartyRef == partyRef)
-            && x.Status != ClaimStatus.Denied && x.Status != ClaimStatus.Settled && x.Status != ClaimStatus.Closed,
-            cancellationToken);
-        var openRma = await db.Rmas.AsNoTracking().AnyAsync(x => x.TenantId == tenant.TenantId
+            && x.Status != ClaimStatus.Denied && x.Status != ClaimStatus.Settled && x.Status != ClaimStatus.Closed)
+            .OrderBy(x => x.SubmittedAt).Select(x => new PersonalDataErasureBlocker(
+                "claim", x.ClaimId, x.ClaimNumber, x.Status, "Open claim")).ToListAsync(cancellationToken);
+        var openRmas = await db.Rmas.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
             && (x.ReturningPartyRef == partyRef || x.SettlementPartyRef == partyRef)
-            && x.Stage != RmaStage.Closed, cancellationToken);
-        var hold = await db.PartyReplacementHolds.AsNoTracking().AnyAsync(x => x.TenantId == tenant.TenantId
-            && x.PartyRef == partyRef && x.LiftedAt == null, cancellationToken);
-        var unreturned = await db.ReplacementLinks.AsNoTracking().AnyAsync(x => x.TenantId == tenant.TenantId
-            && x.CounterpartyPartyRef == partyRef && x.State == ReplacementLinkState.AwaitingReturn,
-            cancellationToken);
-        if (openClaim || openRma || hold || unreturned)
-            throw new ErasureRefusedException("erasure_open_obligations",
+            && x.Stage != RmaStage.Closed).OrderBy(x => x.RequestedAt)
+            .Select(x => new PersonalDataErasureBlocker("rma", x.RmaId,
+                x.RmaNumber ?? "RMA", x.Stage, "Open RMA")).ToListAsync(cancellationToken);
+        var holds = await db.PartyReplacementHolds.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+                && x.PartyRef == partyRef && x.LiftedAt == null).OrderBy(x => x.SetAt)
+            .Select(x => new PersonalDataErasureBlocker("replacement_hold", null,
+                "Replacement hold", "open", x.Reason)).ToListAsync(cancellationToken);
+        var unreturned = await db.ReplacementLinks.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+                && x.CounterpartyPartyRef == partyRef && x.State == ReplacementLinkState.AwaitingReturn)
+            .OrderBy(x => x.CreatedAt).Select(x => new PersonalDataErasureBlocker(
+                "replacement", x.WarrantyReplacementId, x.SourceNumber, x.State,
+                "Replacement unit shipped; original unit not returned")).ToListAsync(cancellationToken);
+        var blockers = openClaims.Concat(openRmas).Concat(holds).Concat(unreturned).ToList();
+        if (blockers.Count > 0)
+            throw new PersonalDataErasureRefusedException("erasure_open_obligations",
                 "Personal data cannot be erased while the party has an open claim, RMA, replacement hold or unreturned replacement.",
-                "close or settle the open obligation first");
+                "close or settle the open obligation first", blockers);
     }
 
     private async Task<List<PersonalDataReviewItem>> ReviewItemsAsync(Guid partyRef,

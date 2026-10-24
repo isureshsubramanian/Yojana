@@ -16,6 +16,9 @@ public static class PrivacyEndpoints
             .RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
         group.MapPost("/preview", PreviewAsync);
         group.MapPost("/confirm", ConfirmAsync);
+        group.MapGet("/export", (PersonalDataErasureService service, CancellationToken cancellationToken) =>
+            Results.Stream(stream => service.ExportCsvAsync(stream, cancellationToken),
+                "text/csv; charset=utf-8", "personal-data-erasure-log.csv"));
         group.MapGet("/", async (string? cursor, int? take, PersonalDataErasureService service,
             CancellationToken cancellationToken) =>
         {
@@ -35,9 +38,13 @@ public static class PrivacyEndpoints
     }
 
     private static async Task<IResult> PreviewAsync(PreviewPersonalDataErasure request,
-        PersonalDataErasureService service, CancellationToken cancellationToken)
+        PersonalDataErasureService service, ClaimsPrincipal user, CancellationToken cancellationToken)
     {
-        try { return Results.Ok(await service.PreviewAsync(request, cancellationToken)); }
+        try
+        {
+            var actor = Guid.Parse(user.FindFirst(YojanaClaim.UserId)!.Value);
+            return Results.Ok(await service.PreviewAsync(request, actor, cancellationToken));
+        }
         catch (CommandRefusedException exception) { return Problem(exception); }
     }
 
@@ -53,11 +60,16 @@ public static class PrivacyEndpoints
         catch (CommandRefusedException exception) { return Problem(exception); }
     }
 
-    private static IResult Problem(CommandRefusedException exception) => Results.Problem(
-        title: exception.Rule, detail: exception.Message, statusCode: StatusCodes.Status409Conflict,
-        extensions: new Dictionary<string, object?>
+    private static IResult Problem(CommandRefusedException exception)
+    {
+        var extensions = new Dictionary<string, object?>
         {
             ["rule"] = exception.Rule,
             ["unblockingStep"] = exception.UnblockingStep,
-        });
+        };
+        if (exception is PersonalDataErasureRefusedException refusal)
+            extensions["blockers"] = refusal.Blockers;
+        return Results.Problem(title: exception.Rule, detail: exception.Message,
+            statusCode: StatusCodes.Status409Conflict, extensions: extensions);
+    }
 }

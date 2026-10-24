@@ -17,7 +17,8 @@ const groups: SettingsGroup[] = ["Organisation", "Documents", "Service operation
 export function Component() {
   const location = useLocation();
   const landing = location.pathname === "/settings" || location.pathname === "/settings/";
-  const current = settingsRegistry.find(entry => entry.path === location.pathname);
+  const current = settingsRegistry.find(entry => entry.path === location.pathname
+    || location.pathname.startsWith(`${entry.path}/`));
   const from = useHandoff().from;
   const trail = (from && ORIGINS[from]) || [{ label: "Settings", to: "/settings" }];
   if (landing) return <Outlet />;
@@ -33,18 +34,19 @@ export function Component() {
 export function SettingsNavigation({ currentPath }: { currentPath: string }) {
   const navigate = useNavigate();
   const entries = visibleSettings(useSession().roles);
+  const selectedPath = entries.find(entry => entry.path === currentPath || currentPath.startsWith(`${entry.path}/`))?.path ?? currentPath;
   const [query, setQuery] = useState("");
   const shown = filterSettings(entries, query);
   const grouped = (group: SettingsGroup) => shown.filter(entry => entry.group === group);
   return <>
-    <label className="settings-mobile-select"><span>Settings</span><select value={currentPath} onChange={event => navigate(event.target.value)}>
+    <label className="settings-mobile-select"><span>Settings</span><select value={selectedPath} onChange={event => navigate(event.target.value)}>
       <option value="/settings">All settings</option>
       {groups.map(group => <optgroup label={group} key={group}>{entries.filter(entry => entry.group === group).map(entry => <option value={entry.path} key={entry.path}>{entry.name}</option>)}</optgroup>)}
     </select></label>
     <nav className="settings-nav" aria-label="Settings">
       <Link className="all" to="/settings"><Icon name="chev" />All settings</Link>
       <label className="find"><Icon name="search" /><span className="sr-only">Find a setting</span><input type="search" placeholder="Find a setting" value={query} onChange={event => setQuery(event.target.value)} /></label>
-      {groups.map(group => grouped(group).length > 0 && <SettingsNavigationGroup key={group} group={group} entries={grouped(group)} currentPath={currentPath} />)}
+      {groups.map(group => grouped(group).length > 0 && <SettingsNavigationGroup key={group} group={group} entries={grouped(group)} currentPath={selectedPath} />)}
       {shown.length === 0 && <p className="settings-nav-empty">No settings match.</p>}
     </nav>
   </>;

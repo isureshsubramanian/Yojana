@@ -51,7 +51,7 @@ test("every settings page is registered once and registry entries generate the r
     "/settings/company", "/settings/users", "/settings/sign-in-policy", "/settings/security-events", "/settings/time-zone", "/settings/currencies", "/settings/scanning", "/settings/item-serialisation",
     "/settings/numbering", "/settings/certificates", "/settings/labels", "/settings/disclosure", "/settings/jurisdictions",
     "/settings/claim-risk", "/settings/recovery", "/settings/refurbishment", "/settings/workbench-choices",
-    "/settings/import-files", "/settings/knowledge-screen-changes",
+    "/settings/import-files", "/settings/knowledge-screen-changes", "/settings/privacy",
   ];
   const paths = [...registry.matchAll(/path: "(\/settings\/[^"]+)"/g)].map(match => match[1]);
   assert.deepEqual(paths, expected);

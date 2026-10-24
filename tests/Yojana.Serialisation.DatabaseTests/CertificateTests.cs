@@ -118,6 +118,7 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
                 TenantId = setup.Tenant, ErasureId = erasure,
                 SubjectKind = Yojana.Platform.Contracts.Privacy.ErasureSubjectKind.Party,
                 SubjectId = party, RequestReference = "DSR-2026-9901", Reason = "verified request",
+                RequestReceivedOn = new DateOnly(2026, 9, 1),
                 RequestedBy = Guid.CreateVersion7(), RequestedAt = At, StartedAt = At,
                 Status = ErasureRequestStatus.Running,
                 RetentionBasis = Yojana.Platform.Privacy.PersonalDataErasureService.RetentionBasis,
@@ -159,6 +160,33 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
             var stored = await db.CertificateInstances.SingleAsync(x => x.CertificateId == certificate);
             stored.Payload = "{}";
             await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        }
+
+        using (var refuse = fixture.ScopeFor(setup.Tenant))
+        {
+            var row = await refuse.ServiceProvider.GetRequiredService<PlatformDbContext>()
+                .ErasureRequests.SingleAsync(x => x.ErasureId == erasure);
+            row.Status = ErasureRequestStatus.Refused;
+            await refuse.ServiceProvider.GetRequiredService<PlatformDbContext>().SaveChangesAsync();
+        }
+        using (var refusedWrite = fixture.ScopeFor(setup.Tenant))
+        {
+            var db = refusedWrite.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            await db.Database.OpenConnectionAsync();
+            try
+            {
+                await db.Database.ExecuteSqlInterpolatedAsync(
+                    $"EXEC sys.sp_set_session_context @key=N'yojana.erasure_id', @value={erasure}");
+                var stored = await db.CertificateInstances.SingleAsync(x => x.CertificateId == certificate);
+                stored.OwnerSnapshot = "{}";
+                await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+            }
+            finally
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    "EXEC sys.sp_set_session_context @key=N'yojana.erasure_id', @value=NULL");
+                await db.Database.CloseConnectionAsync();
+            }
         }
     }
 
@@ -235,6 +263,7 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
                 TenantId = setup.Tenant, ErasureId = erasure,
                 SubjectKind = Yojana.Platform.Contracts.Privacy.ErasureSubjectKind.Party,
                 SubjectId = subjectParty, RequestReference = "DSR-2026-9902", Reason = "verified request",
+                RequestReceivedOn = new DateOnly(2026, 9, 1),
                 RequestedBy = Guid.CreateVersion7(), RequestedAt = At, StartedAt = At,
                 Status = ErasureRequestStatus.Running,
                 RetentionBasis = Yojana.Platform.Privacy.PersonalDataErasureService.RetentionBasis,

@@ -128,6 +128,7 @@ export const router = createBrowserRouter([
             children: [
               { index: true, lazy: () => import("./settings/Settings") },
               ...settingsChildren,
+              { path: "privacy/new", lazy: () => import("./settings/PrivacyNew") },
               { path: "*", lazy: () => import("./settings/SettingsNotFound") },
             ],
           },

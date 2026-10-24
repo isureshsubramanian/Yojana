@@ -14,12 +14,99 @@ using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Data.Platform;
 using Yojana.Platform.Data.Platform.Entities;
 using Yojana.Platform.Privacy;
+using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Data.Entities;
+using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Knowledge.DatabaseTests;
 
 [Collection("knowledge host")]
 public sealed class PersonalDataErasureDatabaseTests(KnowledgeHostFixture fixture)
 {
+    [DatabaseFact]
+    public async Task Refusal_is_saved_with_received_date_and_blocking_record_then_reopens()
+    {
+        var (tenant, administrator, _, _) = await fixture.NewTenantAsync("errefused");
+        var party = Guid.CreateVersion7();
+        var rmaId = Guid.CreateVersion7();
+        using (var seed = fixture.ScopeFor(tenant))
+        {
+            var serial = seed.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            serial.Rmas.Add(new Rma
+            {
+                TenantId = tenant, RmaId = rmaId, CommandId = Guid.CreateVersion7(), RmaNumber = "RMA-2026-9751",
+                Stage = RmaStage.Requested, RequestDate = new DateOnly(2026, 9, 1), ReturningPartyRef = party,
+                SettlementPartyRef = party, ServiceEntityId = Guid.CreateVersion7(), ObligorEntityId = Guid.CreateVersion7(),
+                ServiceCountry = "GB", Currency = "GBP", RequestedAt = fixture.Clock.UtcNow,
+                RequestedBy = "fixture", LastEventId = Guid.CreateVersion7(), LastModifiedBy = "fixture",
+                LastModifiedAt = fixture.Clock.UtcNow,
+            });
+            await serial.SaveChangesAsync();
+        }
+        using var client = await fixture.ClientAsync(tenant, administrator);
+        var request = new
+        {
+            subjectKind = "Party", subjectId = party, requestReference = "DSR-2026-9751",
+            requestReceivedOn = new DateOnly(2026, 9, 1), reason = "verified request",
+            subjectIsNaturalPerson = true,
+        };
+
+        using (var response = await client.PostAsJsonAsync("/api/privacy/erasures/preview", request))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("erasure_open_obligations", problem.GetProperty("rule").GetString());
+            var blocker = Assert.Single(problem.GetProperty("blockers").EnumerateArray());
+            Assert.Equal(rmaId, blocker.GetProperty("recordId").GetGuid());
+            Assert.Equal("RMA-2026-9751", blocker.GetProperty("reference").GetString());
+        }
+        Guid erasureId;
+        using (var verify = fixture.ScopeFor(tenant))
+        {
+            var platform = verify.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var row = await platform.ErasureRequests.AsNoTracking().SingleAsync(x => x.SubjectId == party);
+            erasureId = row.ErasureId;
+            Assert.Equal(ErasureRequestStatus.Refused, row.Status);
+            Assert.Equal(new DateOnly(2026, 9, 1), row.RequestReceivedOn);
+            Assert.Null(await verify.ServiceProvider.GetRequiredService<IPersonalDataErasureReadPort>()
+                .ErasedPartyAsync(party, default));
+        }
+        using (var list = await client.GetAsync("/api/privacy/erasures?take=50"))
+        {
+            list.EnsureSuccessStatusCode();
+            var page = await list.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(1, page.GetProperty("summary").GetProperty("refused").GetInt32());
+            Assert.Equal("refused", Assert.Single(page.GetProperty("items").EnumerateArray()).GetProperty("status").GetString());
+        }
+        using (var detail = await client.GetAsync($"/api/privacy/erasures/{erasureId}"))
+        {
+            detail.EnsureSuccessStatusCode();
+            var body = await detail.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("RMA-2026-9751", Assert.Single(body.GetProperty("blockers").EnumerateArray())
+                .GetProperty("reference").GetString());
+        }
+        using (var export = await client.GetAsync("/api/privacy/erasures/export"))
+        {
+            export.EnsureSuccessStatusCode();
+            var csv = await export.Content.ReadAsStringAsync();
+            Assert.Contains("request_received_on", csv, StringComparison.Ordinal);
+            Assert.Contains($"Erased customer · {party.ToString("N")[..4].ToUpperInvariant()}", csv, StringComparison.Ordinal);
+        }
+
+        using (var close = fixture.ScopeFor(tenant))
+        {
+            var rma = await close.ServiceProvider.GetRequiredService<SerialisationDbContext>().Rmas.SingleAsync(x => x.RmaId == rmaId);
+            rma.Stage = RmaStage.Closed;
+            rma.ClosedAt = fixture.Clock.UtcNow;
+            await close.ServiceProvider.GetRequiredService<SerialisationDbContext>().SaveChangesAsync();
+        }
+        using var allowed = await client.PostAsJsonAsync("/api/privacy/erasures/preview", request);
+        allowed.EnsureSuccessStatusCode();
+        using var finalScope = fixture.ScopeFor(tenant);
+        Assert.Equal(ErasureRequestStatus.Refused, await finalScope.ServiceProvider.GetRequiredService<PlatformDbContext>()
+            .ErasureRequests.Where(x => x.ErasureId == erasureId).Select(x => x.Status).SingleAsync());
+    }
+
     [DatabaseFact]
     public async Task Confirm_runs_all_holders_and_restore_replay_erases_returned_data()
     {
@@ -40,6 +127,7 @@ public sealed class PersonalDataErasureDatabaseTests(KnowledgeHostFixture fixtur
         var request = new
         {
             subjectKind = "Party", subjectId = party, requestReference = "DSR-2026-9601",
+            requestReceivedOn = new DateOnly(2026, 9, 1),
             reason = $"Verified request for {restoredName}", subjectIsNaturalPerson = true,
         };
         using (var preview = await client.PostAsJsonAsync("/api/privacy/erasures/preview", request))
@@ -52,7 +140,7 @@ public sealed class PersonalDataErasureDatabaseTests(KnowledgeHostFixture fixtur
         using var confirm = await client.PostAsJsonAsync("/api/privacy/erasures/confirm", new
         {
             request.subjectKind, request.subjectId, request.requestReference,
-            confirmation = request.requestReference, request.reason, request.subjectIsNaturalPerson,
+            request.requestReceivedOn, confirmation = request.requestReference, request.reason, request.subjectIsNaturalPerson,
             reviewDecisions = Array.Empty<object>(),
         });
         Assert.Equal(HttpStatusCode.Accepted, confirm.StatusCode);
@@ -124,7 +212,7 @@ public sealed class PersonalDataErasureDatabaseTests(KnowledgeHostFixture fixtur
         using var response = await client.PostAsJsonAsync("/api/privacy/erasures/preview", new
         {
             subjectKind = "Party", subjectId = Guid.CreateVersion7(), requestReference = "DSR-2026-9701",
-            reason = "verified request", subjectIsNaturalPerson = true,
+            requestReceivedOn = new DateOnly(2026, 9, 1), reason = "verified request", subjectIsNaturalPerson = true,
         });
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
