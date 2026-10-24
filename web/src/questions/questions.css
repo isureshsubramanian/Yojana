@@ -124,3 +124,5 @@
 .rail .question-askbox { display: grid; gap: 12px; }
 .rail .question-similar .similar-entry { grid-template-columns: auto minmax(0, 1fr); }
 .rail .question-similar .x { grid-column: 2; }
+/* The record panel title stays on one line; the total moved to the All chip so the title and Ask button fit. */
+.record-questions-title { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
