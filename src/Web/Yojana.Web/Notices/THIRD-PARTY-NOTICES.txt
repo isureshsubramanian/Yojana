@@ -12,6 +12,7 @@ CONTENTS
 
   - ASP.NET Core (shared framework Microsoft.AspNetCore.App)
   - Chromium headless shell 153.0.8010.12 (Chrome for Testing build) — downloaded on the customer host at install, not redistributed
+  - Common-password list: top 100,000 of the ten-million-password set (SecLists), modified
   - MailKit 4.18.1: files carrying their own copyright notices (Mono NTLM code, Xamarin)
   - Microsoft .NET Runtime (shared framework Microsoft.NETCore.App)
   - MimeKit 4.18.1: files carrying their own copyright notices (Xamarin)
@@ -123197,6 +123198,38 @@ zune-jpeg
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+==============================================================================
+Common-password list: top 100,000 of the ten-million-password set (SecLists), modified
+==============================================================================
+
+Licence: MIT
+Copyright: Copyright (c) 2018 Daniel Miessler
+Project: https://github.com/danielmiessler/SecLists
+Included because: src/Platform/Yojana.Platform/Security/common-passwords-100k.txt is a copy of https://github.com/danielmiessler/SecLists/blob/c205c36a445bff37f8e58a9ec829105cd4975c58/Passwords/Common-Credentials/xato-net-10-million-passwords-100000.txt (source sha256 1472aafa2561df5e3293aee252aee3ca660c12b399a283cf808bb01b39be388b) with five lines removed (copy sha256 3c8b25eb988155db0295503e9c360dfe1f34e7e5606ab4a6abe5bd4acb823d71, 99,995 lines): the removed entries are other software vendors' brand names, which the product source may not contain. It is embedded in Yojana.Platform and used only to refuse common passwords (ADR-0008). The underlying data is Mark Burnett's ten-million-password set, which he announced on 9 February 2015 he was "releasing to the public domain" (announcement copy: https://attrition.org/pipermail/infowarrior/2015-February/012042.html; original post https://xato.net/passwords/ten-million-passwords/). The SecLists collection that publishes the top-100,000 file is MIT-licensed; its notice is reproduced here.
+Licence text taken from https://github.com/danielmiessler/SecLists/blob/c205c36a445bff37f8e58a9ec829105cd4975c58/LICENSE on 2026-10-24.
+
+MIT License
+
+Copyright (c) 2018 Daniel Miessler
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ==============================================================================
 MailKit 4.18.1: files carrying their own copyright notices (Mono NTLM code, Xamarin)

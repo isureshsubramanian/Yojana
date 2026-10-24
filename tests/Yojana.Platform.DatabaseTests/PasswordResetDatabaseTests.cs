@@ -281,6 +281,91 @@ public sealed class PasswordResetDatabaseTests(PlatformHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Password_rules_are_company_settings_bounded_eight_to_sixty_four_and_audited()
+    {
+        var tenant = await AddTenantAsync("rules");
+        var actor = await AddUserAsync("rules-admin", [tenant], roles: [YojanaRole.TenantAdministrator]);
+        using var client = fixture.Client(); await SignInAsync(client, actor);
+        var initial = (await client.GetFromJsonAsync<PasswordSecuritySettingsView>("/api/security/settings/passwords"))!;
+        Assert.Equal(PasswordRules.Default, initial.Rules);
+
+        foreach (var length in new[] { 7, 65 })
+            Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync("/api/security/settings/passwords",
+                initial with { MinimumLength = length })).StatusCode);
+        foreach (var length in new[] { 8, 64 })
+        {
+            var current = (await client.GetFromJsonAsync<PasswordSecuritySettingsView>("/api/security/settings/passwords"))!;
+            (await client.PutAsJsonAsync("/api/security/settings/passwords", current with { MinimumLength = length }))
+                .EnsureSuccessStatusCode();
+        }
+        var latest = (await client.GetFromJsonAsync<PasswordSecuritySettingsView>("/api/security/settings/passwords"))!;
+        var saved = await client.PutAsJsonAsync("/api/security/settings/passwords",
+            latest with { MinimumLength = 16, RequireSymbol = false });
+        saved.EnsureSuccessStatusCode();
+        Assert.Equal(new PasswordRules(16, true, true, true, false),
+            (await saved.Content.ReadFromJsonAsync<PasswordSecuritySettingsView>())!.Rules);
+
+        using var scope = fixture.Services.CreateScope();
+        var audit = await scope.ServiceProvider.GetRequiredService<PlatformDbContext>().SecurityEvents
+            .Where(row => row.TenantId == tenant && row.Kind == SecurityEventKind.SettingsChanged)
+            .Select(row => row.Reason).ToListAsync();
+        Assert.Contains($"{PasswordSecuritySettings.MinimumLengthKey},{PasswordSecuritySettings.RequireSymbolKey}", audit);
+
+        var service = await AddUserAsync("rules-desk", [tenant], roles: [YojanaRole.ServiceDesk]);
+        using var desk = fixture.Client(); await SignInAsync(desk, service);
+        Assert.Equal(HttpStatusCode.Forbidden, (await desk.PutAsJsonAsync("/api/security/settings/passwords",
+            latest with { MinimumLength = 8 })).StatusCode);
+    }
+
+    [DatabaseFact]
+    public async Task The_strictest_company_rules_apply_and_the_rules_read_names_no_company()
+    {
+        var lax = await AddTenantAsync("lax-rules");
+        var strict = await AddTenantAsync("strict-rules");
+        await SetAsync(lax, PasswordSecuritySettings.MinimumLengthKey, "8");
+        await SetAsync(lax, PasswordSecuritySettings.RequireSymbolKey, "false");
+        await SetAsync(strict, PasswordSecuritySettings.MinimumLengthKey, "24");
+        await SetAsync(strict, PasswordSecuritySettings.RequireUppercaseKey, "false");
+        var user = await AddUserAsync("two-companies", [lax, strict]);
+        using var client = fixture.Client();
+        await RequestAsync(client, user.Email);
+        var token = await TokenAsync(user.Email, 1);
+
+        var read = await client.PostAsJsonAsync("/api/auth/password-rules", new { reset = token });
+        read.EnsureSuccessStatusCode();
+        var body = await read.Content.ReadAsStringAsync();
+        Assert.Equal(new PasswordRules(24, true, true, true, true), JsonSerializer.Deserialize<PasswordRules>(body,
+            JsonSerializerOptions.Web));
+        Assert.DoesNotContain("Fictional", body);
+        var unknown = await client.PostAsJsonAsync("/api/auth/password-rules", new { reset = "not-a-real-token" });
+        Assert.Equal(PasswordRules.Default, await unknown.Content.ReadFromJsonAsync<PasswordRules>());
+
+        var tooShort = await client.PostAsJsonAsync("/api/auth/password-reset/complete",
+            new { token, newPassword = "Brass-Kettle-47-Mon" });
+        Assert.Equal(HttpStatusCode.BadRequest, tooShort.StatusCode);
+        Assert.Contains("password_too_short", await tooShort.Content.ReadAsStringAsync());
+        var common = await client.PostAsJsonAsync("/api/auth/password-reset/complete",
+            new { token, newPassword = "Password123456789012345!" });
+        Assert.Contains("password_too_common", await common.Content.ReadAsStringAsync());
+        (await client.PostAsJsonAsync("/api/auth/password-reset/complete",
+            new { token, newPassword = "Brass-Kettle-47-Monsoon-Lantern" })).EnsureSuccessStatusCode();
+
+        var signedIn = await client.PostAsJsonAsync("/api/auth/password-rules", new { });
+        Assert.Equal(24, (await signedIn.Content.ReadFromJsonAsync<PasswordRules>())!.MinimumLength);
+    }
+
+    [DatabaseFact]
+    public async Task Existing_passwords_still_sign_in_after_the_company_tightens_its_rules()
+    {
+        var tenant = await AddTenantAsync("tightened");
+        var user = await AddUserAsync("tightened", [tenant]);
+        await SetAsync(tenant, PasswordSecuritySettings.MinimumLengthKey, "64");
+        using var client = fixture.Client();
+        (await client.PostAsJsonAsync("/api/auth/sign-in", new { email = user.Email, password = InitialPassword }))
+            .EnsureSuccessStatusCode();
+    }
+
+    [DatabaseFact]
     public async Task Invitation_expiry_is_a_tenant_setting_on_the_sign_in_policy_and_changes_are_audited()
     {
         var tenant = await AddTenantAsync("invite-days");

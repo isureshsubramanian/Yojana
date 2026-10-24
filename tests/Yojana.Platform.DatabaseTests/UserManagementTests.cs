@@ -163,6 +163,10 @@ public sealed class UserManagementTests(PlatformHostFixture fixture)
         var email = $"new-{Guid.NewGuid():N}@example.invalid";
         await invitations.CreateAsync(email, "Fictional New User", [YojanaRole.ServiceDesk], admin.Id, Request, default);
         var token = Token((await WaitForMailAsync(email, 1)).Mail.TextBody);
+        await scope.ServiceProvider.GetRequiredService<ITenantSettings>()
+            .SetAsync(PasswordSecuritySettings.MinimumLengthKey, "30", default);
+        Assert.Equal(30, (await scope.ServiceProvider.GetRequiredService<IPasswordPolicy>()
+            .RulesForAsync(null, await invitations.InvitedTenantAsync(token, default), default)).MinimumLength);
         await Assert.ThrowsAsync<InvitationPasswordException>(() => invitations.AcceptNewAsync(token, "short", Request, default));
         var accepted = await invitations.AcceptNewAsync(token, "Fictional-Strong-Password-2026", Request, default);
         Assert.Equal(email, accepted.User.Email);

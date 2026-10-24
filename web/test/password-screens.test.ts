@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { tokenFromHash } from "../src/security/resetModel.ts";
+import { DEFAULT_PASSWORD_RULES, minimumLengthValid, ruleChecks } from "../src/security/passwordRulesModel.ts";
 
 const source = (path: string) => readFileSync(new URL(`../src/${path}`, import.meta.url), "utf8");
 const signIn = source("pages/SignIn.tsx");
@@ -31,7 +32,8 @@ test("reset reads only the fragment token and posts it in the JSON body", () => 
 
 test("new-password screens show the live approved rules and server policy reasons", () => {
   const rules = source("security/PasswordRules.tsx");
-  assert.match(rules, /At least 12 characters/);
+  assert.match(rules, /ruleChecks\(password, rules\)/);
+  assert.match(rules, /Not a common or easy-to-guess password/);
   assert.match(rules, /Not your e-mail or your name/);
   assert.match(rules, /Both entries match/);
   assert.match(reset, /reason\.message/);
@@ -50,4 +52,24 @@ test("mandatory change, account security and sign-in policy include their comple
   assert.match(policy, /Second step by role/);
   assert.match(policy, /id="passkey-policy">Passkeys/); assert.doesNotMatch(policy, /Failed attempts/);
   assert.match(policy, /min=\{10\} max=\{1440\}/);
+});
+
+test("password hints follow the company's rules and tick as each one is met", () => {
+  const labels = (password: string, rules = DEFAULT_PASSWORD_RULES) => ruleChecks(password, rules).map((check) => `${check.key}:${check.met}`);
+  assert.deepEqual(labels(""), ["length:false", "upper:false", "lower:false", "digit:false", "symbol:false"]);
+  assert.deepEqual(labels("Brass Kettle 47"), ["length:true", "upper:true", "lower:true", "digit:true", "symbol:true"]);
+  assert.deepEqual(labels("kettle", { minimumLength: 6, requireUppercase: false, requireLowercase: true, requireDigit: false, requireSymbol: false }), ["length:true", "lower:true"]);
+  assert.deepEqual(labels("தமிழ் 2026", { ...DEFAULT_PASSWORD_RULES, minimumLength: 8 }), ["length:true", "upper:true", "lower:true", "digit:true", "symbol:true"]);
+  assert.equal(ruleChecks("x", { ...DEFAULT_PASSWORD_RULES, minimumLength: 20 })[0]!.label, "At least 20 characters");
+  assert.deepEqual([7, 8, 64, 65, 12.5].map(minimumLengthValid), [false, true, true, false, false]);
+});
+
+test("the rules read posts its token in the body and every set-password screen uses it", () => {
+  assert.match(api, /"\/api\/auth\/password-rules", \{ method: "POST", body: whose/);
+  assert.match(reset, /usePasswordRules\(token \? \{ reset: token \}/);
+  assert.match(source("pages/AcceptInvitation.tsx"), /usePasswordRules\(token \? \{ invitation: token \}/);
+  assert.match(source("security/PasswordChangeForm.tsx"), /usePasswordRules\(\{\}\)/);
+  assert.match(policy, /Must include/);
+  assert.match(policy, /Common and easy-to-guess passwords are always refused\./);
+  assert.doesNotMatch(policy, /Set for the whole installation/);
 });

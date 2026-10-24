@@ -1,13 +1,43 @@
+using Yojana.Platform.Contracts.Tenancy;
+
 namespace Yojana.Platform.Contracts.Security;
 
 public sealed record PasswordPolicyReason(string Code, string Message);
 
 public sealed record PasswordPolicyResult(bool IsValid, IReadOnlyList<PasswordPolicyReason> Reasons);
 
+/// <summary>
+/// A company's password rules (ADR-0008). A person in several companies follows the strictest: the longest minimum
+/// and every character class any of them requires.
+/// </summary>
+public sealed record PasswordRules(int MinimumLength, bool RequireUppercase, bool RequireLowercase, bool RequireDigit,
+    bool RequireSymbol)
+{
+    public const int ShortestMinimum = 8;
+    public const int LongestMinimum = 64;
+
+    /// <summary>Applies until a company changes its rules.</summary>
+    public static readonly PasswordRules Default = new(12, true, true, true, true);
+
+    public PasswordRules StricterOf(PasswordRules other) => new(Math.Max(MinimumLength, other.MinimumLength),
+        RequireUppercase || other.RequireUppercase, RequireLowercase || other.RequireLowercase,
+        RequireDigit || other.RequireDigit, RequireSymbol || other.RequireSymbol);
+}
+
+/// <summary>
+/// A password someone is about to set. <see cref="UserId"/> names an existing person, whose company memberships
+/// decide the rules; <see cref="InvitedTo"/> names the company of an invitation for someone with no account yet.
+/// </summary>
+public sealed record PasswordCandidate(string Password, string Email, string DisplayName, Guid? UserId,
+    TenantId? InvitedTo);
+
 /// <summary>Password rules for newly set passwords. Existing hashes are not re-evaluated.</summary>
 public interface IPasswordPolicy
 {
-    PasswordPolicyResult Validate(string password, string email, string displayName);
+    /// <summary>Every unmet rule is returned together, so a screen can show them all at once.</summary>
+    Task<PasswordPolicyResult> ValidateAsync(PasswordCandidate candidate, CancellationToken cancellationToken);
+
+    Task<PasswordRules> RulesForAsync(Guid? userId, TenantId? invitedTo, CancellationToken cancellationToken);
 }
 
 /// <summary>Revokes a user's existing sessions and records why the revocation occurred.</summary>

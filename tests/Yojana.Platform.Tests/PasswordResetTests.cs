@@ -1,4 +1,5 @@
 using Xunit;
+using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Security;
 
 namespace Yojana.Platform.Tests;
@@ -25,16 +26,21 @@ public sealed class PasswordResetTests
         Assert.False(PasswordResetTokens.TryHash(created.Token + "!", out _));
     }
 
-    [Fact]
-    public void Generated_temporary_passwords_are_unambiguous_and_meet_the_platform_policy()
+    [Theory]
+    [InlineData(8, 16)]
+    [InlineData(16, 16)]
+    [InlineData(40, 40)]
+    public void Generated_temporary_passwords_are_unambiguous_and_meet_the_strictest_company_rules(int minimum,
+        int length)
     {
-        var policy = new PasswordPolicy(new SignInOptions());
+        var rules = new PasswordRules(minimum, true, true, true, true);
+        var identity = new PasswordIdentity("person@example.invalid", "Fictional Person", ["Fictional Company"]);
         for (var index = 0; index < 100; index++)
         {
-            var password = TemporaryPasswordGenerator.Create();
-            Assert.Equal(16, password.Length);
+            var password = TemporaryPasswordGenerator.Create(minimum);
+            Assert.Equal(length, password.Length);
             Assert.DoesNotContain(password, character => "0O1Il".Contains(character));
-            Assert.True(policy.Validate(password, "person@example.invalid", "Fictional Person").IsValid);
+            Assert.True(PasswordCheck.Evaluate(password, rules, identity, 128).IsValid);
         }
     }
 }

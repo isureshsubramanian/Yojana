@@ -22,6 +22,9 @@ public static class PasswordResetEndpoints
             .RequireRateLimiting(SecurityRateLimiting.PolicyName);
         auth.MapPost("/change-password", ChangeAsync).RequireAuthorization()
             .RequireRateLimiting(SecurityRateLimiting.PolicyName);
+        // POST so the reset or invitation token travels in the body, never in a URL that proxies and logs keep.
+        auth.MapPost("/password-rules", RulesAsync).AllowAnonymous()
+            .RequireRateLimiting(SecurityRateLimiting.PolicyName);
 
         var security = endpoints.MapGroup("/api/security")
             .RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
@@ -53,6 +56,25 @@ public static class PasswordResetEndpoints
         var selected = result.Completion.Tenants.Count == 1 ? result.Completion.Tenants[0] : null;
         await http.SignInAsync(SignInService.PrincipalFor(result.Completion.User, selected));
         return Results.Ok(SessionView.From(result.Completion.User, selected, result.Completion.Tenants));
+    }
+
+    /// <summary>
+    /// The rules that will apply when this person sets a password (ADR-0008 §7): lengths and switches only, no company
+    /// names. An unknown or expired token gets the defaults rather than an error, so the read cannot test tokens.
+    /// </summary>
+    private static async Task<IResult> RulesAsync(PasswordRulesRequest request, IPasswordPolicy policy,
+        PasswordResetService resets, InvitationService invitations, HttpContext http,
+        CancellationToken cancellationToken)
+    {
+        Guid? userId = null;
+        TenantId? invitedTo = null;
+        if (!string.IsNullOrEmpty(request.Reset)) userId = await resets.UserForLinkAsync(request.Reset, cancellationToken);
+        else if (!string.IsNullOrEmpty(request.Invitation))
+            invitedTo = await invitations.InvitedTenantAsync(request.Invitation, cancellationToken);
+        else if (http.User.Identity?.IsAuthenticated == true) userId = UserId(http.User);
+        var rules = userId is null && invitedTo is null ? PasswordRules.Default
+            : await policy.RulesForAsync(userId, invitedTo, cancellationToken);
+        return Results.Ok(rules);
     }
 
     private static async Task<IResult> ChangeAsync(ChangePasswordRequest request, PasswordResetService resets,
@@ -139,9 +161,11 @@ public static class PasswordResetEndpoints
     {
         try
         {
-            var (view, changed) = await settings.UpdateCurrentAsync(request.ResetLinkMinutes,
-                request.AdminTemporaryPasswordAllowed, request.InvitationValidDays, request.Version ?? string.Empty,
-                cancellationToken);
+            var (view, changed) = await settings.UpdateCurrentAsync(new PasswordSecuritySettingsView(
+                    request.ResetLinkMinutes, request.AdminTemporaryPasswordAllowed, request.InvitationValidDays,
+                    request.MinimumLength, request.RequireUppercase, request.RequireLowercase, request.RequireDigit,
+                    request.RequireSymbol, string.Empty),
+                request.Version ?? string.Empty, cancellationToken);
             if (changed.Count > 0)
             {
                 events.Add(SecurityEventKind.SettingsChanged, null, SelectedTenantId(http.User), UserId(http.User),
@@ -185,4 +209,6 @@ public sealed record PasswordResetCompleteRequest(string? Token, string? NewPass
 public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
 public sealed record AdminPasswordResetRequest(string? Mode);
 public sealed record PasswordSecuritySettingsRequest(int ResetLinkMinutes, bool AdminTemporaryPasswordAllowed,
-    int InvitationValidDays, string? Version);
+    int InvitationValidDays, int MinimumLength, bool RequireUppercase, bool RequireLowercase, bool RequireDigit,
+    bool RequireSymbol, string? Version);
+public sealed record PasswordRulesRequest(string? Reset, string? Invitation);

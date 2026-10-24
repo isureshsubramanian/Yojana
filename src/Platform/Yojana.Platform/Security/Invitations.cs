@@ -110,6 +110,16 @@ public sealed class InvitationService(
         return new InvitationInspection(invitation.TenantName, invitation.Roles, Mask(invitation.Email), exists);
     }
 
+    /// <summary>The company of a live invitation, for the password rules read (ADR-0008 §7); null otherwise.</summary>
+    public async Task<TenantId?> InvitedTenantAsync(string? token, CancellationToken cancellationToken)
+    {
+        var hash = TokenHash(token);
+        if (hash is null) return null;
+        return await db.UserInvitations.AsNoTracking().Where(i => i.TokenHash == hash &&
+                i.AcceptedAt == null && i.RevokedAt == null && i.ExpiresAt > clock.UtcNow)
+            .Select(i => (TenantId?)i.TenantId).FirstOrDefaultAsync(cancellationToken);
+    }
+
     public async Task<(AppUser User, TenantChoice Choice, IReadOnlyList<TenantChoice> Tenants)> AcceptNewAsync(
         string? token, string? password, SecurityRequestContext request, CancellationToken cancellationToken)
     {
@@ -119,7 +129,8 @@ public sealed class InvitationService(
         var invitation = await ValidInvitationAsync(hash, cancellationToken);
         if (await db.Users.AnyAsync(u => u.Email == invitation.Email, cancellationToken))
             throw new InvitationAccountExistsException();
-        var policy = passwordPolicy.Validate(password ?? string.Empty, invitation.Email, invitation.DisplayName);
+        var policy = await passwordPolicy.ValidateAsync(new PasswordCandidate(password ?? string.Empty,
+            invitation.Email, invitation.DisplayName, null, invitation.TenantId), cancellationToken);
         if (!policy.IsValid) throw new InvitationPasswordException(policy.Reasons);
 
         var user = new AppUser

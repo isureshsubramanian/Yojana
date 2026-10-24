@@ -15,5 +15,6 @@
   <ItemGroup>
     <EmbeddedResource Include="Scheduling/quartz_tables_sqlServer.sql" LogicalName="quartz_tables_sqlServer.sql" />
     <EmbeddedResource Include="Scheduling/migrations-4.6/*.sql" LogicalName="quartz_4.6_%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Security/common-passwords-100k.txt" LogicalName="common-passwords-100k.txt" />
   </ItemGroup>
 </Project>

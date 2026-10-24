@@ -35,21 +35,28 @@ public static class PasswordResetTokens
 
 public static class TemporaryPasswordGenerator
 {
-    private const string Alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+    private const string Upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+    private const string Lower = "abcdefghijkmnopqrstuvwxyz";
+    private const string Digits = "23456789";
+    private const string Symbols = "!#%+=?@";
+    private const string Alphabet = Upper + Lower + Digits + Symbols;
+    public const int ShortestLength = 16;
 
-    public static string Create()
+    /// <summary>
+    /// At least 16 characters, or the company's minimum when longer, with one of every character class so the
+    /// password meets any class rule a company sets (ADR-0008). Look-alike characters are left out.
+    /// </summary>
+    public static string Create(int minimumLength = ShortestLength)
     {
-        Span<char> result = stackalloc char[16];
-        Span<byte> sample = stackalloc byte[1];
-        var ceiling = byte.MaxValue - (byte.MaxValue + 1) % Alphabet.Length;
-        for (var index = 0; index < result.Length;)
-        {
-            RandomNumberGenerator.Fill(sample);
-            if (sample[0] > ceiling) continue;
-            result[index++] = Alphabet[sample[0] % Alphabet.Length];
-        }
+        var result = new char[Math.Max(ShortestLength, minimumLength)];
+        string[] required = [Upper, Lower, Digits, Symbols];
+        for (var index = 0; index < result.Length; index++)
+            result[index] = Pick(index < required.Length ? required[index] : Alphabet);
+        RandomNumberGenerator.Shuffle(result.AsSpan());
         return new string(result);
     }
+
+    private static char Pick(string alphabet) => alphabet[RandomNumberGenerator.GetInt32(alphabet.Length)];
 }
 
 public static class BrowserSummary

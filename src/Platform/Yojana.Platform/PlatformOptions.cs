@@ -82,7 +82,6 @@ public sealed class SignInOptions
     public int RequestLimitPerMinute { get; set; } = 120;
     public int SecurityEventRetentionDays { get; set; } = 400;
     public int MaintenanceBatchSize { get; set; } = 1_000;
-    public int MinimumPasswordLength { get; set; } = 12;
     public int MaximumPasswordLength { get; set; } = 128;
     public TimeSpan StampValidationInterval { get; set; } = TimeSpan.FromMinutes(1);
     public string AuditHmacKey { get; set; } = string.Empty;
@@ -92,8 +91,8 @@ public sealed class SignInOptions
         if (AccountFailureThreshold < 1 || AccountWindowMinutes < 1 || InitialLockoutMinutes < 1 ||
             MaximumLockoutMinutes < InitialLockoutMinutes || AddressFailureThreshold < 1 ||
             AddressWindowMinutes < 1 || RequestLimitPerMinute < 1 || SecurityEventRetentionDays < 1 ||
-            MaintenanceBatchSize is < 1 or > 10_000 || MinimumPasswordLength < 1 ||
-            MaximumPasswordLength < MinimumPasswordLength || StampValidationInterval < TimeSpan.Zero)
+            MaintenanceBatchSize is < 1 or > 10_000 ||
+            MaximumPasswordLength < Contracts.Security.PasswordRules.LongestMinimum || StampValidationInterval < TimeSpan.Zero)
         {
             throw new InvalidOperationException($"{SectionName} contains an invalid sign-in setting.");
         }

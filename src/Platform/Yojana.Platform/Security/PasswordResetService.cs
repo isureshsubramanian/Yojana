@@ -90,7 +90,8 @@ public sealed class PasswordResetService(
             return (null, null);
         }
 
-        var policy = passwordPolicy.Validate(newPassword, user.Email, user.DisplayName);
+        var policy = await passwordPolicy.ValidateAsync(
+            new PasswordCandidate(newPassword, user.Email, user.DisplayName, user.Id, null), cancellationToken);
         if (!policy.IsValid)
         {
             await transaction.RollbackAsync(cancellationToken);
@@ -113,6 +114,16 @@ public sealed class PasswordResetService(
         return (new PasswordResetCompletion(user, await signIn.TenantsForAsync(user.Id, cancellationToken)), null);
     }
 
+    /// <summary>The person a live reset link belongs to, for the password rules read (ADR-0008 §7); null otherwise.</summary>
+    public async Task<Guid?> UserForLinkAsync(string? token, CancellationToken cancellationToken)
+    {
+        if (!PasswordResetTokens.TryHash(token, out var tokenHash)) return null;
+        return await db.PasswordResetTokens.AsNoTracking()
+            .Where(row => row.TokenHash == tokenHash && row.UsedAt == null && row.SupersededAt == null &&
+                row.ExpiresAt > clock.UtcNow)
+            .Select(row => (Guid?)row.UserId).FirstOrDefaultAsync(cancellationToken);
+    }
+
     public async Task<(AppUser? User, PasswordPolicyResult? Policy, bool CurrentPasswordWrong)> ChangeAsync(
         Guid userId, string currentPassword, string newPassword, TenantId? tenantId, string? tenantName,
         SecurityRequestContext request, CancellationToken cancellationToken)
@@ -126,7 +137,8 @@ public sealed class PasswordResetService(
             return (null, null, true);
         }
 
-        var policy = passwordPolicy.Validate(newPassword, user.Email, user.DisplayName);
+        var policy = await passwordPolicy.ValidateAsync(
+            new PasswordCandidate(newPassword, user.Email, user.DisplayName, user.Id, null), cancellationToken);
         if (!policy.IsValid) return (null, policy, false);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         user.PasswordHash = PasswordHasher.Hash(newPassword);
@@ -174,8 +186,11 @@ public sealed class PasswordResetService(
         if (mode != "temporary") throw new ArgumentException("Mode must be link or temporary.", nameof(mode));
         var reason = await TemporaryUnavailableReasonAsync(actorId, target, cancellationToken);
         if (reason is not null) throw new TemporaryPasswordNotAllowedException(reason);
-        var temporaryPassword = TemporaryPasswordGenerator.Create();
-        var policy = passwordPolicy.Validate(temporaryPassword, target.Email, target.DisplayName);
+        var rules = await passwordPolicy.RulesForAsync(target.Id, tenantId, cancellationToken);
+        var temporaryPassword = TemporaryPasswordGenerator.Create(rules.MinimumLength);
+        var policy = await passwordPolicy.ValidateAsync(
+            new PasswordCandidate(temporaryPassword, target.Email, target.DisplayName, target.Id, tenantId),
+            cancellationToken);
         if (!policy.IsValid) throw new InvalidOperationException("The generated temporary password failed policy.");
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
