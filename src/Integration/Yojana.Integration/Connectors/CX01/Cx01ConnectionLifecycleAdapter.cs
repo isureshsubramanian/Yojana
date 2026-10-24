@@ -72,6 +72,9 @@ public sealed class Cx01ConnectionLifecycleAdapter(Cx01Settings settings, Cx01Cl
         if (configured.WebhooksAvailable) await notifications.UnsubscribeAsync(connectionId, ct);
     }
 
+    public async Task<bool> SupportsNotificationControlAsync(Guid connectionId, CancellationToken ct) =>
+        (await settings.GetAsync(connectionId, ct)).WebhooksAvailable;
+
     public async Task SuspendNotificationsAsync(Guid connectionId, CancellationToken ct)
     {
         var configured = await settings.GetAsync(connectionId, ct);

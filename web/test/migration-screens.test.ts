@@ -135,6 +135,13 @@ test("migration API adapter covers the merged endpoints and sends no browser act
   assert.doesNotMatch(api, /actor|requestedBy|confirmedBy/i);
 });
 
+test("migration hand-over resume remains available to tenant administrators only", () => {
+  assert.match(consoleScreen, /<FinalLoadResult[^>]*admin=\{admin\}/);
+  assert.match(consoleScreen, /const canResume = admin &&/);
+  assert.match(consoleScreen, /Resume the sync/);
+  assert.match(api, /resumeSync:.*\/resume-sync/);
+});
+
 const validationRun: MigrationValidation = {
   runId: "run-internal", batchId: "batch-internal", mapRunId: "map-internal", targetKind: "module",
   rehearsal: false, rehearsalNumber: null, status: "completed", startedAt: "2026-09-01T08:00:00Z", finishedAt: "2026-09-01T08:01:00Z",

@@ -1,6 +1,8 @@
+using System.Data;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Quartz;
 using Yojana.Integration.Connections;
 using Yojana.Integration.Connectors;
 using Yojana.Integration.Contracts;
@@ -9,85 +11,96 @@ using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Security.Audit;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Platform.Scheduling;
+using Yojana.Platform.Tenancy;
+using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.Coexistence;
 
 /// <summary>
 /// "Stop the sync" and its reverse — the rollback lever of the coexistence design (Coexistence/ROLLBACK.md).
-/// Stopping parks the connection as paused: every poller, watchdog, relay, backfill, sweep and outbox worker already
-/// works only on active connections, so no module write reaches the remote and nothing is read from it until a
-/// person resumes. Nothing is deleted: waiting outbound commands stay queued (and age into the dead-letter queue
-/// under max_outbox_age if the stop is long), and polling catches up from its watermark on resume.
+/// The local state and audit commit together. Remote notification control is a separate idempotent operation so
+/// an unavailable remote can never delay or obscure the local safety action.
 /// </summary>
-public sealed class SyncControl(IntegrationDbContext db, ITenantContext tenant, IClock clock, IServiceProvider services,
-    ConnectionHealthProjection health, IConnectionAuditSink audit)
+public sealed class SyncControl(IntegrationDbContext db, ITenantContext tenant, IClock clock,
+    IConnectionAuditSink audit, ConnectionHealthProjection health)
 {
-    public async Task<SyncControlResult> StopAsync(Guid connectionId, StopSync request, string actor, CancellationToken ct)
+    public async Task<SyncControlResult> StopAsync(Guid connectionId, StopSync request, string actor,
+        CancellationToken ct)
     {
-        CoexistenceGuard.Actor(actor);
-        var reason = CoexistenceGuard.Text(request.Reason, 2000, "stop_reason_required",
+        Actor(actor);
+        var reason = RequiredText(request.Reason, 2000, "stop_reason_required",
             "Say why the sync is being stopped, in at most 2000 characters.");
-        Connection connection;
-        await using (var operation = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId, connectionId, ct))
+        var now = clock.UtcNow;
+        int waiting;
+        await using (var operation = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId,
+            connectionId, ct))
+        await using (var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct))
         {
-            connection = await ConnectionAsync(connectionId, ct);
+            var connection = await ConnectionAsync(connectionId, ct);
+            waiting = await WaitingAsync(connectionId, ct);
             if (connection.Status == ConnectionStatus.Paused)
-                return new(connectionId, "stopped", false, await WaitingAsync(connectionId, ct), "already_stopped");
+                return new(connectionId, "stopped", connection.NotificationControlState, waiting,
+                    connection.NotificationControlFailureCode, "already_stopped");
             if (connection.Status != ConnectionStatus.Active)
-                throw new CoexistenceRuleException("connection_inactive", "Only a running connection can be stopped.");
-            // The local stop is committed first and never waits on the remote: rollback must work when the remote
-            // is unreachable, which is exactly when someone may need it.
+                throw new CommandRefusedException("connection_inactive", "Only a running connection can be stopped.");
+
             connection.Status = ConnectionStatus.Paused;
+            connection.SyncStoppedAt = now;
+            connection.SyncStoppedBy = actor;
+            connection.SyncStopReason = reason;
+            connection.SyncResumedAt = null;
+            QueueNotificationControl(connection, NotificationControlActions.Suspend, now);
+            // Saved explicitly: the state must not depend on which audit sink is configured flushing this context.
             await db.SaveChangesAsync(ct);
+            await Audit(connectionId, ConnectionAuditEventType.SyncStopped, actor,
+                new { Reason = reason, WaitingOutbound = waiting, Notifications = NotificationControlStates.Pending }, ct);
+            await transaction.CommitAsync(ct);
         }
-        var held = await RemoteAsync(connection.ConnectorCode, connectionId, suspend: true, ct);
-        var waiting = await WaitingAsync(connectionId, ct);
-        await Audit(connectionId, ConnectionAuditEventType.SyncStopped, actor,
-            new { Reason = reason, WaitingOutbound = waiting, NotificationsHeld = held }, ct);
         await health.RefreshAsync(connectionId, ct);
-        return new(connectionId, "stopped", held, waiting, held ? null : "notifications_not_held");
+        return new(connectionId, "stopped", NotificationControlStates.Pending, waiting);
     }
 
-    public async Task<SyncControlResult> ResumeAsync(Guid connectionId, ResumeSync request, string actor, CancellationToken ct)
+    public async Task<SyncControlResult> ResumeAsync(Guid connectionId, ResumeSync request, string actor,
+        CancellationToken ct)
     {
-        CoexistenceGuard.Actor(actor);
-        if (request.Note is { Length: > 2000 })
-            throw new CoexistenceRuleException("resume_note_invalid", "The note holds at most 2000 characters.");
-        Connection connection;
-        await using (var operation = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId, connectionId, ct))
+        Actor(actor);
+        var note = OptionalText(request.Note, 2000, "resume_note_invalid",
+            "The note holds at most 2000 characters.");
+        var now = clock.UtcNow;
+        int waiting;
+        await using (var operation = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId,
+            connectionId, ct))
+        await using (var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct))
         {
-            connection = await ConnectionAsync(connectionId, ct);
+            var connection = await ConnectionAsync(connectionId, ct);
+            waiting = await WaitingAsync(connectionId, ct);
             if (connection.Status == ConnectionStatus.Active)
-                return new(connectionId, "running", true, await WaitingAsync(connectionId, ct), "already_running");
+                return new(connectionId, "running", connection.NotificationControlState, waiting,
+                    connection.NotificationControlFailureCode, "already_running");
             if (connection.Status != ConnectionStatus.Paused || !connection.RegistrationCompleted)
-                throw new CoexistenceRuleException("connection_not_stopped", "Only a stopped connection can be resumed.");
+                throw new CommandRefusedException("connection_not_stopped", "Only a stopped connection can be resumed.");
+
             connection.Status = ConnectionStatus.Active;
+            connection.SyncResumedAt = now;
+            QueueNotificationControl(connection, NotificationControlActions.Resume, now);
             await db.SaveChangesAsync(ct);
+            await Audit(connectionId, ConnectionAuditEventType.SyncResumed, actor,
+                new { Note = note, WaitingOutbound = waiting, Notifications = NotificationControlStates.Pending }, ct);
+            await transaction.CommitAsync(ct);
         }
-        var released = await RemoteAsync(connection.ConnectorCode, connectionId, suspend: false, ct);
-        var waiting = await WaitingAsync(connectionId, ct);
-        await Audit(connectionId, ConnectionAuditEventType.SyncResumed, actor,
-            new { request.Note, WaitingOutbound = waiting, NotificationsReleased = released }, ct);
         await health.RefreshAsync(connectionId, ct);
-        // A notification stream that could not be released is picked up by the watchdog on its next run.
-        return new(connectionId, "running", released, waiting, released ? null : "notifications_left_to_watchdog");
+        return new(connectionId, "running", NotificationControlStates.Pending, waiting);
     }
 
-    private async Task<bool> RemoteAsync(string connectorCode, Guid connectionId, bool suspend, CancellationToken ct)
+    private static void QueueNotificationControl(Connection connection, string action, DateTime now)
     {
-        var adapter = services.GetKeyedService<IConnectionLifecycleAdapter>(connectorCode);
-        if (adapter is null) return false;
-        try
-        {
-            if (suspend) await adapter.SuspendNotificationsAsync(connectionId, ct);
-            else await adapter.ResumeNotificationsAsync(connectionId, ct);
-            return true;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // Remote text can carry connection details; the result and audit say only that it did not happen.
-            return false;
-        }
+        connection.NotificationControlState = NotificationControlStates.Pending;
+        connection.NotificationControlFailureCode = null;
+        connection.NotificationControlAction = action;
+        connection.NotificationControlNextAttemptAt = now;
+        connection.NotificationControlAttemptCount = 0;
+        connection.NotificationControlRevision++;
     }
 
     private Task<int> WaitingAsync(Guid connectionId, CancellationToken ct) =>
@@ -96,10 +109,142 @@ public sealed class SyncControl(IntegrationDbContext db, ITenantContext tenant, 
                 || x.Status == OutboundCommandStatus.Processing), ct);
 
     private async Task<Connection> ConnectionAsync(Guid connectionId, CancellationToken ct) =>
-        await db.Connections.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId && x.ConnectionId == connectionId, ct)
-        ?? throw new CoexistenceRuleException("connection_not_found", "The connection was not found.");
+        await db.Connections.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
+            && x.ConnectionId == connectionId, ct)
+        ?? throw new CommandRefusedException("connection_not_found", "The connection was not found.");
 
-    private Task<ConnectionAuditEvent> Audit(Guid connectionId, ConnectionAuditEventType kind, string actor, object details,
-        CancellationToken ct) => audit.AppendAsync(new(tenant.TenantId, Guid.CreateVersion7(clock.UtcNow), connectionId,
-            kind, actor, clock.UtcNow, JsonSerializer.Serialize(details, IntegrationContracts.Json)), ct);
+    private Task<ConnectionAuditEvent> Audit(Guid connectionId, ConnectionAuditEventType kind, string actor,
+        object details, CancellationToken ct) => audit.AppendAsync(new(tenant.TenantId,
+            Guid.CreateVersion7(clock.UtcNow), connectionId, kind, actor, clock.UtcNow,
+            JsonSerializer.Serialize(details, IntegrationContracts.Json)), ct);
+
+    private static void Actor(string actor)
+    {
+        if (string.IsNullOrWhiteSpace(actor))
+            throw new CommandRefusedException("audit_actor_required", "An authenticated actor is required.");
+    }
+
+    private static string RequiredText(string? value, int max, string rule, string message)
+    {
+        var trimmed = value?.Trim();
+        if (string.IsNullOrEmpty(trimmed) || trimmed.Length > max)
+            throw new CommandRefusedException(rule, message);
+        return trimmed;
+    }
+
+    private static string? OptionalText(string? value, int max, string rule, string message)
+    {
+        var trimmed = value?.Trim();
+        if (trimmed?.Length > max) throw new CommandRefusedException(rule, message);
+        return string.IsNullOrEmpty(trimmed) ? null : trimmed;
+    }
+}
+
+/// <summary>Owns remote suspend/resume attempts. The persisted desired action makes every retry idempotent.</summary>
+public sealed class SyncNotificationControl(IntegrationDbContext db, ITenantContext tenant, IClock clock,
+    IServiceProvider services)
+{
+    public static readonly TimeSpan DefaultRemoteTimeout = TimeSpan.FromSeconds(15);
+
+    public async Task<int> ProcessDueAsync(CancellationToken ct, TimeSpan? remoteTimeout = null)
+    {
+        var due = await db.Connections.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
+                && x.NotificationControlAction != null && x.NotificationControlNextAttemptAt <= clock.UtcNow)
+            .OrderBy(x => x.NotificationControlNextAttemptAt).ThenBy(x => x.ConnectionId)
+            .Select(x => x.ConnectionId).Take(20).ToListAsync(ct);
+        var processed = 0;
+        foreach (var id in due)
+        {
+            if (await ProcessAsync(id, remoteTimeout ?? DefaultRemoteTimeout, ct)) processed++;
+        }
+        return processed;
+    }
+
+    private async Task<bool> ProcessAsync(Guid connectionId, TimeSpan remoteTimeout, CancellationToken ct)
+    {
+        // The connection lock is held only to read and to record, never across the remote call: stop and resume take
+        // the same lock and must answer at once even while the remote is slow (ADR-0016). The revision check after
+        // the call discards an outcome that a newer stop or resume has overtaken.
+        string action, connectorCode;
+        long revision;
+        await using (var operation = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId,
+            connectionId, ct))
+        {
+            var due = await db.Connections.AsNoTracking().SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
+                && x.ConnectionId == connectionId && x.NotificationControlAction != null
+                && x.NotificationControlNextAttemptAt <= clock.UtcNow, ct);
+            if (due is null) return false;
+            (action, revision, connectorCode) = (due.NotificationControlAction!, due.NotificationControlRevision,
+                due.ConnectorCode);
+        }
+
+        var adapter = services.GetKeyedService<IConnectionLifecycleAdapter>(connectorCode);
+        var supported = adapter is not null && await adapter.SupportsNotificationControlAsync(connectionId, ct);
+        string? failureCode = null;
+        if (supported)
+        {
+            try
+            {
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeout.CancelAfter(remoteTimeout);
+                if (action == NotificationControlActions.Suspend)
+                    await adapter!.SuspendNotificationsAsync(connectionId, timeout.Token);
+                else
+                    await adapter!.ResumeNotificationsAsync(connectionId, timeout.Token);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                failureCode = exception is OperationCanceledException
+                    ? "timeout" : Yojana.Relay.Contracts.RemoteFailureClassifier.Classify(exception).Code;
+            }
+        }
+
+        await using (var operation = await ConnectionOperationLock.ForConnectionAsync(db, tenant.TenantId,
+            connectionId, ct))
+        {
+            var connection = await db.Connections.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
+                && x.ConnectionId == connectionId, ct);
+            if (connection is null || connection.NotificationControlRevision != revision
+                || connection.NotificationControlAction != action)
+                return false;
+            if (!supported)
+                Complete(connection, NotificationControlStates.NotSupported, null);
+            else if (failureCode is null)
+                Complete(connection, action == NotificationControlActions.Suspend
+                    ? NotificationControlStates.Held : NotificationControlStates.NotHeld, null);
+            else
+            {
+                connection.NotificationControlState = action == NotificationControlActions.Suspend
+                    ? NotificationControlStates.NotHeld : NotificationControlStates.Held;
+                connection.NotificationControlFailureCode = failureCode;
+                connection.NotificationControlAttemptCount++;
+                connection.NotificationControlNextAttemptAt =
+                    clock.UtcNow.Add(Backoff(connection.NotificationControlAttemptCount));
+            }
+            await db.SaveChangesAsync(ct);
+        }
+        return true;
+    }
+
+    private static void Complete(Connection connection, string state, string? failureCode)
+    {
+        connection.NotificationControlState = state;
+        connection.NotificationControlFailureCode = failureCode;
+        connection.NotificationControlAction = null;
+        connection.NotificationControlNextAttemptAt = null;
+    }
+
+    internal static TimeSpan Backoff(int attempt) =>
+        TimeSpan.FromSeconds(Math.Min(Math.Pow(2, Math.Clamp(attempt, 1, 10)), 900));
+}
+
+[DisallowConcurrentExecution]
+public sealed class SyncNotificationControlJob(ITenantContextSetter setter, SyncNotificationControl control)
+    : TenantJob(setter)
+{
+    public const string JobName = "integration.sync-notification-control";
+    public const string Cron = "0/10 * * * * ?";
+
+    protected override Task ExecuteForTenant(IJobExecutionContext context, CancellationToken cancellationToken) =>
+        control.ProcessDueAsync(cancellationToken);
 }

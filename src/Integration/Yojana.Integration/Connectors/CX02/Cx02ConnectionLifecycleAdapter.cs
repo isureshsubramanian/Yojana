@@ -89,6 +89,9 @@ public sealed class Cx02ConnectionLifecycleAdapter(
     public Task UnsubscribeAsync(Guid connectionId, CancellationToken ct) =>
         notifications.UnsubscribeAsync(connectionId, ct);
 
+    public async Task<bool> SupportsNotificationControlAsync(Guid connectionId, CancellationToken ct) =>
+        (await settings.GetAsync(connectionId, ct)).NotificationBaseUri is not null;
+
     public Task SuspendNotificationsAsync(Guid connectionId, CancellationToken ct) =>
         notifications.PauseAsync(connectionId, ct);
 

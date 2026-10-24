@@ -143,7 +143,7 @@ function MigrationConsole() {
     {startNotice && <div className={`note${startNotice.startsWith("Extraction refused") ? " bad" : ""}`} role="status">{startNotice}</div>}
     {admin && source && <LicenceBanner source={source} onSaved={updated => setSources(current => current.map(item => item.sourceId === updated.sourceId ? updated : item))} />}
     <PhaseStrip key={phaseBatchId || "none"} batch={phaseBatch} profile={profile} canonicalisation={canonicalisation} reconstruction={reconstruction} map={map} validation={validation} load={load} readiness={readiness} latestLoadRequestedBy={loads.result?.items[0]?.requestedByName ?? null} admin={admin} onChanged={loadChanged} />
-    {load?.handOver && migrationApplyKind(load) === "final" && <FinalLoadResult load={load} batchDisplayNumber={phaseBatch?.displayNumber ?? "the loaded extraction"} onChanged={loadChanged} />}
+    {load?.handOver && migrationApplyKind(load) === "final" && <FinalLoadResult load={load} batchDisplayNumber={phaseBatch?.displayNumber ?? "the loaded extraction"} admin={admin} onChanged={loadChanged} />}
     {totals && <KpiStrip label="Extraction figures" kpis={[
       ...(serials === undefined ? [] : [{ label: "Serials in the source", value: serials.toLocaleString(), detail: "serial-master rows read" }]),
       { label: "Rows gone from the source", value: totals.absent.toLocaleString(), detail: "kept and marked absent" },
@@ -265,10 +265,10 @@ function LoadAction({ label, state, primary, hint, onClick }: { label: string; s
   return <div className="migration-load-action"><button type="button" className={`btn sm${state.disabled || !primary ? "" : " primary"}`} disabled={state.disabled} onClick={onClick}>{label}</button>{state.reasons.map(reason => <span className="migration-disabled-reason" key={reason}>{reason}</span>)}{!state.disabled && hint && <span className="migration-disabled-reason">{hint}</span>}</div>;
 }
 
-function FinalLoadResult({ load, batchDisplayNumber, onChanged }: { load: MigrationApply; batchDisplayNumber: string; onChanged: () => void | Promise<void> }) {
+function FinalLoadResult({ load, batchDisplayNumber, admin, onChanged }: { load: MigrationApply; batchDisplayNumber: string; admin: boolean; onChanged: () => void | Promise<void> }) {
   const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null);
   const sentence = handOverSentence({ batchDisplayNumber, handOver: load.handOver });
-  const canResume = !!load.handOver && !load.handOver.note && load.handOver.syncState !== "running";
+  const canResume = admin && !!load.handOver && !load.handOver.note && load.handOver.syncState !== "running";
   const resume = async () => {
     if (!load.handOver) return;
     setBusy(true); setError(null);

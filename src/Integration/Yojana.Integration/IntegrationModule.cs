@@ -82,6 +82,9 @@ public static class IntegrationModule
         builder.Services.AddScoped<CoexistenceDriftService>();
         builder.Services.AddScoped<CoexistenceConflicts>();
         builder.Services.AddScoped<SyncControl>();
+        builder.Services.AddScoped<SyncNotificationControl>();
+        builder.Services.AddSingleton(RecurringTenantJob.For<SyncNotificationControlJob>(
+            SyncNotificationControlJob.JobName, SyncNotificationControlJob.Cron));
         builder.Services.AddScoped<ParallelRun>();
         builder.Services.AddScoped<ParallelRunDashboardService>();
         builder.Services.AddScoped<IMigrationGoLiveFacts, Yojana.Integration.LegacyMigration.Apply.MigrationGoLiveFactsReader>();

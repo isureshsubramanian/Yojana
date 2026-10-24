@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Yojana.Integration.Coexistence;
@@ -12,6 +13,7 @@ using Yojana.Integration.Notifications;
 using Yojana.Integration.Security.Credentials;
 using Yojana.Integration.Security.Cryptography;
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.DatabaseTests;
 
@@ -174,12 +176,19 @@ public sealed class CoexistenceTests(IntegrationHostFixture fixture)
         await scope.ServiceProvider.GetRequiredService<Cx01WebhookMaintenance>()
             .SubscribeAsync(id, new Uri("https://fictional.invalid/notifications"), default);
         var control = scope.ServiceProvider.GetRequiredService<SyncControl>();
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var storedWatermarks = await db.ConnectionPollWatermarks.AsNoTracking().Where(x => x.ConnectionId == id)
+            .ToDictionaryAsync(x => x.EntityType, x => x.Watermark);
 
-        Assert.Equal("stop_reason_required", (await Assert.ThrowsAsync<CoexistenceRuleException>(() =>
-            control.StopAsync(id, new(""), Actor, default))).Rule);
+        foreach (var invalidReason in new[] { "", " \t" })
+            Assert.Equal("stop_reason_required", (await Assert.ThrowsAsync<CommandRefusedException>(() =>
+                control.StopAsync(id, new(invalidReason), Actor, default))).Rule);
         var stopped = await control.StopAsync(id, new("Month-end freeze requested by the customer."), Actor, default);
         Assert.Equal("stopped", stopped.SyncState);
-        Assert.True(stopped.NotificationsHeld);
+        Assert.Equal(NotificationControlStates.Pending, stopped.Notifications);
+        Assert.False(simulator.WebhookSubscriptionPaused);
+        Assert.Equal(1, await scope.ServiceProvider.GetRequiredService<SyncNotificationControl>()
+            .ProcessDueAsync(default));
         Assert.True(simulator.WebhookSubscriptionPaused);
         Assert.Equal("already_stopped", (await control.StopAsync(id, new("Again"), Actor, default)).Warning);
 
@@ -197,28 +206,101 @@ public sealed class CoexistenceTests(IntegrationHostFixture fixture)
 
         var resumed = await control.ResumeAsync(id, new("Freeze lifted."), Actor, default);
         Assert.Equal("running", resumed.SyncState);
-        Assert.True(resumed.NotificationsHeld);
+        Assert.Equal(NotificationControlStates.Pending, resumed.Notifications);
+        Assert.Equal(1, await scope.ServiceProvider.GetRequiredService<SyncNotificationControl>()
+            .ProcessDueAsync(default));
         Assert.Equal(1, simulator.SubscriptionResumeCount);
+        var resumedWatermarks = await db.ConnectionPollWatermarks.AsNoTracking().Where(x => x.ConnectionId == id)
+            .ToDictionaryAsync(x => x.EntityType, x => x.Watermark);
+        Assert.Equal(storedWatermarks, resumedWatermarks);
+        await db.ConnectionPollWatermarks.Where(x => x.ConnectionId == id).ExecuteUpdateAsync(update => update
+            .SetProperty(x => x.NextPollAt, fixture.Clock.UtcNow));
+        var requestsBeforeResumePoll = simulator.RequestCount;
+        await scope.ServiceProvider.GetRequiredService<ConnectionPollingService>().PollDueAsync(default);
+        Assert.True(simulator.RequestCount > requestsBeforeResumePoll);
+        var detail = await scope.ServiceProvider.GetRequiredService<ConnectionQueries>().DetailAsync(id, default);
+        Assert.Equal(NotificationControlStates.NotHeld, detail.Sync!.Notifications);
+        Assert.True(detail.Sync.CatchingUp);
+        var seed = scope.ServiceProvider.GetRequiredKeyedService<IConnectorWatermarkSeed>(Cx01Capabilities.ConnectorCode);
+        var caughtUp = seed.WatermarkAt(fixture.Clock.UtcNow.AddSeconds(1));
+        await db.ConnectionPollWatermarks.Where(x => x.ConnectionId == id).ExecuteUpdateAsync(update => update
+            .SetProperty(x => x.Watermark, caughtUp));
+        Assert.False((await scope.ServiceProvider.GetRequiredService<ConnectionQueries>()
+            .DetailAsync(id, default)).Sync!.CatchingUp);
         Assert.Equal(1, await scope.ServiceProvider.GetRequiredService<CoexistenceDriftService>().ScanScheduledAsync(default));
-        var events = await scope.ServiceProvider.GetRequiredService<IntegrationDbContext>().ConnectionEvents
+        var events = await db.ConnectionEvents
             .Where(x => x.ConnectionId == id).Select(x => x.EventType).ToListAsync();
         Assert.Contains("SyncStopped", events);
         Assert.Contains("SyncResumed", events);
     }
 
     [DatabaseFact]
-    public async Task Stop_succeeds_when_the_remote_cannot_hold_notifications()
+    public async Task Stop_answers_immediately_when_the_remote_times_out_and_the_job_records_the_cause()
     {
-        await using var simulator = new Cx01Simulator { FailUnsubscribe = true };
+        await using var simulator = new Cx01Simulator();
         var (tenant, id) = await RegisteredAsync(simulator);
         using var scope = fixture.ScopeFor(tenant);
+        var signing = await scope.ServiceProvider.GetRequiredService<ConnectionCredentialProtector>().EncryptAsync(
+            tenant, id, Cx01WebhookEndpoints.SigningCredentialPurpose, new byte[32], null,
+            fixture.Clock.UtcNow.AddDays(90), default);
+        await scope.ServiceProvider.GetRequiredService<IConnectionCredentialStore>().SaveAsync(signing, default);
+        await scope.ServiceProvider.GetRequiredService<Cx01WebhookMaintenance>()
+            .SubscribeAsync(id, new Uri("https://fictional.invalid/notifications"), default);
+        simulator.DelayNextRequest = TimeSpan.FromSeconds(5);
+        var timer = Stopwatch.StartNew();
         var stopped = await scope.ServiceProvider.GetRequiredService<SyncControl>()
             .StopAsync(id, new("Remote under maintenance."), Actor, default);
+        timer.Stop();
         Assert.Equal("stopped", stopped.SyncState);
+        Assert.Equal(NotificationControlStates.Pending, stopped.Notifications);
+        Assert.True(timer.Elapsed < TimeSpan.FromSeconds(1));
         var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
-        Assert.Equal(ConnectionStatus.Paused, (await db.Connections.SingleAsync(x => x.ConnectionId == id)).Status);
+        var locallyStopped = await db.Connections.SingleAsync(x => x.ConnectionId == id);
+        Assert.Equal(ConnectionStatus.Paused, locallyStopped.Status);
+        Assert.Equal(1, await scope.ServiceProvider.GetRequiredService<SyncNotificationControl>()
+            .ProcessDueAsync(default, TimeSpan.FromMilliseconds(50)));
+        db.ChangeTracker.Clear();
+        var attempted = await db.Connections.SingleAsync(x => x.ConnectionId == id);
+        Assert.Equal(NotificationControlStates.NotHeld, attempted.NotificationControlState);
+        Assert.Equal("timeout", attempted.NotificationControlFailureCode);
+        Assert.NotNull(attempted.NotificationControlNextAttemptAt);
         var audit = await db.ConnectionEvents.SingleAsync(x => x.ConnectionId == id && x.EventType == "SyncStopped");
         Assert.DoesNotContain("Fictional remote detail", audit.DetailsJson);
+    }
+
+    [DatabaseFact]
+    public async Task Resume_answers_while_the_job_waits_on_a_slow_remote_and_the_overtaken_outcome_is_discarded()
+    {
+        await using var simulator = new Cx01Simulator();
+        var (tenant, id) = await RegisteredAsync(simulator);
+        using var scope = fixture.ScopeFor(tenant);
+        var signing = await scope.ServiceProvider.GetRequiredService<ConnectionCredentialProtector>().EncryptAsync(
+            tenant, id, Cx01WebhookEndpoints.SigningCredentialPurpose, new byte[32], null,
+            fixture.Clock.UtcNow.AddDays(90), default);
+        await scope.ServiceProvider.GetRequiredService<IConnectionCredentialStore>().SaveAsync(signing, default);
+        await scope.ServiceProvider.GetRequiredService<Cx01WebhookMaintenance>()
+            .SubscribeAsync(id, new Uri("https://fictional.invalid/notifications"), default);
+        var control = scope.ServiceProvider.GetRequiredService<SyncControl>();
+        await control.StopAsync(id, new("Remote is slow today."), Actor, default);
+
+        // The job is inside the remote call when the administrator resumes: resume must not wait for it.
+        simulator.DelayNextRequest = TimeSpan.FromSeconds(3);
+        using var jobScope = fixture.ScopeFor(tenant);
+        var job = jobScope.ServiceProvider.GetRequiredService<SyncNotificationControl>()
+            .ProcessDueAsync(default, TimeSpan.FromSeconds(10));
+        await Task.Delay(TimeSpan.FromMilliseconds(300));
+        var timer = Stopwatch.StartNew();
+        var resumed = await control.ResumeAsync(id, new("Remote is back."), Actor, default);
+        timer.Stop();
+        Assert.Equal("running", resumed.SyncState);
+        Assert.True(timer.Elapsed < TimeSpan.FromSeconds(1), $"resume took {timer.Elapsed}");
+
+        Assert.Equal(0, await job);
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        db.ChangeTracker.Clear();
+        var row = await db.Connections.SingleAsync(x => x.ConnectionId == id);
+        Assert.Equal(NotificationControlActions.Resume, row.NotificationControlAction);
+        Assert.Equal(NotificationControlStates.Pending, row.NotificationControlState);
     }
 
     [DatabaseFact]

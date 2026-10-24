@@ -29,6 +29,7 @@ public interface IConnectionLifecycleAdapter
     /// stream failed. Polling catches up from its watermark after resume, so a connector without the feature may
     /// keep the default.
     /// </summary>
+    Task<bool> SupportsNotificationControlAsync(Guid connectionId, CancellationToken ct) => Task.FromResult(false);
     Task SuspendNotificationsAsync(Guid connectionId, CancellationToken ct) => Task.CompletedTask;
     Task ResumeNotificationsAsync(Guid connectionId, CancellationToken ct) => Task.CompletedTask;
 }
