@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import { Icon } from "../shell/Icons";
-import { PauseEndedScan, ScanRepeatSuppressor, ScanTimer, separatorForControlKey, type ScanSubmission } from "./scan";
+import { AltKeypadCode, PauseEndedScan, ScanRepeatSuppressor, ScanTimer, separatorForControlKey, type ScanSubmission } from "./scan";
 import { useScanSettings } from "./useScanSettings";
 
 export interface ScanInputProps {
@@ -36,6 +36,8 @@ export function ScanInput({ id, value, onChange, onSubmit, placeholder, ariaLabe
     clear: handle => window.clearTimeout(handle as number),
   }));
   const repeats = useRef(new ScanRepeatSuppressor());
+  // Windows composes Alt + number-pad codes itself; other systems type the digits (see AltKeypadCode).
+  const altCode = useRef(new AltKeypadCode(/Windows/.test(navigator.userAgent)));
   const noteTimer = useRef<number | null>(null);
   const controlled = value !== undefined;
   const current = controlled ? value : inner;
@@ -62,25 +64,58 @@ export function ScanInput({ id, value, onChange, onSubmit, placeholder, ariaLabe
     if (noteTimer.current !== null) window.clearTimeout(noteTimer.current);
   }, []);
 
+  const insertAtCaret = (input: HTMLInputElement, text: string) => {
+    const at = currentRef.current;
+    const start = input.selectionStart ?? at.length;
+    const end = input.selectionEnd ?? start;
+    set(at.slice(0, start) + text + at.slice(end));
+    const caret = start + text.length;
+    window.requestAnimationFrame(() => input.setSelectionRange(caret, caret));
+  };
+  const scanKey = () => pause.current.key(performance.now(), settings.endPauseMs, () => currentRef.current, emit);
+
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    const alt = altCode.current.keyDown(e.key);
+    if (alt.insert) {
+      // The field shows the inserted character only after the next render, so a printable key that ended the
+      // sequence is inserted with it rather than left to the browser, which would type into the stale value.
+      const typed = !alt.consume && e.key.length === 1 && !e.ctrlKey && !e.metaKey ? e.key : "";
+      insertAtCaret(e.currentTarget, alt.insert + typed);
+      if (typed) {
+        e.preventDefault();
+        scanKey();
+        return;
+      }
+    }
+    if (alt.consume) {
+      e.preventDefault();
+      scanKey();
+      return;
+    }
     const separator = separatorForControlKey(e.key, e.ctrlKey);
     if (separator) {
       e.preventDefault();
-      const input = e.currentTarget;
-      const start = input.selectionStart ?? current.length;
-      const end = input.selectionEnd ?? start;
-      set(current.slice(0, start) + separator + current.slice(end));
-      pause.current.key(performance.now(), settings.endPauseMs, () => currentRef.current, emit);
+      insertAtCaret(e.currentTarget, separator);
+      scanKey();
       return;
     }
     if (e.key === "Enter") {
       e.preventDefault();
-      const entered = pause.current.enter(current);
-      if (!current.trim()) return;
+      const value = currentRef.current;
+      const entered = pause.current.enter(value);
+      if (!value.trim()) return;
       emit(entered);
       return;
     }
-    if (e.key.length === 1) pause.current.key(performance.now(), settings.endPauseMs, () => currentRef.current, emit);
+    if (e.key.length === 1) scanKey();
+  };
+
+  const onKeyUp = (e: KeyboardEvent<HTMLInputElement>) => {
+    const insert = altCode.current.keyUp(e.key);
+    if (insert) {
+      insertAtCaret(e.currentTarget, insert);
+      scanKey();
+    }
   };
 
   const onInput = (e: ChangeEvent<HTMLInputElement>) => set(e.target.value);
@@ -102,6 +137,7 @@ export function ScanInput({ id, value, onChange, onSubmit, placeholder, ariaLabe
         value={current}
         onChange={onInput}
         onKeyDown={onKeyDown}
+        onKeyUp={onKeyUp}
         autoFocus={autoFocus}
         disabled={disabled}
         data-scan-focus={primary ? "" : undefined}

@@ -1,3 +1,5 @@
+using System.Numerics;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Yojana.Serialisation.Identity;
@@ -70,6 +72,11 @@ public static partial class ScanParser
             return new ScanResult(ScanFormat.Mh10, raw, cleaned, aim, ParseMh10(cleaned), recovered);
         }
 
+        if (TypedSeparatorSplit(cleaned) is { } split)
+        {
+            return new ScanResult(ScanFormat.Gs1, raw, split.Candidate, aim, split.Fields, recovered);
+        }
+
         // A symbology prefix, brackets or a separator says the scanner sent GS1; digits alone only suggest it.
         var declaredGs1 = aim is "]d2" or "]C1" or "]Q3" or "]e0" || cleaned.StartsWith('(') || cleaned.Contains(Gs);
         if (declaredGs1 || LooksLikeGs1(cleaned))
@@ -107,6 +114,82 @@ public static partial class ScanParser
 
         cleaned = cleaned.Replace("<RS>", Rs.ToString(), StringComparison.OrdinalIgnoreCase).Replace("<EOT>", Eot.ToString(), StringComparison.OrdinalIgnoreCase);
         return (cleaned, recovered);
+    }
+
+    public const string TypedSeparatorError =
+        "The separator arrived as the digits 0029, so this split is a guess. Set the scanner to send the separator as Ctrl+] and scan again.";
+
+    /// <summary>
+    /// OD-88: a scanner on factory settings sends the separator as Alt + 0029, which macOS types as the digits, so a
+    /// variable-length field runs into the next one. When the scan carries no separator and reading one "0029" as the
+    /// separator gives a clean parse with more fields, the split is returned with the field before it flagged: the
+    /// guess is shown but never accepted as the identifier.
+    /// </summary>
+    private static (string Candidate, List<ScanField> Fields)? TypedSeparatorSplit(string cleaned)
+    {
+        if (cleaned.Contains(Gs) || cleaned.StartsWith('(') || !LooksLikeGs1(cleaned))
+        {
+            return null;
+        }
+
+        var occurrences = new List<int>();
+        for (var at = cleaned.IndexOf("0029", 2, StringComparison.Ordinal); at >= 0 && occurrences.Count < 4; at = cleaned.IndexOf("0029", at + 4, StringComparison.Ordinal))
+        {
+            occurrences.Add(at);
+        }
+
+        var original = Gs1ElementStrings.Parse(cleaned);
+        var originalClean = original.Count > 0 && original.All(e => e.Errors.Count == 0) ? original.Count : 0;
+        // Fewest separators first: each set of occurrences read as separators is one candidate (at most 15).
+        var sets = Enumerable.Range(1, (1 << occurrences.Count) - 1).OrderBy(set => BitOperations.PopCount((uint)set)).ThenBy(set => set);
+        foreach (var set in sets)
+        {
+            var candidate = new StringBuilder(cleaned.Length);
+            var splits = new HashSet<int>();
+            var from = 0;
+            for (var i = 0; i < occurrences.Count; i++)
+            {
+                if ((set & (1 << i)) == 0)
+                {
+                    continue;
+                }
+
+                candidate.Append(cleaned, from, occurrences[i] - from);
+                splits.Add(candidate.Length);
+                candidate.Append(Gs);
+                from = occurrences[i] + 4;
+            }
+
+            candidate.Append(cleaned, from, cleaned.Length - from);
+            var text = candidate.ToString();
+            var elements = Gs1ElementStrings.Parse(text);
+            if (elements.Count < 2 || elements.Count <= originalClean || elements.Any(e => e.Errors.Count > 0))
+            {
+                continue;
+            }
+
+            // The flagged fields are the ones that end where a separator was read.
+            var fields = new List<ScanField>(elements.Count);
+            var position = 0;
+            foreach (var e in elements)
+            {
+                position += e.ApplicationIdentifier.Length + e.Value.Length;
+                var endsAtSplit = splits.Contains(position);
+                if (position < text.Length && text[position] == Gs)
+                {
+                    position++;
+                }
+
+                fields.Add(new ScanField(e.ApplicationIdentifier, e.Value, e.Description, endsAtSplit ? [TypedSeparatorError] : []));
+            }
+
+            if (fields.Count(f => f.Errors.Count > 0) == splits.Count)
+            {
+                return (text, fields);
+            }
+        }
+
+        return null;
     }
 
     private static bool IsIso15434(string value) => value.StartsWith("[)>", StringComparison.Ordinal);

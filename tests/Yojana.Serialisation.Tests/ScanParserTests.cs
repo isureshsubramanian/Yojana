@@ -148,4 +148,48 @@ public sealed class ScanParserTests
         Assert.Null(scan["01"]);
         Assert.NotEmpty(scan.Fields.First(f => f.Key == "01").Errors);
     }
+
+    // OD-88: macOS types a factory-set scanner's Alt + 0029 separator as the digits. Fictional label values.
+    [Fact]
+    public void A_serial_run_into_the_batch_by_typed_0029_is_split_and_flagged_not_accepted()
+    {
+        // Without the flag this parses cleanly as one wrong serial "HXC4M5AFPEK3002910L1" (20 characters, AI 21's limit).
+        var scan = ScanParser.Parse("0109506000134352" + "21HXC4M5AFPEK3" + "0029" + "10L1");
+        Assert.Equal(ScanFormat.Gs1, scan.Format);
+        Assert.True(scan.HasErrors);
+        Assert.Null(scan["21"]);
+        var serial = scan.Fields.Single(f => f.Key == "21");
+        Assert.Equal("HXC4M5AFPEK3", serial.Value);
+        Assert.Equal([ScanParser.TypedSeparatorError], serial.Errors);
+        Assert.Equal("L1", scan["10"]);
+        Assert.Equal("09506000134352", scan["01"]);
+    }
+
+    [Fact]
+    public void A_typed_0029_that_makes_the_scan_too_long_to_parse_is_still_split_and_flagged()
+    {
+        var scan = ScanParser.Parse("0109506000134352" + "21HXC4M5AFPEK3" + "0029" + "10LOT-2610-0003" + "0029" + "11261009");
+        Assert.Equal(ScanFormat.Gs1, scan.Format);
+        Assert.Equal("HXC4M5AFPEK3", scan.Fields.Single(f => f.Key == "21").Value);
+        Assert.NotEmpty(scan.Fields.Single(f => f.Key == "21").Errors);
+        Assert.Null(scan["21"]);
+    }
+
+    [Fact]
+    public void Digits_0029_inside_a_scan_with_real_separators_are_data()
+    {
+        var scan = ScanParser.Parse("0109506000134352" + "21HX00291" + "\u001d" + "10L1");
+        Assert.False(scan.HasErrors);
+        Assert.Equal("HX00291", scan["21"]);
+    }
+
+    [Theory]
+    [InlineData("1721 0000007724188-P001291")]
+    [InlineData("HXC4M5AFPEK3002910L1")]
+    public void Plain_serials_are_not_split_at_0029(string raw)
+    {
+        var scan = ScanParser.Parse(raw);
+        Assert.Equal(ScanFormat.Plain, scan.Format);
+        Assert.Equal(raw, scan.Cleaned);
+    }
 }

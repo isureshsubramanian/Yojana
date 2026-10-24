@@ -35,7 +35,59 @@ const literalTokens = [/\{GS\}/g, /<GS>/g, /\\x1d/gi, /\\u001d/gi];
 export function recoverGroupSeparators(text: string): string {
   let out = text;
   for (const token of literalTokens) out = out.replace(token, GROUP_SEPARATOR);
-  return out;
+  // Windows may type an Alt-code separator as well as the one AltKeypadCode inserted; GS1 never has two in a row.
+  return out.replace(/\u001d{2,}/g, GROUP_SEPARATOR);
+}
+
+export interface AltKeypadStep {
+  /** True when the key belongs to an Alt + number-pad sequence and must not reach the field. */
+  consume: boolean;
+  /** The character a finished sequence stands for, to insert at the caret. */
+  insert: string | null;
+}
+
+/**
+ * A scanner on factory settings types a character it has no key for (the GS1 separator, ASCII 29) as an Alt code:
+ * NumLock (Clear on a Mac keyboard), Alt held, the code on the number pad, Alt released, NumLock again. Windows
+ * composes the character; macOS types the digits, so "0029" ran a serial into the next field (OD-88). Digits after
+ * an Alt press are held back and become the character when Alt is released. Where the system composes Alt codes
+ * itself, digits pass through and only control characters, which a text field drops, are inserted here.
+ */
+export class AltKeypadCode {
+  private digits: string | null = null;
+  private readonly systemComposes: boolean;
+
+  constructor(systemComposes: boolean) {
+    this.systemComposes = systemComposes;
+  }
+
+  keyDown(key: string): AltKeypadStep {
+    if (key === "Clear" || key === "NumLock") return { consume: true, insert: this.finish() };
+    // A scanner sometimes sends Alt twice before the digits; the sequence stays open.
+    if (key === "Alt") {
+      this.digits ??= "";
+      return { consume: true, insert: null };
+    }
+    if (this.digits !== null && /^\d$/.test(key) && this.digits.length < 4) {
+      this.digits += key;
+      return { consume: !this.systemComposes, insert: null };
+    }
+    return { consume: false, insert: this.finish() };
+  }
+
+  keyUp(key: string): string | null {
+    return key === "Alt" ? this.finish() : null;
+  }
+
+  private finish(): string | null {
+    const digits = this.digits;
+    this.digits = null;
+    if (!digits) return null;
+    const code = Number.parseInt(digits, 10);
+    if (code < 1 || code > 255) return null;
+    if (code >= 32 && this.systemComposes) return null;
+    return String.fromCharCode(code);
+  }
 }
 
 export interface ScanSubmission {

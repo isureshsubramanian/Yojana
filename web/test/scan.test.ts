@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { DEFAULT_SCANNING_POLICY, GROUP_SEPARATOR, PauseEndedScan, ScanRepeatSuppressor, ScanSettingsSessionCache, ScanTimer, displayScan, recoverGroupSeparators, separatorForControlKey, submission } from "../src/components/scan.ts";
+import { AltKeypadCode, DEFAULT_SCANNING_POLICY, GROUP_SEPARATOR, PauseEndedScan, ScanRepeatSuppressor, ScanSettingsSessionCache, ScanTimer, displayScan, recoverGroupSeparators, separatorForControlKey, submission } from "../src/components/scan.ts";
 
 test("Ctrl+] is the FNC1 group separator; other keys are not", () => {
   assert.equal(separatorForControlKey("]", true), GROUP_SEPARATOR);
@@ -122,4 +122,60 @@ test("scanning settings and every resolving scan screen reject web addresses", (
     assert.ok(text.includes("isUrlScanFormat"), screen);
     assert.ok(text.includes("This is a web address, not a serial"), screen);
   }
+});
+
+// Replays key events through AltKeypadCode the way ScanInput applies them: consumed keys are dropped, inserted
+// characters land at the end, other single-character keys are typed.
+function typeKeys(alt: AltKeypadCode, events: readonly string[]): string {
+  let field = "";
+  for (const event of events) {
+    if (event.startsWith("up:")) {
+      field += alt.keyUp(event.slice(3)) ?? "";
+      continue;
+    }
+    const step = alt.keyDown(event);
+    field += step.insert ?? "";
+    if (!step.consume && event.length === 1) field += event;
+  }
+  return field;
+}
+
+// The owner's probe of a scanner on factory settings (OD-88): Clear, Alt, 0, 0, 2, 9, Alt released, Clear.
+const separatorKeys = ["Clear", "Alt", "0", "0", "2", "9", "up:Alt", "Clear"];
+
+test("an Alt + number-pad separator becomes the group separator instead of the digits 0029", () => {
+  const keys = [..."21HXC4M5AFPEK3", ...separatorKeys, ..."10LOT2510"];
+  assert.equal(typeKeys(new AltKeypadCode(false), keys), `21HXC4M5AFPEK3${GROUP_SEPARATOR}10LOT2510`);
+});
+
+test("Alt sent twice before the digits still gives one separator", () => {
+  const keys = ["2", "1", "A", "Clear", "Alt", "Alt", "0", "0", "2", "9", "up:Alt", "Clear", "1", "0", "B"];
+  assert.equal(typeKeys(new AltKeypadCode(false), keys), `21A${GROUP_SEPARATOR}10B`);
+});
+
+test("a sequence ended by the next key rather than Alt released still gives the separator", () => {
+  assert.equal(typeKeys(new AltKeypadCode(false), ["A", "Alt", "0", "0", "2", "9", "B"]), `A${GROUP_SEPARATOR}B`);
+});
+
+test("where the system composes Alt codes, digits pass through and only control characters are added", () => {
+  const windows = new AltKeypadCode(true);
+  const separatorStep = windows.keyDown("Alt");
+  assert.equal(separatorStep.consume, true);
+  for (const digit of "0029") assert.equal(windows.keyDown(digit).consume, false);
+  assert.equal(windows.keyUp("Alt"), GROUP_SEPARATOR);
+  windows.keyDown("Alt");
+  for (const digit of "0065") windows.keyDown(digit);
+  assert.equal(windows.keyUp("Alt"), null);
+});
+
+test("printable Alt codes are typed where the system does not compose them", () => {
+  assert.equal(typeKeys(new AltKeypadCode(false), ["Alt", "0", "0", "6", "5", "up:Alt"]), "A");
+});
+
+test("ordinary typing, a bare Alt press and Clear add nothing", () => {
+  assert.equal(typeKeys(new AltKeypadCode(false), ["Clear", "1", "2", "Alt", "up:Alt", "3"]), "123");
+});
+
+test("a separator typed twice, by the system and the scan box, is kept once", () => {
+  assert.equal(recoverGroupSeparators(`21A${GROUP_SEPARATOR}${GROUP_SEPARATOR}10B`), `21A${GROUP_SEPARATOR}10B`);
 });
