@@ -47,7 +47,7 @@ public sealed class DemoCatalogue
                 profiles.Register(new ItemSerialisationProfile(item.Id, item.Code, profile.TrackingMode,
                     profile.SerialisationPoint, profile.RetentionClass, profile.SerialReusePolicy,
                     profile.AsBuiltCompleteness, profile.SerialScheme, profile.ExpiryRequired, profile.ItemClass,
-                    RequiresSanitisation: profile.RequiresSanitisation));
+                    RequiresSanitisation: profile.RequiresSanitisation, ModelNumbers: profile.ModelNumbers));
             }
 
             foreach (var policy in item.WarrantyPolicies ?? [])
@@ -97,7 +97,8 @@ public sealed class DemoCatalogue
         string SerialScheme,
         bool ExpiryRequired = false,
         string? ItemClass = null,
-        bool RequiresSanitisation = false);
+        bool RequiresSanitisation = false,
+        IReadOnlyList<string>? ModelNumbers = null);
 
     public sealed record ItemWarranty(string CoverageFamily, string PolicyCode, bool EntitlementRequiredOnSale = true);
     public sealed record CatalogueParty(Guid Id, string Code, string? Name, string PartyType);

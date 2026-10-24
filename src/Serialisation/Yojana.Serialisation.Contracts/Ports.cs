@@ -18,7 +18,9 @@ public sealed record ItemSerialisationProfile(
     Guid? SuccessorItemId = null,
     DateOnly? LastServiceDate = null,
     /// <summary>Item-class policy fact: a unit cannot be sold or shipped until its media sanitisation is recorded.</summary>
-    bool RequiresSanitisation = false)
+    bool RequiresSanitisation = false,
+    /// <summary>Model and part numbers printed on the item label; used to keep them out of serial fields.</summary>
+    IReadOnlyList<string>? ModelNumbers = null)
 {
     public static class TrackingModes
     {

@@ -93,7 +93,11 @@ public static class CommissionUnitsHandler
 
             var ids = new List<PreparedIdentifier>(line.Identifiers.Count);
             foreach (var input in line.Identifiers)
+            {
+                ModelNumberRules.RefuseUnlessConfirmed(ModelNumberRules.Matches(profile, input.Type, input.RawValue),
+                    command.ConfirmedNotModelNumber, command.ModelNumberConfirmationReason);
                 ids.Add(await identifiers.PrepareCaptureAsync(input, command.ItemId, null, cancellationToken));
+            }
             var reasons = ids.Where(p => p.Blocks).SelectMany(p => p.Validation.Reasons.Select(r => p.Input.Type + ":" + r)).ToList();
             if (profile.ExpiryRequired && line.ExpiryDate is null)
             {
@@ -119,9 +123,13 @@ public static class CommissionUnitsHandler
         var probe = prepared.SelectMany(p => p.Identifiers.Select(id => new UnitIdentifier { TenantId = tenantId, IdentifierId = Guid.Empty, UnitId = Guid.Empty, Type = id.Input.Type, Scheme = id.Policy.Scheme, ScopeKey = id.ScopeKey, RawValue = id.Input.RawValue, NormalisedValue = id.Normalised, ActorRef = command.ActorRef })).ToList();
         var conflicts = (await bulk.ValidateIdentifiersAsync(probe, cancellationToken)).Where(c => c.Reason == "already_open_on_another_unit").ToDictionary(c => (c.Scheme, c.ScopeKey, c.NormalisedValue), c => c.ExistingUnitId!.Value);
         var reuseFrom = new Dictionary<int, (Guid SourceUnit, List<Guid> IdentifiersToClose, string Outcome)>();
+        var sameItemDuplicates = new HashSet<int>();
         if (conflicts.Count > 0)
         {
             var holders = await db.Units.AsNoTracking().Where(u => u.TenantId == tenantId && conflicts.Values.Contains(u.UnitId)).ToDictionaryAsync(u => u.UnitId, u => u.LifecycleStatus, cancellationToken);
+            var holderItems = await db.ItemAssignments.AsNoTracking()
+                .Where(row => row.TenantId == tenantId && conflicts.Values.Contains(row.UnitId) && row.ValidTo == null)
+                .ToDictionaryAsync(row => row.UnitId, row => row.ItemId, cancellationToken);
             foreach (var (index, ids) in prepared.ToList())
             {
                 var hits = ids.Where(id => conflicts.ContainsKey((id.Policy.Scheme, id.ScopeKey, id.Normalised))).ToList();
@@ -136,8 +144,12 @@ public static class CommissionUnitsHandler
                 }
                 else
                 {
+                    if (holderUnits.Any(unitId => holderItems.GetValueOrDefault(unitId) == command.ItemId))
+                        sameItemDuplicates.Add(index);
+                    var reasons = hits.Select(h => $"{h.Input.Type}:identifier_in_use:{conflicts[(h.Policy.Scheme, h.ScopeKey, h.Normalised)]:N}").ToList();
+                    if (sameItemDuplicates.Contains(index)) reasons.Add(ModelNumberRules.SameItemDuplicateHint);
                     results[index] = new CommissionLineResult(index, command.Lines[index].ClientReference, null, CommissionLineResult.Refused,
-                        hits.Select(h => $"{h.Input.Type}:identifier_in_use:{conflicts[(h.Policy.Scheme, h.ScopeKey, h.Normalised)]:N}").ToList());
+                        reasons);
                     prepared.RemoveAll(p => p.Index == index);
                 }
             }
@@ -238,6 +250,8 @@ public static class CommissionUnitsHandler
                 ["identifiers"] = ids.Select(id => new { type = id.Input.Type, scheme = id.Policy.Scheme, value = id.Normalised, issuer_party_ref = id.Input.IssuerPartyRef }).ToList(),
             };
             if (commissionedLate) attributes["commissioned_late"] = true;
+            if (command.ConfirmedNotModelNumber)
+                attributes["reason"] = command.ModelNumberConfirmationReason?.Trim();
             if (reuseFrom.TryGetValue(index, out var reuse))
             {
                 attributes["derived_from_unit_id"] = reuse.SourceUnit;

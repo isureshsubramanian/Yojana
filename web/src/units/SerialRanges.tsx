@@ -7,8 +7,10 @@ import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { usePeople } from "../people/people";
-import { ErrorNote, Kv, Section, useActor } from "./common";
+import { ErrorNote, Kv, Section } from "./common";
 import { fmtDate, humanise, shortId } from "./format";
+import { isModelNumberRefusal, ModelNumberConfirmation } from "./ModelNumberConfirmation";
+import type { ApiError } from "../api/client";
 
 const PAGE = 50;
 const STATUSES = ["reserved", "commissioning", "exhausted", "released"];
@@ -17,7 +19,6 @@ const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function rangeTone(status: string) { return status === "exhausted" ? "ok" : status === "commissioning" ? "warn" : status === "released" ? "bad" : "neutral"; }
 
 export function Component() {
-  const actor = useActor();
   const [schemes, setSchemes] = useState<SerialSchemeRow[]>([]);
   const [scheme, setScheme] = useState("");
   const [status, setStatus] = useState<string | null>(null);
@@ -34,6 +35,7 @@ export function Component() {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [modelNumberRefusal, setModelNumberRefusal] = useState<ApiError | null>(null);
   const [result, setResult] = useState<AllocateSerialRangeResult | null>(null);
   const [active, setActive] = useState<string | null>(null);
   const names = useReferenceNames({
@@ -58,15 +60,15 @@ export function Component() {
   const definition = schemes.find((s) => s.code === scheme);
   const ready = scheme && quantity > 0 && !!allocatedTo && GUID.test(allocatedTo.id) && !busy;
 
-  const allocate = async () => {
-    setBusy(true); setError(null); setResult(null);
+  const allocate = async (modelNumberConfirmationReason?: string) => {
+    setBusy(true); setError(null); setModelNumberRefusal(null); setResult(null);
     try {
-      const r = await ranges.allocate({ commandId: newCommandId(), scheme, quantity, allocatedTo: allocatedTo!, eventTime: now(), actorRef: actor, legalEntityId: DEFAULT_LEGAL_ENTITY, requestedStart: start || null, randomised, itemId, note: note || null });
+      const r = await ranges.allocate({ commandId: newCommandId(), scheme, quantity, allocatedTo: allocatedTo!, eventTime: now(), legalEntityId: DEFAULT_LEGAL_ENTITY, start: start || null, randomised, itemId, note: note || null, confirmedNotModelNumber: !!modelNumberConfirmationReason, modelNumberConfirmationReason: modelNumberConfirmationReason ?? null });
       setResult(r);
       setVersion((v) => v + 1);
-    } catch (e) { setError(e); } finally { setBusy(false); }
+    } catch (e) { if (isModelNumberRefusal(e)) setModelNumberRefusal(e); else setError(e); } finally { setBusy(false); }
   };
-  useModEnter(allocate, !ready);
+  useModEnter(() => void allocate(), !ready);
 
   const columns: GridColumn<SerialRangeRow>[] = [
     { key: "range", label: "Range", width: 23, mono: true, render: (r) => r.randomised ? <>{shortId(r.rangeId)}<span className="sub">randomised list</span></> : <>{r.startValue}<span className="sub serial">→ {r.endValue}</span></> },
@@ -97,7 +99,7 @@ export function Component() {
           </div>
           <div className="actions">
             <Link className="btn ghost" to="/units">Cancel</Link>
-            <button type="button" className="btn primary" disabled={!ready} aria-busy={busy} onClick={allocate}>Allocate {quantity.toLocaleString()} serials<Shortcut keys="mod+enter" /></button>
+            <button type="button" className="btn primary" disabled={!ready} aria-busy={busy} onClick={() => void allocate()}>Allocate {quantity.toLocaleString()} serials<Shortcut keys="mod+enter" /></button>
           </div>
         </div>
 
@@ -126,6 +128,7 @@ export function Component() {
                   </div>
                 )}
                 <ErrorNote error={error} />
+                <ModelNumberConfirmation refusal={modelNumberRefusal} busy={busy} onDismiss={() => setModelNumberRefusal(null)} onConfirm={allocate} />
               </div>
             </div>
             <div className="card-footer"><span>The range is reserved now; units are created only as serials are commissioned.</span></div>

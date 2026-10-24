@@ -81,6 +81,10 @@ public sealed class IdentifierService(SerialisationDbContext db, IIdentifierPoli
         return hit;
     }
 
+    public Task<bool> IsUnitOfItemAsync(Guid unitId, Guid itemId, CancellationToken cancellationToken) =>
+        db.ItemAssignments.AsNoTracking().AnyAsync(row => row.TenantId == tenant.TenantId && row.UnitId == unitId
+            && row.ItemId == itemId && row.ValidTo == null, cancellationToken);
+
     /// <summary>Every unit holding (scheme, value) in any scope: a lookup without an item must disambiguate (Identity rule 1).</summary>
     public async Task<IReadOnlyList<OpenIdentifierHolder>> HoldersOfValueAsync(string scheme, string normalised, CancellationToken cancellationToken)
     {

@@ -879,6 +879,7 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
                 IdentifierType.InternalSerial, correctedSerial, IdentifierCorrectionReason.Typo, At.AddHours(2.5),
                 "quality.user", Entity), db, scope.ServiceProvider.GetRequiredService<IUnitEventWriter>(),
             scope.ServiceProvider.GetRequiredService<IdentifierService>(),
+            scope.ServiceProvider.GetRequiredService<EffectiveItemProfiles>(),
             scope.ServiceProvider.GetRequiredService<CorrectionLedger>(),
             scope.ServiceProvider.GetRequiredService<ITenantContext>(),
             scope.ServiceProvider.GetRequiredService<IClock>(), CancellationToken.None);

@@ -6,12 +6,13 @@ using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Identity;
 using Yojana.Serialisation.Ledger;
+using Yojana.Serialisation.Ports;
 
 namespace Yojana.Serialisation.Commands;
 
 /// <summary>Narrow application seam for the pending-identifier path and additional identifiers on an existing unit.</summary>
 public sealed class IdentifierAssignmentService(SerialisationDbContext db, IUnitEventWriter writer, IdentifierService identifiers,
-    ITenantContext tenant, IClock clock)
+    EffectiveItemProfiles items, ITenantContext tenant, IClock clock)
 {
     public async Task<AssignIdentifierResult> ExecuteAsync(AssignIdentifier command, CancellationToken cancellationToken)
     {
@@ -26,6 +27,9 @@ public sealed class IdentifierAssignmentService(SerialisationDbContext db, IUnit
         }
 
         var itemId = await db.ItemAssignments.AsNoTracking().Where(a => a.TenantId == tenantId && a.UnitId == unit.UnitId && a.ValidTo == null).Select(a => (Guid?)a.ItemId).FirstOrDefaultAsync(cancellationToken);
+        if (itemId is { } assignedItem && await items.GetAsync(assignedItem, command.EventTime, cancellationToken) is { } profile)
+            ModelNumberRules.RefuseUnlessConfirmed(ModelNumberRules.Matches(profile, command.Identifier.Type, command.Identifier.RawValue),
+                command.ConfirmedNotModelNumber, command.ModelNumberConfirmationReason);
         // Customer asset tags are scoped to the owning party (ADR-0001 customer_asset_tag); the open ownership row says who that is.
         var ownerPartyRef = await db.Episodes.AsNoTracking().Where(e => e.TenantId == tenantId && e.UnitId == unit.UnitId && e.Kind == EpisodeKind.Ownership && e.ValidTo == null).Select(e => e.PartyRef).FirstOrDefaultAsync(cancellationToken);
         var prepared = identifiers.Prepare(command.Identifier, itemId, ownerPartyRef);
@@ -41,7 +45,9 @@ public sealed class IdentifierAssignmentService(SerialisationDbContext db, IUnit
 
         if (await identifiers.HolderOfAsync(prepared.Policy.Scheme, prepared.ScopeKey, prepared.Normalised, cancellationToken) is { } holder)
         {
-            throw new CommandRefusedException("identifier_in_use", $"{command.Identifier.Type} '{prepared.Normalised}' is open on unit {holder.UnitId} ({holder.LifecycleStatus}).", "two records for one physical unit are joined with MergeUnits (P3); otherwise choose another value");
+            var hint = itemId is { } duplicateItem && await identifiers.IsUnitOfItemAsync(holder.UnitId, duplicateItem, cancellationToken)
+                ? " " + ModelNumberRules.SameItemDuplicateHint : "";
+            throw new CommandRefusedException("identifier_in_use", $"{command.Identifier.Type} '{prepared.Normalised}' is open on unit {holder.UnitId} ({holder.LifecycleStatus}).{hint}", "two records for one physical unit are joined with MergeUnits (P3); otherwise choose another value");
         }
 
         var wasPending = unit.LifecycleStatus == LifecycleStatus.PendingIdentifier;
@@ -56,7 +62,7 @@ public sealed class IdentifierAssignmentService(SerialisationDbContext db, IUnit
                 UnitId = unit.UnitId, EventTime = command.EventTime, EventType = UnitEventType.IdentifierAssigned, PresetEventId = eventId, BizStep = "commissioning",
                 LegalEntityId = command.LegalEntityId, ActorRef = command.ActorRef, DocumentType = command.Document?.Type, DocumentId = command.Document?.Id, DocumentLine = command.Document?.Line,
                 IdempotencyKey = key,
-                Attributes = JsonObjectText.Of(new { command_id = command.CommandId, identifier_type = command.Identifier.Type, raw_value = command.Identifier.RawValue, normalised_value = prepared.Normalised, artefacts = prepared.Artefacts, warnings = prepared.Validation.IsValid ? null : prepared.Validation.Reasons }),
+                Attributes = JsonObjectText.Of(new { command_id = command.CommandId, identifier_type = command.Identifier.Type, raw_value = command.Identifier.RawValue, normalised_value = prepared.Normalised, artefacts = prepared.Artefacts, warnings = prepared.Validation.IsValid ? null : prepared.Validation.Reasons, reason = command.ConfirmedNotModelNumber ? command.ModelNumberConfirmationReason?.Trim() : null }),
                 Delta = wasPending ? new CurrentStateDelta { LifecycleStatus = next, Disposition = UnitLifecycle.DispositionFor(next) } : null,
             },
         ], cancellationToken);

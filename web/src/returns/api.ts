@@ -17,7 +17,7 @@ export const returnsApi = {
   authorise: (id: string) => api<unknown>(`/api/rmas/${id}/authorise`, { method: "POST", body: { commandId: newCommandId(), rmaId: id, eventTime: now() } }),
   dispatch: (id: string, body: { dispatchedAt: string; carrierName: string | null; trackingReference: string | null }) =>
     api<unknown>(`/api/rmas/${id}/dispatch`, { method: "POST", body: { commandId: newCommandId(), rmaId: id, ...body } }),
-  receive: (id: string, body: { receivingLocationId: string; dispatchedAt: string | null; receivedAt: string; lines: { rmaLineId: string; receivedIdentifier: { value: string; issuerPartyRef: null; identifierType: null; erpSerialId: null } | null; conditionGrade: string; valuationRule: string; outcome: string; exceptionNote: string | null }[] }) =>
+  receive: (id: string, body: { receivingLocationId: string; dispatchedAt: string | null; receivedAt: string; lines: { rmaLineId: string; receivedIdentifier: { value: string; issuerPartyRef: null; identifierType: null; erpSerialId: null } | null; conditionGrade: string; valuationRule: string; outcome: string; exceptionNote: string | null }[]; confirmedNotModelNumber?: boolean; modelNumberConfirmationReason?: string | null }) =>
     api<unknown>(`/api/rmas/${id}/receive`, { method: "POST", body: { commandId: newCommandId(), rmaId: id, ...body, eventTime: body.receivedAt } }),
   disposition: (id: string, lines: { rmaLineId: string; disposition: string; vendorPartyRef: string | null }[]) =>
     api<unknown>(`/api/rmas/${id}/disposition`, { method: "POST", body: { commandId: newCommandId(), rmaId: id, lines, effectiveDate: new Date().toISOString().slice(0, 10), eventTime: now() } }),

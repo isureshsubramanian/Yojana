@@ -30,11 +30,11 @@ export interface ScanResult { format: number | string; raw: string; cleaned: str
 
 export interface IdentifierInput { type: string; rawValue: string; issuerPartyRef?: string | null }
 export interface CommissionLine { identifiers: IdentifierInput[]; clientReference?: string | null; lotId?: string | null; expiryDate?: string | null }
-export interface CommissionUnits { commandId: string; itemId: string; origin: string; lines: CommissionLine[]; eventTime: string; actorRef: string; legalEntityId: string; document?: DocumentRef | null; locationId?: string | null; locationKind?: string | null; source?: string | null; skipInvalidLines?: boolean; brandIsOurs?: boolean | null }
+export interface CommissionUnits { commandId: string; itemId: string; origin: string; lines: CommissionLine[]; eventTime: string; legalEntityId: string; document?: DocumentRef | null; locationId?: string | null; locationKind?: string | null; source?: string | null; skipInvalidLines?: boolean; brandIsOurs?: boolean | null; confirmedNotModelNumber?: boolean; modelNumberConfirmationReason?: string | null }
 export interface CommissionLineResult { index: number; clientReference: string | null; unitId: string | null; outcome: "commissioned" | "pending" | "refused" | "duplicate" | string; reasons: string[] }
 export interface CommissionUnitsResult { lines: CommissionLineResult[]; commissioned: number; pending: number; refused: number; duplicates: number }
 
-export interface CorrectIdentifier { commandId: string; unitId: string; identifierType: string; newRawValue: string; reason: string; eventTime: string; actorRef?: string; legalEntityId: string; approverRef?: string | null; note?: string | null }
+export interface CorrectIdentifier { commandId: string; unitId: string; identifierType: string; newRawValue: string; reason: string; eventTime: string; legalEntityId: string; approverRef?: string | null; note?: string | null; confirmedNotModelNumber?: boolean; modelNumberConfirmationReason?: string | null }
 export interface CorrectIdentifierResult { unitId: string; supersededIdentifierId: string; newIdentifierId: string; oldNormalisedValue: string; newNormalisedValue: string }
 export interface AssignIdentifier { commandId: string; unitId: string; identifier: IdentifierInput; eventTime: string; actorRef: string; legalEntityId: string }
 export interface UnitFlagCommand { commandId: string; unitId: string; flag: string; eventTime: string; actorRef?: string; legalEntityId: string; reason?: string | null }
@@ -43,7 +43,7 @@ export interface UnitFlagResult { unitId: string; flags: string[]; changed: bool
 export interface SerialSchemeRow { code: string; identifierType: string; prefix: string; blockFormat: string | null; separator: string; counterDigits: number; example: string }
 export interface SerialRangeRow { rangeId: string; scheme: string; startValue: string | null; endValue: string | null; count: number; commissionedCount: number; status: string; randomised: boolean; allocatedToDocumentType: string | null; allocatedToDocumentId: string | null; itemId: string | null; reservedAt: string; reservedBy: string; note: string | null }
 export interface SerialRangeList { page: Page<SerialRangeRow>; scheme: string; ranges: number; serialsIssued: number; nextFree: string | null }
-export interface AllocateSerialRange { commandId: string; scheme: string; quantity: number; allocatedTo: DocumentRef; eventTime: string; actorRef: string; legalEntityId: string; requestedStart?: string | null; randomised?: boolean; itemId?: string | null; note?: string | null }
+export interface AllocateSerialRange { commandId: string; scheme: string; quantity: number; allocatedTo: DocumentRef; eventTime: string; legalEntityId: string; start?: string | null; randomised?: boolean; itemId?: string | null; note?: string | null; confirmedNotModelNumber?: boolean; modelNumberConfirmationReason?: string | null }
 export interface AllocateSerialRangeResult { rangeId: string; scheme: string; startValue: string | null; endValue: string | null; count: number; randomised: boolean; serials: string[]; startMoved: boolean; [extra: string]: unknown }
 
 export interface CompletenessQuery { serials?: string[] | null; selectionId?: string | null; document?: DocumentRef | null; effectiveAt?: string | null; skip?: number; take?: number }
