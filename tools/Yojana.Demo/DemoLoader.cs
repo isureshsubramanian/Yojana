@@ -105,6 +105,7 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
         await StepAsync("load questions, knowledge and training stories",
             CreatePhaseThirteenScenariosAsync, cancellationToken);
         await StepAsync("publish customer e-mail templates", CreateCustomerMailTemplatesAsync, cancellationToken);
+        await StepAsync("verify document labels resolve to recorded units", VerifyDocumentLabelsAsync, cancellationToken);
         await PrintSummaryAsync(cancellationToken);
     }
 
@@ -277,7 +278,7 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
     {
         var unit = Units("DW-300")[40];
         var postedAt = DemoDates.At(today.AddDays(-2), 8);
-        var shipmentRef = new DocumentRef("shipment", DemoIds.FromName("p7:shipment:3pl"));
+        var shipmentRef = Document("DN-3PL-2601", "shipment");
         var shipment = new ShipmentDocument(shipmentRef, Party("C-NANDIRA").Id, postedAt,
             [new DocumentLine(1, Item("DW-300").Id, 1, [])], DemoIds.FromName("site:C-NANDIRA"),
             Party("L-PARCELORA").Id, CustomerPoRef: "PO-NANDIRA-3PL-01");
@@ -633,7 +634,7 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
                 currentCertificateSettings.Version), cancellationToken);
         }
         var serialisation = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
-        var firstReceipt = Document("GR-DIMM-2601", "receipt");
+        var firstReceipt = Document("GR-2026-0901", "receipt");
         var existingAnchorFact = await serialisation.Events.AsNoTracking()
             .Where(@event => @event.DocumentType == firstReceipt.Type && @event.DocumentId == firstReceipt.Id
                 && @event.EventType == UnitEventType.Commissioned)
@@ -717,9 +718,9 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
 
     private async Task PostReceiptsAsync(CancellationToken cancellationToken)
     {
-        await ReceiptAsync("GR-DIMM-2601", Party("V-MEMRYX").Id, today.AddDays(-110),
+        await ReceiptAsync("GR-2026-0901", Party("V-MEMRYX").Id, today.AddDays(-110),
             [Line("MD-64R", 1, 172)], 172, cancellationToken);
-        await ReceiptAsync("GR-NVME-2601", Party("V-FLASHORA").Id, today.AddDays(-106),
+        await ReceiptAsync("GR-2026-0902", Party("V-FLASHORA").Id, today.AddDays(-106),
             [Line("ND-384", 1, 96)], 96, cancellationToken);
         await ReceiptAsync("GR-HDD-2601", Party("V-DISKHAVEN").Id, today.AddDays(-102),
             [Line("HD-20T", 1, 28)], 28, cancellationToken);
@@ -882,7 +883,7 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
                 Envelope("shipment:" + sale.Key, shippedAt, legalEntityId), shipmentRef), cancellationToken);
 
             var deliveredAt = shippedAt.AddDays(2);
-            var deliveryRef = new DocumentRef("delivery_confirmation", DemoIds.FromName("delivery:" + sale.Key));
+            var deliveryRef = Document(DeliveryNumber(sale.ShipmentNumber), "delivery_confirmation");
             documents.Add(new DeliveryConfirmation(deliveryRef, shipmentRef, deliveredAt, shipment.ShipToLocationId));
             await InvokeAsync<ConsumedEventResult>(new SalesDeliveryConfirmed(
                 Envelope("delivery:" + sale.Key, deliveredAt, legalEntityId), deliveryRef), cancellationToken);
@@ -1460,7 +1461,7 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
             component.ParentUnitId, [component.LinkId], preparedAt, actor, LegalEntityId, "service_vendor_return"), cancellationToken);
         await InvokeAsync<OpenOwnershipResult>(new OpenOwnership(DemoIds.FromName("p5:vendor-component-owner"),
             component.UnitId, customer.Id, PartyType.Customer, EpisodeReason.ServiceInstallation, preparedAt.AddMinutes(1),
-            actor, LegalEntityId, EpisodeSource.Service, Document: Document("IN-HPC-2601", "invoice")), cancellationToken);
+            actor, LegalEntityId, EpisodeSource.Service, Document: Document("IN-2026-2077", "invoice")), cancellationToken);
         await InvokeAsync<ChangeCustodyResult>(new ChangeCustody(DemoIds.FromName("p5:vendor-component-custody"),
             component.UnitId, LocationKind.CustomerSite, EpisodeReason.ServiceInstallation, preparedAt.AddMinutes(2),
             actor, LegalEntityId, DemoIds.FromName("site:" + customer.Code), customer.Id, PartyType.Customer,
@@ -1981,6 +1982,37 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
         Console.WriteLine($"This run added {claimsCreated + p5ClaimsCreated} claim(s) and approved {recoveriesApproved} vendor answer(s); stable command ids make re-runs no-ops.");
     }
 
+    private async Task VerifyDocumentLabelsAsync(CancellationToken cancellationToken)
+    {
+        using var scope = TenantScope();
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var labelledTypes = new[] { "production_order", "receipt", "shipment", "invoice", "delivery_confirmation" };
+        var live = await db.Events.AsNoTracking()
+            .Where(row => row.DocumentId != null && labelledTypes.Contains(row.DocumentType!))
+            .Select(row => new { Type = row.DocumentType!, Id = row.DocumentId!.Value })
+            .Distinct().ToListAsync(cancellationToken);
+        var archived = await db.ArchivedEvents.AsNoTracking()
+            .Where(row => row.DocumentId != null && labelledTypes.Contains(row.DocumentType!))
+            .Select(row => new { Type = row.DocumentType!, Id = row.DocumentId!.Value })
+            .Distinct().ToListAsync(cancellationToken);
+        var recorded = live.Concat(archived).Select(row => (row.Type, row.Id)).ToHashSet();
+        var labels = catalogue.Documents.Values
+            .Where(row => labelledTypes.Contains(row.Type, StringComparer.Ordinal))
+            .ToDictionary(row => (row.Type, row.Id));
+
+        var orphaned = labels.Values
+            .Where(row => row.Type is "receipt" or "shipment" && !recorded.Contains((row.Type, row.Id)))
+            .Select(row => row.Number).OrderBy(number => number, StringComparer.Ordinal).ToList();
+        if (orphaned.Count > 0)
+            throw new InvalidOperationException("document labels without recorded units: " + string.Join(", ", orphaned));
+
+        var unlabelled = recorded.Where(reference => !labels.ContainsKey(reference))
+            .OrderBy(reference => reference.Type, StringComparer.Ordinal).ThenBy(reference => reference.Id)
+            .Select(reference => $"{reference.Type}:{reference.Id:D}").ToList();
+        if (unlabelled.Count > 0)
+            throw new InvalidOperationException("recorded documents without labels: " + string.Join(", ", unlabelled));
+    }
+
     private async Task ReceiptAsync(string number, Guid vendor, DateOnly day, IReadOnlyList<DocumentLine> lines,
         int expectedInbound, CancellationToken cancellationToken)
     {
@@ -2160,17 +2192,17 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
 
     private IReadOnlyList<SalePlan> SalesPlan() =>
     [
-        new("hpc", "DN-HPC-2601", "IN-HPC-2601", Party("C-NANDIRA"), Party("C-NANDIRA"),
+        new("hpc", "DN-2026-1042", "IN-2026-2077", Party("C-NANDIRA"), Party("C-NANDIRA"),
             [.. Units("RS-1100").Take(31), .. Units("SS-1110"), .. Units("NX-4850").Take(2)], "DE", DemoCurrency, "direct", 60),
-        new("hospital", "DN-HOSP-2601", "IN-HOSP-2601", Party("R-KEPLORA"), Party("C-VELMORA"),
+        new("hospital", "DN-HOSP-2601", "IN-2026-2081", Party("R-KEPLORA"), Party("C-VELMORA"),
             [Units("RT-1200T")[0], Units("RS-1520")[0], Units("LB-14")[4], Units("LB-14")[5]], "GB", DemoCurrency, "reseller", 55),
         new("bank", "DN-BANK-2601", "IN-BANK-2601", Party("D-GRIDLOOM"), Party("C-ASHVANE"),
             [Units("RS-1100")[31], .. Units("SS-1112"), .. Units("DW-300").Take(6), .. Units("LB-14").Take(4)], "IN", DemoCurrency, "distributor", 50),
         new("engineering", "DN-ENG-2601", "IN-ENG-2601", Party("R-CIRRAVUE"), Party("C-TORRENFOLD"),
             [Units("RS-1520")[1], Units("RG-4800")[0], Units("DW-300")[6], Units("DW-300")[7]], "DE", DemoCurrency, "reseller", 46),
-        new("studio", "DN-STUDIO-2601", "IN-STUDIO-2601", Party("C-MIREVA"), Party("C-MIREVA"),
+        new("studio", "DN-STUDIO-2601", "IN-2026-2088", Party("C-MIREVA"), Party("C-MIREVA"),
             [.. Units("PF-400").Take(3)], "GB", DemoCurrency, "direct", 42),
-        new("isp", "DN-ISP-2601", "IN-ISP-2601", Party("C-CLOUDMERE"), Party("C-CLOUDMERE"),
+        new("isp", "DN-2026-1055", "IN-ISP-2601", Party("C-CLOUDMERE"), Party("C-CLOUDMERE"),
             [.. Units("NX-4850").Skip(2), .. Units("NR-220")], "IN", DemoCurrency, "direct", 38),
         new("p5-bank", "DN-P5-BANK", "IN-P5-BANK", Party("C-ASHVANE"), Party("C-ASHVANE"),
             [.. Units("DW-300").Skip(8).Take(6)], "IN", DemoCurrency, "direct", 25),
@@ -2215,6 +2247,10 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
     private List<DemoUnit> Units(string code) => units.TryGetValue(code, out var rows) ? rows : [];
     private DocumentRef Document(string number, string type) => catalogue.Documents.TryGetValue(number, out var row)
         ? new DocumentRef(row.Type, row.Id) : new DocumentRef(type, DemoIds.FromName("document:" + number));
+
+    private static string DeliveryNumber(string shipmentNumber) => shipmentNumber.StartsWith("DN-", StringComparison.Ordinal)
+        ? "POD-" + shipmentNumber[3..]
+        : throw new InvalidOperationException($"shipment number '{shipmentNumber}' cannot form a delivery confirmation number");
     private Guid LegalEntityFor(string country) => country == "GB" ? UkLegalEntityId : LegalEntityId;
 
     private ThinEnvelope Envelope(string name, DateTime at, Guid? legalEntityId = null) =>
