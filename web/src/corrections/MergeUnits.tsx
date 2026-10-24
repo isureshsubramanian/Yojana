@@ -5,6 +5,7 @@ import { DataGrid, Shortcut, StatusBadge, useModEnter, type GridColumn } from ".
 import { usePeople } from "../people/people";
 import { Rail } from "../shell/Drawer";
 import { openDrawer } from "../shell/drawerStore";
+import { opaqueParam } from "../shell/handoff";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
 import { fmtDate, humanise, shortId, statusLabel } from "../units/format";
@@ -19,9 +20,9 @@ interface IdentifierView extends IdentifierRow { record: "A" | "B"; unitId: stri
 export function Component() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  // The workbench hands over ?unit=<id>; a person types or scans a serial, asset tag or unit id for either record.
-  const [firstId, setFirstId] = useState(params.get("first") ?? params.get("unit") ?? "");
-  const [secondId, setSecondId] = useState(params.get("second") ?? "");
+  // Links hand over unit ids only (?unit=, ?first=, ?second=); a person types or scans a serial, asset tag or unit id.
+  const [firstId, setFirstId] = useState(opaqueParam(params, "first") || opaqueParam(params, "unit"));
+  const [secondId, setSecondId] = useState(opaqueParam(params, "second"));
   const [records, setRecords] = useState<{ first: UnitDetail; second: UnitDetail } | null>(null);
   const [survivorId, setSurvivorId] = useState("");
   const [reason, setReason] = useState("vendor_serial_keyed_twice");
@@ -67,7 +68,7 @@ export function Component() {
   ];
   const approval = preview?.approval;
   const needsApproval = approval?.status === "needs_approval";
-  const approvalPath = `/corrections?first=${encodeURIComponent(firstId)}&second=${encodeURIComponent(secondId)}&choice=duplicate_unit`;
+  const approvalPath = `/corrections?choice=duplicate_unit${records ? `&unit=${records.first.unitId}` : ""}`;
   const commitDisabled = !command || !preview || approval?.status !== "allowed" || preview.preview.block > 0 || busy;
   useModEnter(() => needsApproval ? navigate(approvalPath) : commit(), needsApproval ? false : commitDisabled);
 

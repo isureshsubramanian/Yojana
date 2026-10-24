@@ -5,6 +5,7 @@ import { DEFAULT_LEGAL_ENTITY, newCommandId, now } from "../api/units";
 import { DataGrid, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
+import { useHandoff, useLegacyParam } from "../shell/handoff";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { usePeople } from "../people/people";
 import { ErrorNote, Kv, Section, useActor } from "../units/common";
@@ -30,7 +31,8 @@ export function Component() {
   const person = usePeople([actor, request?.requestedBy, request?.decidedBy]);
   const [decisionNote, setDecisionNote] = useState("");
   const [approveCommandId] = useState(newCommandId);
-  const initialSerials = params.get("serials") ?? "";
+  useLegacyParam("serials", "serials");
+  const initialSerials = useHandoff().serials ?? "";
   const [kind, setKind] = useState((initialSerials ? "pasted_list" : "document"));
   const [operation, setOperation] = useState(params.get("operation") ?? "entitlement.supersede");
   const [documentType, setDocumentType] = useState("sales_order");
@@ -40,6 +42,7 @@ export function Component() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [serials, setSerials] = useState(initialSerials);
+  useEffect(() => { if (initialSerials) { setKind("pasted_list"); setSerials(initialSerials); } }, [initialSerials]);
   const [scheme, setScheme] = useState("default");
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");

@@ -11,6 +11,7 @@ import { StatusBadge, TimelineRail, type TimelineEntry } from "../components";
 import { openDrawer, updateDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Icon } from "../shell/Icons";
+import { useHandoff, useLegacyParam } from "../shell/handoff";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { usePeople } from "../people/people";
 import { ErrorNote, Kv, Section, UnitLink } from "./common";
@@ -29,7 +30,8 @@ const REASONS = ["typo", "misread", "relabel", "regulatory"];
 export function Component() {
   const { unitId = "" } = useParams();
   const [params] = useSearchParams();
-  const resolvedFrom = params.get("resolved");
+  useLegacyParam("resolved", "resolvedFrom");
+  const resolvedFrom = useHandoff().resolvedFrom ?? null;
   const [detail, setDetail] = useState<UnitDetail | null>(null);
   const [history, setHistory] = useState<Page<HistoryRow> | null>(null);
   const [skip, setSkip] = useState(0);
@@ -145,7 +147,7 @@ export function Component() {
           </div>
           <div className="actions">
             <button type="button" className="btn" onClick={() => { if (tab === "whats-covered") window.open(`/api/units/${unitId}/whats-covered/sheet.pdf`, "_blank", "noopener"); else window.print(); }}><Icon name="print" />Print</button>
-            {tab !== "whats-covered" && <Link className="btn" to={`/corrections?unit=${unitId}&q=${encodeURIComponent(primary?.rawValue ?? "")}`}>Something is wrong…</Link>}
+            {tab !== "whats-covered" && <Link className="btn" to={`/corrections?unit=${unitId}`} state={primary?.rawValue ? { entry: primary.rawValue } : null}>Something is wrong…</Link>}
             {tab === "whats-covered" ? <>{whatsCovered?.customerEmailEnabled && <Link className="btn" to={`/units/${unitId}/email`}>E-mail to customer…</Link>}<Link className="btn primary" to={`/claims/new?unit=${unitId}`}>Start a claim</Link></> : tab === "entitlements" ? <><button type="button" className="btn" onClick={() => openAttachEntitlement(unitId, entitlementDetail, reloadEntitlements)}>Attach extended or add-on…</button><button type="button" className="btn primary" onClick={() => openAmendEntitlement(entitlementDetail, reloadEntitlements)}><Icon name="corr" />Amend entitlement…</button></> : <><button type="button" className="btn" onClick={flag}>Overlay flag…</button><button type="button" className="btn primary" onClick={correct}><Icon name="corr" />Correct identifier…</button></>}
           </div>
         </div>
@@ -241,7 +243,7 @@ export function Component() {
                   {detail && detail.asBuilt.length === 0 && <li><span className="node"><span className="hint">No components recorded.</span></span><span /></li>}
                 </ul>
               </div>
-              <div className="card-footer"><span>{detail?.buildRecords.length ? `${detail.buildRecords.length} build record${detail.buildRecords.length === 1 ? "" : "s"} · latest hash ${detail.buildRecords[0]?.payloadHash.slice(0, 12)}…` : "As-maintained equals as-built until a release freezes it"}</span><Link to={`/units/completeness?serials=${encodeURIComponent(title)}`}>Completeness query</Link></div>
+              <div className="card-footer"><span>{detail?.buildRecords.length ? `${detail.buildRecords.length} build record${detail.buildRecords.length === 1 ? "" : "s"} · latest hash ${detail.buildRecords[0]?.payloadHash.slice(0, 12)}…` : "As-maintained equals as-built until a release freezes it"}</span><Link to="/units/completeness" state={{ serials: title }}>Completeness query</Link></div>
             </section>
             <UnitCustomerMail unitId={unitId} />
           </div>

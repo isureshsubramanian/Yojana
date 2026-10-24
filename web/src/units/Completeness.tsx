@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { units, type CompletenessResult, type CompletenessRow } from "../api/units";
 import { DataGrid, KpiStrip, ScanInput, Shortcut, StatusBadge, type GridColumn } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Icon } from "../shell/Icons";
+import { useHandoff, useLegacyParam } from "../shell/handoff";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section, UnitLink } from "./common";
 import { fmtDate, humanise, parseDocumentParam, shortId, splitSerials } from "./format";
@@ -14,7 +15,9 @@ const TAKE = 200;
 /** As-built completeness (P1 screen 5): one row per unit, one column per expected serialised slot; the policy decides, the screen shows. */
 export function Component() {
   const [params, setParams] = useSearchParams();
-  const serialsParam = params.get("serials") ?? "";
+  const navigate = useNavigate();
+  useLegacyParam("serials", "serials");
+  const serialsParam = useHandoff().serials ?? "";
   const selectionId = params.get("selection") ?? "";
   const documentParam = params.get("document") ?? "";
   const [text, setText] = useState(splitSerials(serialsParam).join(", "));
@@ -27,6 +30,7 @@ export function Component() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [active, setActive] = useState<string | null>(null);
   const docRef = useMemo(() => parseDocumentParam(documentParam), [documentParam]);
+  useEffect(() => { if (serialsParam) setText(splitSerials(serialsParam).join(", ")); }, [serialsParam]);
 
   useEffect(() => {
     const serials = splitSerials(serialsParam);
@@ -44,7 +48,7 @@ export function Component() {
     const doc = parseDocumentParam(value);
     if (doc) next.set("document", value);
     else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim())) next.set("selection", value.trim());
-    else next.set("serials", splitSerials(value).join("\n"));
+    else { void navigate("/units/completeness", { state: { serials: splitSerials(value).join("\n") } }); setPage(1); return; }
     setParams(next);
     setPage(1);
   };
@@ -100,7 +104,7 @@ export function Component() {
           </div>
           <div className="actions">
             <button type="button" className="btn" onClick={() => window.print()}><Icon name="print" />Print</button>
-            <Link className={`btn${completeSerials.length ? " primary" : ""}`} to={completeSerials.length ? `/units/release?serials=${encodeURIComponent(completeSerials.join("\n"))}` : "/units/release"}>Release {completeSerials.length} complete units</Link>
+            <Link className={`btn${completeSerials.length ? " primary" : ""}`} to="/units/release" state={completeSerials.length ? { serials: completeSerials.join("\n") } : null}>Release {completeSerials.length} complete units</Link>
           </div>
         </div>
 

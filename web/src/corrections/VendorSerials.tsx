@@ -4,6 +4,7 @@ import { DEFAULT_LEGAL_ENTITY, newCommandId, now } from "../api/units";
 import { DataGrid, KpiStrip, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
 import { Rail } from "../shell/Drawer";
 import { openDrawer } from "../shell/drawerStore";
+import { opaqueParam } from "../shell/handoff";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
 import { fmtDateTime, humanise, sentence, shortId } from "../units/format";
@@ -16,9 +17,9 @@ const PAGE = 8;
 
 export function Component() {
   const [params] = useSearchParams();
-  const [productionOrderId, setProductionOrderId] = useState(params.get("productionOrder") ?? "");
+  const [productionOrderId, setProductionOrderId] = useState(opaqueParam(params, "productionOrder"));
   const [mode, setMode] = useState("allocation_order");
-  const [text, setText] = useState(params.get("serials") ?? "");
+  const [text, setText] = useState("");
   const [reason, setReason] = useState("vendor_list");
   const [evidence, setEvidence] = useState("");
   const [commandId, setCommandId] = useState(newCommandId);

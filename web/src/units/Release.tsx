@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link } from "react-router";
 import { selections, DEFAULT_LEGAL_ENTITY, RELEASE_OPERATION, now, type BulkExecutionResult, type BulkOperationArguments, type BulkPreviewResult, type ResolveSelectionSetResult, type SelectionSource, type UnitOutcome } from "../api/units";
 import { SelectionPreview, Shortcut, StatusBadge, useModEnter, type PreviewOutcome, type PreviewResult } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
+import { useHandoff, useLegacyParam } from "../shell/handoff";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { usePeople } from "../people/people";
 import { ErrorNote, Kv, Section, useActor } from "./common";
@@ -26,8 +27,9 @@ function toPreview(r: BulkPreviewResult): PreviewResult {
 export function Component() {
   const actor = useActor();
   const person = usePeople([actor]);
-  const [params] = useSearchParams();
-  const [kind, setKind] = useState<string>(params.get("serials") ? "pasted_list" : "serial_range");
+  useLegacyParam("serials", "serials");
+  const handed = useHandoff().serials ?? "";
+  const [kind, setKind] = useState<string>(handed ? "pasted_list" : "serial_range");
   const [docType, setDocType] = useState("production_order");
   const [docId, setDocId] = useState("");
   const [partyRef, setPartyRef] = useState("");
@@ -35,7 +37,8 @@ export function Component() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [eventType, setEventType] = useState("");
-  const [list, setList] = useState(params.get("serials") ?? "");
+  const [list, setList] = useState(handed);
+  useEffect(() => { if (handed) { setKind("pasted_list"); setList(handed); } }, [handed]);
   const [scheme, setScheme] = useState("default");
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
@@ -99,7 +102,7 @@ export function Component() {
     <>
       <h3>Outcome</h3>
       <Kv rows={[["Outcome", <span className={o.outcome === "block" ? "bad-text" : o.outcome === "skip" ? "warn-text" : "ok-text"}>{humanise(o.outcome)}</span>], ["Rule", o.reason ? <span className="serial">{o.reason}</span> : "—"], ["Detail", o.detail ?? "—"], ["Operation", RELEASE_OPERATION]]} />
-      <div className="act"><Link className="btn primary block" to={`/units/completeness?serials=${encodeURIComponent(o.serial ?? "")}`}>Open completeness</Link><Link className="btn block" to={`/units/${o.unitId}`}>Open unit</Link></div>
+      <div className="act"><Link className="btn primary block" to="/units/completeness" state={o.serial ? { serials: o.serial } : null}>Open completeness</Link><Link className="btn block" to={`/units/${o.unitId}`}>Open unit</Link></div>
     </>
   ));
 

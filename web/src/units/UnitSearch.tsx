@@ -64,7 +64,7 @@ export function Component() {
       const lookup = await units.lookup(value, type || undefined);
       setResolution(lookup.resolution);
       if ((lookup.resolution === "exact" || lookup.resolution === "superseded") && lookup.hits.length === 1) {
-        navigate(`/units/${lookup.hits[0]!.unitId}${lookup.resolution === "superseded" ? `?resolved=${encodeURIComponent(value)}` : ""}`);
+        navigate(`/units/${lookup.hits[0]!.unitId}`, lookup.resolution === "superseded" ? { state: { resolvedFrom: value } } : undefined);
         return;
       }
       set({ q: value });
@@ -155,7 +155,7 @@ export function Component() {
         <Section title="Selection">
           <p className="muted">{selected.size === 0 ? "Select rows to release them as one selection set, or address a set by document, item, date range or pasted list." : `${selected.size} identifiers selected on this page.`}</p>
           <div className="act">
-            <Link className={`btn block${selected.size ? " primary" : ""}`} to={`/units/release${selectedSerials.length ? `?serials=${encodeURIComponent(selectedSerials.join("\n"))}` : ""}`}>Release units…</Link>
+            <Link className={`btn block${selected.size ? " primary" : ""}`} to="/units/release" state={selectedSerials.length ? { serials: selectedSerials.join("\n") } : null}>Release units…</Link>
           </div>
         </Section>
         <Section title="Why two rows for one string">

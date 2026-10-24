@@ -5,6 +5,7 @@ import { Shortcut, StatusBadge, useModEnter } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Icon } from "../shell/Icons";
+import { useHandoff, useLegacyParam } from "../shell/handoff";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { usePeople } from "../people/people";
 import { ErrorNote, Kv, Section } from "../units/common";
@@ -26,7 +27,10 @@ const INLINE = ["correct_identifier", "swap_identifiers", "void_unit", "correct_
 export function Component() {
   const [params] = useSearchParams();
   const [entryKind, setEntryKind] = useState<string>("identifier");
-  const [entryValue, setEntryValue] = useState(params.get("q") ?? "");
+  useLegacyParam("q", "entry");
+  const handedEntry = useHandoff().entry ?? "";
+  const [entryValue, setEntryValue] = useState(handedEntry);
+  useEffect(() => { if (handedEntry) setEntryValue(handedEntry); }, [handedEntry]);
   const [documentType, setDocumentType] = useState("delivery");
   const [candidates, setCandidates] = useState<WorkbenchCandidate[]>([]);
   const [unitId, setUnitId] = useState<string | null>(params.get("unit"));

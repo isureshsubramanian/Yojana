@@ -4,6 +4,7 @@ import { DataGrid, Shortcut, StatusBadge, useModEnter, type GridColumn } from ".
 import { DEFAULT_LEGAL_ENTITY, newCommandId, now } from "../api/units";
 import { Rail } from "../shell/Drawer";
 import { openDrawer } from "../shell/drawerStore";
+import { opaqueParam } from "../shell/handoff";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section } from "../units/common";
 import { humanise, sentence } from "../units/format";
@@ -17,12 +18,12 @@ const PAGE = 10;
 export function Component() {
   const [params] = useSearchParams();
   const [commandId, setCommandId] = useState(newCommandId);
-  const [fromOrder, setFromOrder] = useState(params.get("from") ?? "");
-  const [toOrder, setToOrder] = useState(params.get("to") ?? "");
-  const [scheme, setScheme] = useState(params.get("scheme") ?? "default");
+  const [fromOrder, setFromOrder] = useState(opaqueParam(params, "from"));
+  const [toOrder, setToOrder] = useState(opaqueParam(params, "to"));
+  const [scheme, setScheme] = useState("default");
   const [mode, setMode] = useState("pairwise_exchange");
-  const [fromSerials, setFromSerials] = useState(params.get("fromSerials") ?? "");
-  const [toSerials, setToSerials] = useState(params.get("toSerials") ?? "");
+  const [fromSerials, setFromSerials] = useState("");
+  const [toSerials, setToSerials] = useState("");
   const [reason, setReason] = useState("allocation_error");
   const [note, setNote] = useState("");
   const [preview, setPreview] = useState<ReassignAllocationResult | null>(null);
