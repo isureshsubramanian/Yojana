@@ -101,3 +101,10 @@ test("disclosure policy locks forbidden public fields and the internal tier", ()
   assert.equal(disclosureLocked({ field: "item.name", tier: "internal", enabled: true }), true);
   assert.equal(disclosureLocked({ field: "item.name", tier: "owner", enabled: true }), false);
 });
+
+test("an internal lookup that matches no unit says so in the results instead of a failed-request banner", () => {
+  const screens = readFileSync(new URL("../src/p7/screens.tsx", import.meta.url), "utf8");
+  const screen = screens.slice(screens.indexOf("export function InternalLookupScreen"), screens.indexOf("export function XrefScreen"));
+  assert.ok(screen.includes("reason instanceof ApiError && reason.status === 404) setMissing(value.trim()); else setError(reason)"), "404 is a result");
+  assert.ok(screen.includes("No unit matches “${missing}”"), "named in the empty state");
+});
