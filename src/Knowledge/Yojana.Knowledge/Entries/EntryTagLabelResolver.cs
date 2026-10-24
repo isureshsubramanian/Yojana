@@ -1,4 +1,3 @@
-using System.Globalization;
 using Yojana.Knowledge.Contracts;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Serialisation.Contracts;
@@ -42,6 +41,12 @@ public sealed class EntryTagLabelResolver(IItemFamilyNamePort itemFamilies, ICla
         return answer;
     }
 
-    private static string Humanise(string value) => CultureInfo.InvariantCulture.TextInfo.ToTitleCase(value.Replace('_', ' '));
+    // Sentence case that keeps the casing the author typed, so role codes read "Service desk" and a typed topic such as
+    // "DIMM replacement" keeps its acronym; title-casing produced "Dimm Replacement".
+    private static string Humanise(string value)
+    {
+        var words = value.Replace('_', ' ');
+        return words.Length == 0 ? words : char.ToUpperInvariant(words[0]) + words[1..];
+    }
     private static Questions.QuestionRuleException Rule(string rule, string message) => new(rule, message);
 }

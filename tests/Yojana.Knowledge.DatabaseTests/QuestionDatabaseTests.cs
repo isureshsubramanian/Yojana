@@ -195,7 +195,7 @@ public sealed class QuestionDatabaseTests(KnowledgeHostFixture fixture)
         var thread = await queries.ThreadAsync(first.QuestionId, viewer, default);
         Assert.NotNull(thread);
         Assert.Equal("Fictional Administrator", thread.AskedByName);
-        Assert.Equal("Service Supervisor", thread.DirectedToRoleLabel);
+        Assert.Equal("Service supervisor", thread.DirectedToRoleLabel);
         Assert.Equal(1, thread.Replies.Single().RevisionCount);
         Assert.Single((await queries.RevisionsAsync(first.QuestionId, reply.ReplyId, viewer, default))!);
     }

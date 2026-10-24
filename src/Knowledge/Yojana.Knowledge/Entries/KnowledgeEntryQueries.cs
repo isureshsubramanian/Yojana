@@ -408,7 +408,11 @@ public sealed class KnowledgeEntryQueries(KnowledgeDbContext db, RecordReference
 
     private static bool HasReviewerRole(RecordReferenceViewer viewer, IReadOnlyList<string> roles) =>
         roles.Any(role => viewer.Roles.Contains(role, StringComparer.Ordinal));
-    private static string Humanise(string value) => CultureInfo.InvariantCulture.TextInfo.ToTitleCase(value.Replace('_', ' '));
+    private static string Humanise(string value)
+    {
+        var words = value.Replace('_', ' ');
+        return words.Length == 0 ? words : char.ToUpperInvariant(words[0]) + words[1..];
+    }
     private static void ValidateTake(int take)
     {
         if (take is < 1 or > 100) throw new QuestionRuleException("page_size_invalid", "Take must be between 1 and 100.");

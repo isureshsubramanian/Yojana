@@ -16,9 +16,17 @@ export function Component() {
   const [choices, setChoices] = useState<EntryTagChoices | null>(null); const [editing, setEditing] = useState(false);
   const [creating, setCreating] = useState(false); const [canCreate, setCanCreate] = useState(false);
   const [revision, setRevision] = useState(0); const [error, setError] = useState<unknown>(null);
-  const role = params.get("role") ?? paths[0]?.role ?? "";
+  // The address bar carries only the path's opaque id, never the role code; the page maps it to a path it was given by
+  // the server, so an edited or stale id never reaches the API and falls back to the first path with a note.
+  const requested = params.get("path");
+  const selected = paths.find(item => item.pathId === requested);
+  const role = selected?.role ?? "";
+  const unknownPath = requested !== null && paths.length > 0 && !selected;
   useEffect(() => { const controller = new AbortController(); void Promise.all([trainingApi.list(controller.signal), knowledgeApi.tagChoices(controller.signal)])
-    .then(([next, tags]) => { setPaths(next.items); setCanCreate(next.canMaintain); setChoices(tags); if (!params.get("role") && next.items[0]) setParams({ role: next.items[0].role }, { replace: true }); })
+    .then(([next, tags]) => { setPaths(next.items); setCanCreate(next.canMaintain); setChoices(tags); const current = params.get("path"); const legacyRole = params.get("role");
+      const match = next.items.find(item => item.pathId === current) ?? next.items.find(item => item.role === legacyRole);
+      if (match && match.pathId !== current) setParams({ path: match.pathId }, { replace: true });
+      else if (!match && !current && next.items[0]) setParams({ path: next.items[0].pathId }, { replace: true }); })
     .catch(reason => { if (!controller.signal.aborted) setError(reason); }); return () => controller.abort(); }, [revision]);
   useEffect(() => { if (!role) { setPath(null); return; } const controller = new AbortController(); void trainingApi.detail(role, controller.signal)
     .then(next => { setPath(next); setEditing(false); }).catch(reason => { if (!controller.signal.aborted) setError(reason); }); return () => controller.abort(); }, [role, revision]);
@@ -28,7 +36,8 @@ export function Component() {
   const actions = <>{canCreate && <button className="btn" type="button" onClick={() => setCreating(value => !value)}>{creating ? "Close new path" : "New path"}</button>}{path?.canMaintain && <button className="btn" type="button" onClick={() => setEditing(value => !value)}>{editing ? "Close editor" : "Edit path"}</button>}</>;
   return <main className="content" id="main" tabIndex={-1}><Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Knowledge base", to: "/knowledge" }, { label: "Training paths" }]} /><PageHeader eyebrow={`Questions and knowledge · ${paths.length} paths`} title="Training paths" sub="Ordered reading for each role. Progress records reading only; it is not a test score." actions={actions} /><KnowledgeSubnav current="training" /><ErrorNote error={error} />
     {(creating || (paths.length === 0 && canCreate)) && <NewPath choices={choices} saved={saved} setError={setError} />}
-    {paths.length > 0 && <div className="training-role-picker"><label className="field"><span className="lbl">Path</span><select className="select" value={role} onChange={event => setParams({ role: event.target.value })}>{paths.map(item => <option key={item.pathId} value={item.role}>{item.roleLabel}</option>)}</select></label></div>}
+    {paths.length > 0 && <div className="training-role-picker"><label className="field"><span className="lbl">Path</span><select className="select" value={selected?.pathId ?? ""} onChange={event => setParams({ path: event.target.value })}>{!selected && <option value="">Choose a path</option>}{paths.map(item => <option key={item.pathId} value={item.pathId}>{item.roleLabel}</option>)}</select></label></div>}
+    {unknownPath && <div className="note warn" role="status">That training path is not available. Choose one from the list.</div>}
     {path && editing && <PathEditor path={path} saved={() => setRevision(value => value + 1)} setError={setError} />}
     {path && <div className={team ? "cols-2-3 training-grid" : "stack"}><PathCard path={path} changed={() => setRevision(value => value + 1)} setError={setError} />{team && <TeamCard team={team} />}</div>}
     {!path && paths.length === 0 && <section className="card"><div className="empty"><h2>No training path is available</h2><p className="hint">A knowledge reviewer can create one from published reviewed entries.</p></div></section>}

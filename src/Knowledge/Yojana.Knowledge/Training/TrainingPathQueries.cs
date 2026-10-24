@@ -1,4 +1,3 @@
-using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Knowledge.Contracts;
 using Yojana.Knowledge.Data;
@@ -205,8 +204,11 @@ public sealed class TrainingPathQueries(KnowledgeDbContext db, EntryReviewerSett
         return allowed.Any(role => roles.Contains(role, StringComparer.Ordinal));
     }
 
-    private static string RoleLabel(string role) => CultureInfo.InvariantCulture.TextInfo.ToTitleCase(
-        role.Replace('_', ' '));
+    private static string RoleLabel(string value)
+    {
+        var words = value.Replace('_', ' ');
+        return words.Length == 0 ? words : char.ToUpperInvariant(words[0]) + words[1..];
+    }
 
     private static QuestionRuleException Rule(string rule, string message) => new(rule, message);
 }

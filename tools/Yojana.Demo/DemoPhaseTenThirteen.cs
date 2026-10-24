@@ -47,13 +47,13 @@ public sealed partial class DemoLoader
             "The bank server reports a corrected-memory fault. May the field engineer replace one DIMM on site under next-business-day cover?",
             YojanaRole.Technician, people.OrderDesk,
             "Yes. Record the failed slot and diagnostic code, fit an approved DIMM, run the memory test and retain the service report. The next-business-day cover includes on-site parts and labour.",
-            people.Technician, people, cancellationToken);
+            people.Technician, people, TimeSpan.FromMinutes(42), TimeSpan.FromMinutes(75), cancellationToken);
         var dimmEntry = await EnsurePublishedEntryAsync(dimm,
             "Replacing a failed DIMM under next-business-day cover",
             "A covered server has a confirmed memory-module fault and the engineer needs the approved on-site path.",
             "Replace the failed DIMM on site when diagnostics identify the slot and the unit has live next-business-day cover.",
             "Record the slot and diagnostic code. Fit an approved DIMM. Run the full memory test. Attach the service report to the case.",
-            [new(KnowledgeTagKind.Role, YojanaRole.Technician), new(KnowledgeTagKind.Task, "dimm replacement")],
+            [new(KnowledgeTagKind.Role, YojanaRole.Technician), new(KnowledgeTagKind.Task, "DIMM replacement")],
             [new(RecordKind.Unit, server.UnitId)], [], people.OrderDesk, people.Reviewer,
             cancellationToken);
 
@@ -62,7 +62,7 @@ public sealed partial class DemoLoader
             "The HPC storage array has a failed drive containing research data. Does the customer keep the failed drive after replacement?",
             YojanaRole.ServiceDesk, people.Technician,
             "Use the media-retention option recorded on the cover. Leave the failed drive with the customer, record its serial and obtain the customer's retention acknowledgement before closing the visit.",
-            people.ServiceDesk, people, cancellationToken);
+            people.ServiceDesk, people, TimeSpan.FromMinutes(125), TimeSpan.FromHours(3), cancellationToken);
         var mediaEntry = await EnsurePublishedEntryAsync(media,
             "Media retention when a failed drive is returned",
             "A failed storage drive may contain customer data and the service team must decide whether it travels with the return.",
@@ -78,7 +78,7 @@ public sealed partial class DemoLoader
             "A DW-300 desktop is eligible for replacement. What consent must the order desk record before offering a refurbished unit?",
             YojanaRole.OrderDeskSupervisor, people.ServiceDesk,
             "Obtain explicit consent before allocation. State that the replacement is refurbished, confirm equivalent or better specification and cover, and record the customer's decision on the replacement case.",
-            people.OrderDesk, people, cancellationToken);
+            people.OrderDesk, people, TimeSpan.FromMinutes(18), TimeSpan.FromMinutes(40), cancellationToken);
         var refurbishedEntry = await EnsurePublishedEntryAsync(refurbished,
             "Customer consent for a refurbished replacement",
             "The order desk is considering a refurbished unit as a warranty replacement.",
@@ -93,7 +93,7 @@ public sealed partial class DemoLoader
             "The desktop has impact damage. Which evidence must be checked before the depot accepts the repair as covered?",
             YojanaRole.ServiceDesk, people.OrderDesk,
             "Confirm that an accidental-damage add-on is live on the incident date, photograph the impact, record the customer's account and check that no exclusion applies before authorising depot work.",
-            people.ServiceDesk, people, cancellationToken);
+            people.ServiceDesk, people, TimeSpan.FromMinutes(330), TimeSpan.FromHours(22), cancellationToken);
         var accidentalEntry = await EnsurePublishedEntryAsync(accidental,
             "Checking accidental-damage cover before depot repair",
             "A unit arrives with impact damage and the service desk must decide whether an add-on can fund the repair.",
@@ -105,10 +105,10 @@ public sealed partial class DemoLoader
 
         await EnsureOpenQuestionAsync(server.UnitId, "Confirming the approved DIMM stock before dispatch",
             "Which approved spare should be reserved for the bank server before the engineer departs?",
-            YojanaRole.Technician, people.OrderDesk, cancellationToken);
+            YojanaRole.Technician, people.OrderDesk, TimeSpan.FromHours(2), cancellationToken);
         await EnsureOpenQuestionAsync(storage.UnitId, "Media retention when a failed drive is returned — follow-up",
             "The published guidance covers a single drive. Does the same acknowledgement cover two failed drives from one storage visit?",
-            YojanaRole.ServiceDesk, people.OrderDesk, cancellationToken);
+            YojanaRole.ServiceDesk, people.OrderDesk, TimeSpan.FromHours(9), cancellationToken);
         await EnsureClosedAndReopenedQuestionAsync(desktop.UnitId,
             "Next-business-day timing after a missed remote diagnosis",
             "Does the response clock restart when remote diagnosis is repeated the following morning?",
@@ -186,8 +186,8 @@ public sealed partial class DemoLoader
     }
 
     private async Task<Guid> EnsureAnsweredQuestionAsync(Guid recordId, string title, string body, string role,
-        QuestionActor asker, string reply, QuestionActor responder, KnowledgePeople people,
-        CancellationToken cancellationToken)
+        QuestionActor asker, string reply, QuestionActor responder, KnowledgePeople people, TimeSpan replyAfter,
+        TimeSpan acceptedAfter, CancellationToken cancellationToken)
     {
         var questionId = await EnsureQuestionAsync(recordId, title, body, role, asker, cancellationToken);
         using (var scope = TenantScope())
@@ -210,12 +210,42 @@ public sealed partial class DemoLoader
                 cancellationToken)).ReplyId;
         await InvokeAsync<QuestionChangeResult>(new AcceptQuestionAnswer(questionId, replyId, asker),
             cancellationToken);
+        await BackdateAsync(questionId, replyAfter + acceptedAfter, replyId, acceptedAfter, cancellationToken);
         return questionId;
     }
 
-    private Task<Guid> EnsureOpenQuestionAsync(Guid recordId, string title, string body, string role,
-        QuestionActor asker, CancellationToken cancellationToken) =>
-        EnsureQuestionAsync(recordId, title, body, role, asker, cancellationToken);
+    /// <summary>
+    /// Demo only. The loader runs every command within the same second, so the reports would show every reply as
+    /// instant and every open question as minutes old. Moving the ask (and the reply) back by a realistic gap gives the
+    /// reporting screens believable figures; acceptance stays at the real time it happened.
+    /// </summary>
+    private async Task BackdateAsync(Guid questionId, TimeSpan askedBefore, Guid? replyId, TimeSpan replyBefore,
+        CancellationToken cancellationToken)
+    {
+        using var scope = TenantScope();
+        var db = scope.ServiceProvider.GetRequiredService<KnowledgeDbContext>();
+        var question = await db.Questions.SingleAsync(value => value.QuestionId == questionId, cancellationToken);
+        var anchor = question.AcceptedAt ?? question.AskedAt;
+        question.AskedAt = anchor - askedBefore;
+        if (replyId is { } id)
+        {
+            var row = await db.Replies.SingleAsync(value => value.ReplyId == id, cancellationToken);
+            row.At = anchor - replyBefore;
+        }
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<Guid> EnsureOpenQuestionAsync(Guid recordId, string title, string body, string role,
+        QuestionActor asker, TimeSpan age, CancellationToken cancellationToken)
+    {
+        bool existed;
+        using (var scope = TenantScope())
+            existed = await scope.ServiceProvider.GetRequiredService<KnowledgeDbContext>().Questions.AsNoTracking()
+                .AnyAsync(value => value.Title == title, cancellationToken);
+        var questionId = await EnsureQuestionAsync(recordId, title, body, role, asker, cancellationToken);
+        if (!existed) await BackdateAsync(questionId, age, null, TimeSpan.Zero, cancellationToken);
+        return questionId;
+    }
 
     private async Task<Guid> EnsureQuestionAsync(Guid recordId, string title, string body, string role,
         QuestionActor asker, CancellationToken cancellationToken)

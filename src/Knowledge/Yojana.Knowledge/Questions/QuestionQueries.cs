@@ -374,7 +374,11 @@ public sealed class QuestionQueries(KnowledgeDbContext db, RecordReferenceLookup
             throw new InvalidOperationException("A visible record reference must have a readable display name.");
     }
 
-    private static string RoleLabel(string role) => CultureInfo.InvariantCulture.TextInfo.ToTitleCase(role.Replace('_', ' '));
+    private static string RoleLabel(string value)
+    {
+        var words = value.Replace('_', ' ');
+        return words.Length == 0 ? words : char.ToUpperInvariant(words[0]) + words[1..];
+    }
     private static string Encode(DateTime at, Guid id) => Convert.ToBase64String(Encoding.UTF8.GetBytes($"{at.Ticks}:{id:D}"));
     private static string EncodeSearch(int rank, Guid id) => Convert.ToBase64String(Encoding.UTF8.GetBytes($"{rank}:{id:D}"));
 
