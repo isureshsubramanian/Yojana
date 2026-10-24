@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { NavLink, useLocation } from "react-router";
+import { Link, NavLink, useLocation } from "react-router";
 import { useSession } from "../session/session";
 import { Icon } from "./Icons";
 import { entryFor, groupHasWaiting, visibleNavigation, type NavCountSource, type NavEntry, type NavGroup } from "./navigation";
@@ -72,9 +72,10 @@ export function SideNav({ counts = {} }: { counts?: Readonly<Partial<Record<NavC
     </nav>
     {current && <nav className="nav-flyout" id={`nav-flyout-${current.key}`} aria-label={`${current.label} screens`} ref={flyout} onKeyDown={event => onFlyoutKey(event, current)}>
       <div className="nav-flyout-heading">{current.label}</div>
-      {current.items.map(entry => <NavLink to={entry.path} key={entry.path} aria-current={isEntryActive(entry, pathname) ? "page" : undefined} onClick={() => setOpen(null)}>
+      {/* Link, not NavLink: NavLink marks every prefix match current (/claims on /claims/campaigns); isEntryActive picks exactly one entry. */}
+      {current.items.map(entry => <Link to={entry.path} key={entry.path} aria-current={isEntryActive(entry, pathname) ? "page" : undefined} onClick={() => setOpen(null)}>
         <Icon name={entry.icon} /><span>{entry.label}</span>{entry.countSource && (counts[entry.countSource] ?? 0) > 0 && <span className="count">{countText(counts[entry.countSource]!)}</span>}
-      </NavLink>)}
+      </Link>)}
     </nav>}
   </>;
 }
