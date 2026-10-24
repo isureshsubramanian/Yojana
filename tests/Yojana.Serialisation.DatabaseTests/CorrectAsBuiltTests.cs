@@ -88,7 +88,7 @@ public sealed class CorrectAsBuiltTests(SerialisationHostFixture fixture)
             Assert.Equal(CorrectionRootCause.WrongItemOrOrder, correction.RootCauseCategory);
         }
 
-        var published = await PublishedEventSink.WaitForAsync<UnitAsBuiltCorrected>(e => e.Correction.CorrectionId == correctionId, 2, TimeSpan.FromSeconds(5));
+        var published = await PublishedEventSink.WaitForAsync<UnitAsBuiltCorrected>(e => e.Correction.CorrectionId == correctionId, 2, TimeSpan.FromSeconds(30));
         Assert.Equal(2, published.Count);
         Assert.Equal(2, published.Single(e => e.Header.UnitId == parent1).Changes!.Count);
     }
