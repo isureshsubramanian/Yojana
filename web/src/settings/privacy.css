@@ -1,0 +1,7 @@
+.privacy-confirm { max-width: 560px; margin-top: 16px; }
+.privacy-count, .privacy-blockers li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--rule); }
+.privacy-count:last-child, .privacy-blockers li:last-child { border-bottom: 0; }
+.privacy-count > span, .privacy-blockers li > span { min-width: 0; }
+.privacy-count small, .privacy-blockers small { display: block; margin-top: 2px; color: var(--text-3); font-size: 12px; font-weight: 400; }
+.privacy-blockers { list-style: none; margin: 0; padding: 0; }
+.privacy-blockers .btn { flex: none; }

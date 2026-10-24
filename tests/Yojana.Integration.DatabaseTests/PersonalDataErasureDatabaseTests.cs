@@ -19,6 +19,49 @@ namespace Yojana.Integration.DatabaseTests;
 public sealed class PersonalDataErasureDatabaseTests(IntegrationHostFixture fixture)
 {
     [DatabaseFact]
+    public async Task Refused_request_is_not_a_gateway_tombstone()
+    {
+        var tenant = await fixture.NewTenantAsync("erref");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.CreateVersion7());
+        const string externalCode = "FIC-REFUSED-9901";
+        Guid party;
+        using (var initial = fixture.ScopeFor(tenant))
+        {
+            var gateway = initial.ServiceProvider.GetRequiredService<GatewayReferenceStore>();
+            party = await gateway.UpsertPartyAsync(connection,
+                new(externalCode, OpenEnum.Known("person"), "Fictional Initial Customer", "TAX-1", "GB"), default);
+            await initial.ServiceProvider.GetRequiredService<IntegrationDbContext>().SaveChangesAsync();
+        }
+        using (var refusal = fixture.ScopeFor(tenant))
+        {
+            var platform = refusal.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            platform.ErasureRequests.Add(new ErasureRequest
+            {
+                TenantId = tenant, ErasureId = Guid.CreateVersion7(), SubjectKind = ErasureSubjectKind.Party,
+                SubjectId = party, RequestReference = "DSR-2026-REFUSED", Reason = "open return",
+                RequestReceivedOn = new DateOnly(2026, 9, 1), RequestedBy = Guid.CreateVersion7(),
+                RequestedAt = fixture.Clock.UtcNow, Status = ErasureRequestStatus.Refused,
+                RetentionBasis = PersonalDataErasureService.RetentionBasis, FailureRule = "erasure_open_obligations",
+            });
+            await platform.SaveChangesAsync();
+        }
+
+        using (var update = fixture.ScopeFor(tenant))
+        {
+            var gateway = update.ServiceProvider.GetRequiredService<GatewayReferenceStore>();
+            Assert.Equal(party, await gateway.UpsertPartyAsync(connection,
+                new(externalCode, OpenEnum.Known("person"), "Fictional Updated Customer", "TAX-2", "GB"), default));
+            await update.ServiceProvider.GetRequiredService<IntegrationDbContext>().SaveChangesAsync();
+        }
+
+        using var verify = fixture.ScopeFor(tenant);
+        var projection = await verify.ServiceProvider.GetRequiredService<IntegrationDbContext>()
+            .ReferenceProjections.AsNoTracking().SingleAsync(x => x.ModuleId == party);
+        Assert.Equal("Fictional Updated Customer", projection.DisplayName);
+        Assert.Contains("TAX-2", projection.AttributesJson, StringComparison.Ordinal);
+    }
+
+    [DatabaseFact]
     public async Task Stored_payload_erasure_crosses_a_batch_boundary_and_a_rerun_is_a_no_op()
     {
         var tenant = await fixture.NewTenantAsync("erase-batch");
@@ -147,6 +190,7 @@ public sealed class PersonalDataErasureDatabaseTests(IntegrationHostFixture fixt
             {
                 TenantId = tenant, ErasureId = erasure, SubjectKind = ErasureSubjectKind.Party,
                 SubjectId = party, RequestReference = "DSR-2026-9801", Reason = "verified request",
+                RequestReceivedOn = new DateOnly(2026, 9, 1),
                 RequestedBy = Guid.CreateVersion7(), RequestedAt = fixture.Clock.UtcNow,
                 StartedAt = fixture.Clock.UtcNow, Status = ErasureRequestStatus.Running,
                 RetentionBasis = PersonalDataErasureService.RetentionBasis,

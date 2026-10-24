@@ -38,10 +38,13 @@ public sealed class PersonalDataErasureTests(SerialisationHostFixture fixture)
         var subject = new ErasureSubject(ErasureSubjectKind.Party, party, [], []);
         using (var refusedScope = fixture.ScopeFor(tenant))
         {
-            var refused = await Assert.ThrowsAsync<Yojana.Platform.Contracts.CommandRefusedException>(
+            var refused = await Assert.ThrowsAsync<PersonalDataErasureRefusedException>(
                 () => refusedScope.ServiceProvider
                 .GetRequiredService<SerialisationPersonalDataHolder>().PreviewAsync(subject, default));
             Assert.Equal("erasure_open_obligations", refused.Rule);
+            var blocker = Assert.Single(refused.Blockers);
+            Assert.Equal(("rma", rma, "RMA-2026-9901"),
+                (blocker.Kind, blocker.RecordId, blocker.Reference));
         }
 
         using (var close = fixture.ScopeFor(tenant))

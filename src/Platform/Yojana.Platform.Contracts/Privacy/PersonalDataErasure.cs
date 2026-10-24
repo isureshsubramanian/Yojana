@@ -17,6 +17,23 @@ public enum PersonalDataReviewAction
 
 public sealed record PersonalDataReviewDecision(string ItemKey, PersonalDataReviewAction Action);
 
+public sealed record PersonalDataErasureBlocker(
+    string Kind,
+    Guid? RecordId,
+    string Reference,
+    string Status,
+    string Detail);
+
+public sealed class PersonalDataErasureRefusedException(
+    string rule,
+    string message,
+    string? unblockingStep,
+    IReadOnlyList<PersonalDataErasureBlocker> blockers)
+    : CommandRefusedException(rule, message, unblockingStep)
+{
+    public IReadOnlyList<PersonalDataErasureBlocker> Blockers { get; } = blockers;
+}
+
 public sealed record ErasureSubject(
     ErasureSubjectKind Kind,
     Guid SubjectId,

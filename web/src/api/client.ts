@@ -9,6 +9,7 @@ export class ApiError extends Error {
   public readonly changedAt: string | null;
   public readonly reasons: readonly { code: string; message: string }[];
   public readonly openRules: readonly string[];
+  public readonly blockers: readonly { kind: string; recordId: string | null; reference: string; status: string; detail: string }[];
 
   constructor(
     status: number,
@@ -21,6 +22,7 @@ export class ApiError extends Error {
     changedAt: string | null = null,
     reasons: readonly { code: string; message: string }[] = [],
     openRules: readonly string[] = [],
+    blockers: readonly { kind: string; recordId: string | null; reference: string; status: string; detail: string }[] = [],
   ) {
     super(message);
     this.name = "ApiError";
@@ -33,6 +35,7 @@ export class ApiError extends Error {
     this.changedAt = changedAt;
     this.reasons = reasons;
     this.openRules = openRules;
+    this.blockers = blockers;
   }
 }
 
@@ -53,7 +56,7 @@ export async function api<T>(path: string, init?: {
   });
   if (!response.ok && !init?.acceptedStatuses?.includes(response.status)) {
     const problem = await describe(response);
-    throw new ApiError(response.status, problem.message, problem.title, problem.detail, problem.rule, problem.unblockingStep, problem.changedBy, problem.changedAt, problem.reasons, problem.openRules);
+    throw new ApiError(response.status, problem.message, problem.title, problem.detail, problem.rule, problem.unblockingStep, problem.changedBy, problem.changedAt, problem.reasons, problem.openRules, problem.blockers);
   }
   if (response.status === 204) {
     return undefined as T;
@@ -61,23 +64,24 @@ export async function api<T>(path: string, init?: {
   return (await response.json()) as T;
 }
 
-async function describe(response: Response): Promise<{ message: string; title: string | null; detail: string | null; rule: string | null; unblockingStep: string | null; changedBy: string | null; changedAt: string | null; reasons: readonly { code: string; message: string }[]; openRules: readonly string[] }> {
+async function describe(response: Response): Promise<{ message: string; title: string | null; detail: string | null; rule: string | null; unblockingStep: string | null; changedBy: string | null; changedAt: string | null; reasons: readonly { code: string; message: string }[]; openRules: readonly string[]; blockers: readonly { kind: string; recordId: string | null; reference: string; status: string; detail: string }[] }> {
   const fallback = `Something went wrong (HTTP ${response.status})`;
   try {
     const text = await response.text();
-    if (!text) return { message: fallback, title: null, detail: null, rule: null, unblockingStep: null, changedBy: null, changedAt: null, reasons: [], openRules: [] };
+    if (!text) return { message: fallback, title: null, detail: null, rule: null, unblockingStep: null, changedBy: null, changedAt: null, reasons: [], openRules: [], blockers: [] };
     try {
-      const problem = JSON.parse(text) as { title?: string; detail?: string; rule?: string; unblock?: string; unblockingStep?: string; changedBy?: string; changedAt?: string; reasons?: unknown; openRules?: unknown };
+      const problem = JSON.parse(text) as { title?: string; detail?: string; rule?: string; unblock?: string; unblockingStep?: string; changedBy?: string; changedAt?: string; reasons?: unknown; openRules?: unknown; blockers?: unknown };
       const title = typeof problem.title === "string" ? problem.title : null;
       const detail = typeof problem.detail === "string" ? problem.detail : null;
       const rule = typeof problem.rule === "string" ? problem.rule : null;
       const reasons = Array.isArray(problem.reasons) ? problem.reasons.filter((reason): reason is { code: string; message: string } => typeof reason === "object" && reason !== null && typeof (reason as { code?: unknown }).code === "string" && typeof (reason as { message?: unknown }).message === "string") : [];
       const openRules = Array.isArray(problem.openRules) ? problem.openRules.filter((value): value is string => typeof value === "string") : [];
-      return { message: detail ?? title ?? rule ?? fallback, title, detail, rule, unblockingStep: problem.unblock ?? problem.unblockingStep ?? null, changedBy: problem.changedBy ?? null, changedAt: problem.changedAt ?? null, reasons, openRules };
+      const blockers = Array.isArray(problem.blockers) ? problem.blockers.filter((value): value is { kind: string; recordId: string | null; reference: string; status: string; detail: string } => typeof value === "object" && value !== null && typeof (value as { kind?: unknown }).kind === "string" && (typeof (value as { recordId?: unknown }).recordId === "string" || (value as { recordId?: unknown }).recordId === null) && typeof (value as { reference?: unknown }).reference === "string" && typeof (value as { status?: unknown }).status === "string" && typeof (value as { detail?: unknown }).detail === "string") : [];
+      return { message: detail ?? title ?? rule ?? fallback, title, detail, rule, unblockingStep: problem.unblock ?? problem.unblockingStep ?? null, changedBy: problem.changedBy ?? null, changedAt: problem.changedAt ?? null, reasons, openRules, blockers };
     } catch {
-      return { message: fallback, title: null, detail: null, rule: null, unblockingStep: null, changedBy: null, changedAt: null, reasons: [], openRules: [] };
+      return { message: fallback, title: null, detail: null, rule: null, unblockingStep: null, changedBy: null, changedAt: null, reasons: [], openRules: [], blockers: [] };
     }
   } catch {
-    return { message: fallback, title: null, detail: null, rule: null, unblockingStep: null, changedBy: null, changedAt: null, reasons: [], openRules: [] };
+    return { message: fallback, title: null, detail: null, rule: null, unblockingStep: null, changedBy: null, changedAt: null, reasons: [], openRules: [], blockers: [] };
   }
 }

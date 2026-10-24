@@ -4,6 +4,7 @@ using Yojana.Platform.Contracts.Privacy;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Data.Platform;
+using Yojana.Platform.Data.Platform.Entities;
 
 namespace Yojana.Platform.Privacy;
 
@@ -129,7 +130,8 @@ public sealed class PersonalDataErasureReadPort(PlatformDbContext db, ITenantCon
     public async Task<ErasedParty?> ErasedPartyAsync(Guid partyRef, CancellationToken cancellationToken)
     {
         var exists = await db.ErasureRequests.AsNoTracking().AnyAsync(x => x.TenantId == tenant.TenantId
-            && x.SubjectKind == ErasureSubjectKind.Party && x.SubjectId == partyRef, cancellationToken);
+            && x.SubjectKind == ErasureSubjectKind.Party && x.SubjectId == partyRef
+            && x.Status != ErasureRequestStatus.Refused, cancellationToken);
         if (!exists) return null;
         var subject = new ErasureSubject(ErasureSubjectKind.Party, partyRef, [], []);
         return new(partyRef, subject.Token);

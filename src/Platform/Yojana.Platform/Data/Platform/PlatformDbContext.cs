@@ -225,7 +225,7 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
             // those persistence values without changing the trigger blocks the only lawful immutability exception.
             b.ToTable("erasure_request", table =>
             {
-                table.HasCheckConstraint("ck_erasure_request_status", "status IN ('pending','running','completed','failed')");
+                table.HasCheckConstraint("ck_erasure_request_status", "status IN ('pending','running','completed','failed','refused')");
                 table.HasCheckConstraint("ck_erasure_request_subject_kind", "subject_kind IN ('Party','User')");
             });
             b.HasKey(x => new { x.TenantId, x.ErasureId });
@@ -235,9 +235,11 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
             b.Property(x => x.Status).HasMaxLength(20);
             b.Property(x => x.RetentionBasis).HasMaxLength(1000);
             b.Property(x => x.ReviewDecisionsJson).HasColumnType("nvarchar(max)");
+            b.Property(x => x.RefusalRecordsJson).HasColumnType("nvarchar(max)");
             b.Property(x => x.FailureRule).HasMaxLength(80);
             b.Property(x => x.FailureDetail).HasMaxLength(1000);
             b.HasIndex(x => new { x.TenantId, x.RequestedAt, x.ErasureId });
+            b.HasIndex(x => new { x.TenantId, x.Status, x.RequestReceivedOn, x.ErasureId });
             b.HasIndex(x => new { x.TenantId, x.SubjectKind, x.SubjectId, x.Status });
             b.HasIndex(x => new { x.TenantId, x.RequestReference }).IsUnique();
         });

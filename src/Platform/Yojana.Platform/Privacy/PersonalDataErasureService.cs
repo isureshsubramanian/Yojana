@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Wolverine;
 using Yojana.Platform.Contracts;
@@ -17,6 +18,7 @@ public sealed record PreviewPersonalDataErasure(
     string SubjectKind,
     Guid SubjectId,
     string RequestReference,
+    DateOnly RequestReceivedOn,
     string Reason,
     bool SubjectIsNaturalPerson);
 
@@ -24,6 +26,7 @@ public sealed record ConfirmPersonalDataErasure(
     string SubjectKind,
     Guid SubjectId,
     string RequestReference,
+    DateOnly RequestReceivedOn,
     string Confirmation,
     string Reason,
     bool SubjectIsNaturalPerson,
@@ -43,20 +46,41 @@ public sealed record PersonalDataErasureRow(
     Guid ErasureId,
     string SubjectKind,
     Guid SubjectId,
+    string Token,
     string RequestReference,
+    string RequestedBy,
+    DateOnly RequestReceivedOn,
     string Status,
     DateTime RequestedAt,
-    DateTime? CompletedAt);
+    DateTime? CompletedAt,
+    string? FailureRule);
 
-public sealed record PersonalDataErasurePage(IReadOnlyList<PersonalDataErasureRow> Items, string? NextCursor);
+public sealed record PersonalDataErasureOldestOpen(
+    DateOnly ReceivedOn,
+    DateOnly DueOn,
+    int AgeDays,
+    string Warning);
+
+public sealed record PersonalDataErasureSummary(
+    int CompletedLastTwelveMonths,
+    int InProgress,
+    int Refused,
+    PersonalDataErasureOldestOpen? OldestOpen);
+
+public sealed record PersonalDataErasurePage(
+    IReadOnlyList<PersonalDataErasureRow> Items,
+    string? NextCursor,
+    PersonalDataErasureSummary Summary);
 
 public sealed record PersonalDataErasureDetail(
     Guid ErasureId,
     string SubjectKind,
     Guid SubjectId,
+    string Token,
     string RequestReference,
     string Reason,
     string RequestedBy,
+    DateOnly RequestReceivedOn,
     DateTime RequestedAt,
     DateTime? StartedAt,
     DateTime? CompletedAt,
@@ -65,7 +89,8 @@ public sealed record PersonalDataErasureDetail(
     string RetentionBasis,
     IReadOnlyList<ErasureStoreCountRow> Counts,
     string? FailureRule,
-    string? FailureDetail);
+    string? FailureDetail,
+    IReadOnlyList<PersonalDataErasureBlocker> Blockers);
 
 public sealed record ErasureStoreCountRow(string Store, string Kind, int PreviewCount, int ErasedCount,
     string Action, string Status, DateTime? CompletedAt);
@@ -84,9 +109,27 @@ public sealed class PersonalDataErasureService(
 
     public async Task<PersonalDataErasurePreviewResponse> PreviewAsync(PreviewPersonalDataErasure request,
         CancellationToken cancellationToken)
+        => await PreviewCoreAsync(request, cancellationToken);
+
+    public async Task<PersonalDataErasurePreviewResponse> PreviewAsync(PreviewPersonalDataErasure request,
+        Guid actor, CancellationToken cancellationToken)
     {
-        ValidateText(request.RequestReference, 120, "request reference");
-        ValidateText(request.Reason, 1000, "reason");
+        ValidateRequest(request);
+        try
+        {
+            return await PreviewCoreAsync(request, cancellationToken);
+        }
+        catch (CommandRefusedException exception)
+        {
+            await SaveRefusalAsync(request, actor, exception, cancellationToken);
+            throw;
+        }
+    }
+
+    private async Task<PersonalDataErasurePreviewResponse> PreviewCoreAsync(PreviewPersonalDataErasure request,
+        CancellationToken cancellationToken)
+    {
+        ValidateRequest(request);
         var kind = SubjectKind(request.SubjectKind);
         if (kind == ErasureSubjectKind.Party && !request.SubjectIsNaturalPerson)
             throw new CommandRefusedException("erasure_not_natural_person",
@@ -109,6 +152,18 @@ public sealed class PersonalDataErasureService(
             "Exact-value matching is a floor, not a guarantee; review every linked free-text item.");
     }
 
+    private static void ValidateRequest(PreviewPersonalDataErasure request)
+    {
+        ValidateText(request.RequestReference, 120, "request reference");
+        ValidateText(request.Reason, 1000, "reason");
+        if (request.SubjectId == Guid.Empty)
+            throw new CommandRefusedException("erasure_subject_required", "Choose the customer or user to erase.");
+        if (request.RequestReceivedOn == default)
+            throw new CommandRefusedException("erasure_request_received_date_invalid",
+                "The date the erasure request was received is required.");
+        _ = SubjectKind(request.SubjectKind);
+    }
+
     public async Task<PersonalDataErasureDetail> ConfirmAsync(ConfirmPersonalDataErasure request, Guid actor,
         IMessageBus bus, CancellationToken cancellationToken)
     {
@@ -116,8 +171,9 @@ public sealed class PersonalDataErasureService(
             throw new CommandRefusedException("erasure_confirmation_mismatch",
                 "The typed confirmation must repeat the request reference exactly.",
                 "type the request reference exactly as shown");
-        var preview = await PreviewAsync(new(request.SubjectKind, request.SubjectId, request.RequestReference,
-            request.Reason, request.SubjectIsNaturalPerson), cancellationToken);
+        var previewRequest = new PreviewPersonalDataErasure(request.SubjectKind, request.SubjectId,
+            request.RequestReference, request.RequestReceivedOn, request.Reason, request.SubjectIsNaturalPerson);
+        var preview = await PreviewAsync(previewRequest, actor, cancellationToken);
         var expected = preview.ReviewItems.Select(x => x.ItemKey).ToHashSet(StringComparer.Ordinal);
         var decisions = request.ReviewDecisions ?? [];
         var supplied = decisions.Select(x => x.ItemKey).ToList();
@@ -130,21 +186,51 @@ public sealed class PersonalDataErasureService(
 
         var kind = SubjectKind(request.SubjectKind);
         var now = clock.UtcNow;
-        var row = new ErasureRequest
+        var reference = request.RequestReference.Trim();
+        var row = await db.ErasureRequests.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
+            && x.RequestReference == reference, cancellationToken);
+        if (row is not null && (row.Status != ErasureRequestStatus.Refused
+            || row.SubjectKind != kind || row.SubjectId != request.SubjectId))
+            throw new CommandRefusedException("erasure_request_reference_duplicate",
+                "The request reference is already used by another erasure request.",
+                "use the existing request or enter a different request reference");
+        if (row is null)
         {
-            TenantId = tenant.TenantId,
-            ErasureId = TimeOrderedId.New(now),
-            SubjectKind = kind,
-            SubjectId = request.SubjectId,
-            RequestReference = request.RequestReference.Trim(),
-            Reason = request.Reason.Trim(),
-            RequestedBy = actor,
-            RequestedAt = now,
-            Status = ErasureRequestStatus.Pending,
-            RetentionBasis = RetentionBasis,
-            ReviewDecisionsJson = JsonSerializer.Serialize(decisions),
-        };
-        db.ErasureRequests.Add(row);
+            row = new ErasureRequest
+            {
+                TenantId = tenant.TenantId,
+                ErasureId = TimeOrderedId.New(now),
+                SubjectKind = kind,
+                SubjectId = request.SubjectId,
+                RequestReference = reference,
+                Reason = request.Reason.Trim(),
+                RequestReceivedOn = request.RequestReceivedOn,
+                RequestedBy = actor,
+                RequestedAt = now,
+                Status = ErasureRequestStatus.Pending,
+                RetentionBasis = RetentionBasis,
+                ReviewDecisionsJson = JsonSerializer.Serialize(decisions),
+            };
+            db.ErasureRequests.Add(row);
+        }
+        else
+        {
+            row.Reason = request.Reason.Trim();
+            row.RequestReceivedOn = request.RequestReceivedOn;
+            row.RequestedBy = actor;
+            row.RequestedAt = now;
+            row.StartedAt = null;
+            row.CompletedAt = null;
+            row.FailedAt = null;
+            row.Status = ErasureRequestStatus.Pending;
+            row.ReviewDecisionsJson = JsonSerializer.Serialize(decisions);
+            row.FailureRule = null;
+            row.FailureDetail = null;
+            row.RefusalRecordsJson = "[]";
+            var previousCounts = await db.ErasureStoreCounts.Where(x => x.TenantId == tenant.TenantId
+                && x.ErasureId == row.ErasureId).ToListAsync(cancellationToken);
+            db.ErasureStoreCounts.RemoveRange(previousCounts);
+        }
         foreach (var group in preview.Counts.GroupBy(x => new { x.Store, x.Kind }))
         {
             db.ErasureStoreCounts.Add(new ErasureStoreCount
@@ -173,12 +259,25 @@ public sealed class PersonalDataErasureService(
             query = query.Where(x => x.RequestedAt < after.Value.At
                 || (x.RequestedAt == after.Value.At && x.ErasureId.CompareTo(after.Value.Id) < 0));
         var rows = await query.OrderByDescending(x => x.RequestedAt).ThenByDescending(x => x.ErasureId)
-            .Take(take + 1).Select(x => new PersonalDataErasureRow(x.ErasureId, x.SubjectKind.ToString(),
-                x.SubjectId, x.RequestReference, x.Status, x.RequestedAt, x.CompletedAt))
-            .ToListAsync(cancellationToken);
-        var page = rows.Take(take).ToList();
+            .Take(take + 1).Select(x => new
+            {
+                x.ErasureId, x.SubjectKind, x.SubjectId, x.RequestReference, x.RequestedBy,
+                x.RequestReceivedOn, x.Status, x.RequestedAt, x.CompletedAt, x.FailureRule,
+            }).ToListAsync(cancellationToken);
+        var pageRows = rows.Take(take).ToList();
+        var requesterReferences = pageRows.Select(x => x.RequestedBy.ToString("D")).Distinct().ToList();
+        var requesterNames = await users.DisplayNamesAsync(requesterReferences, cancellationToken);
+        var page = pageRows.Select(x =>
+        {
+            var subject = new ErasureSubject(x.SubjectKind, x.SubjectId, [], []);
+            var requester = x.RequestedBy.ToString("D");
+            return new PersonalDataErasureRow(x.ErasureId, x.SubjectKind.ToString(), x.SubjectId, subject.Token,
+                x.RequestReference, requesterNames.GetValueOrDefault(requester) ?? "Unavailable user",
+                x.RequestReceivedOn, x.Status, x.RequestedAt, x.CompletedAt, x.FailureRule);
+        }).ToList();
         return new(page, rows.Count > take && page.Count > 0
-            ? EncodeCursor(page[^1].RequestedAt, page[^1].ErasureId) : null);
+            ? EncodeCursor(page[^1].RequestedAt, page[^1].ErasureId) : null,
+            await SummaryAsync(cancellationToken));
     }
 
     public async Task<PersonalDataErasureDetail?> DetailAsync(Guid erasureId,
@@ -193,10 +292,113 @@ public sealed class PersonalDataErasureService(
                 x.Status, x.CompletedAt)).ToListAsync(cancellationToken);
         var requesterReference = row.RequestedBy.ToString("D");
         var requesterNames = await users.DisplayNamesAsync([requesterReference], cancellationToken);
-        return new(row.ErasureId, row.SubjectKind.ToString(), row.SubjectId, row.RequestReference, row.Reason,
+        var subject = new ErasureSubject(row.SubjectKind, row.SubjectId, [], []);
+        var blockers = JsonSerializer.Deserialize<List<PersonalDataErasureBlocker>>(row.RefusalRecordsJson) ?? [];
+        return new(row.ErasureId, row.SubjectKind.ToString(), row.SubjectId, subject.Token,
+            row.RequestReference, row.Reason,
             requesterNames.GetValueOrDefault(requesterReference) ?? "Unavailable user",
-            row.RequestedAt, row.StartedAt, row.CompletedAt, row.FailedAt, row.Status,
-            row.RetentionBasis, counts, row.FailureRule, row.FailureDetail);
+            row.RequestReceivedOn, row.RequestedAt, row.StartedAt, row.CompletedAt, row.FailedAt, row.Status,
+            row.RetentionBasis, counts, row.FailureRule, row.FailureDetail, blockers);
+    }
+
+    public async Task ExportCsvAsync(Stream output, CancellationToken cancellationToken)
+    {
+        await using var writer = new StreamWriter(output, new UTF8Encoding(false), 16 * 1024, leaveOpen: true);
+        await WriteCsvRowAsync(writer,
+            ["request_reference", "subject", "kind", "request_received_on", "recorded_at", "status", "refusal_rule"],
+            cancellationToken);
+        var rows = db.ErasureRequests.AsNoTracking().Where(x => x.TenantId == tenant.TenantId)
+            .OrderByDescending(x => x.RequestedAt).ThenByDescending(x => x.ErasureId)
+            .Select(x => new
+            {
+                x.SubjectKind, x.SubjectId, x.RequestReference, x.RequestReceivedOn,
+                x.RequestedAt, x.Status, x.FailureRule,
+            }).AsAsyncEnumerable();
+        await foreach (var row in rows.WithCancellation(cancellationToken))
+        {
+            var token = new ErasureSubject(row.SubjectKind, row.SubjectId, [], []).Token;
+            await WriteCsvRowAsync(writer,
+                [row.RequestReference, token, row.SubjectKind.ToString(), row.RequestReceivedOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    row.RequestedAt.ToString("O", CultureInfo.InvariantCulture), row.Status, row.FailureRule], cancellationToken);
+        }
+        await writer.FlushAsync(cancellationToken);
+    }
+
+    private async Task<PersonalDataErasureSummary> SummaryAsync(CancellationToken cancellationToken)
+    {
+        var tenantId = tenant.TenantId;
+        var since = clock.UtcNow.AddMonths(-12);
+        var completed = await db.ErasureRequests.AsNoTracking().CountAsync(x => x.TenantId == tenantId
+            && x.Status == ErasureRequestStatus.Completed && x.CompletedAt >= since, cancellationToken);
+        var inProgress = await db.ErasureRequests.AsNoTracking().CountAsync(x => x.TenantId == tenantId
+            && (x.Status == ErasureRequestStatus.Pending || x.Status == ErasureRequestStatus.Running), cancellationToken);
+        var refused = await db.ErasureRequests.AsNoTracking().CountAsync(x => x.TenantId == tenantId
+            && x.Status == ErasureRequestStatus.Refused, cancellationToken);
+        var oldest = await db.ErasureRequests.AsNoTracking().Where(x => x.TenantId == tenantId
+                && (x.Status == ErasureRequestStatus.Pending || x.Status == ErasureRequestStatus.Running
+                    || x.Status == ErasureRequestStatus.Failed))
+            .OrderBy(x => x.RequestReceivedOn).Select(x => (DateOnly?)x.RequestReceivedOn)
+            .FirstOrDefaultAsync(cancellationToken);
+        PersonalDataErasureOldestOpen? oldestOpen = null;
+        if (oldest is { } received)
+        {
+            var today = DateOnly.FromDateTime(clock.UtcNow);
+            var due = received.AddMonths(1);
+            var warning = due < today ? "overdue" : due <= today.AddDays(7) ? "due_soon" : "none";
+            oldestOpen = new(received, due, Math.Max(0, today.DayNumber - received.DayNumber), warning);
+        }
+        return new(completed, inProgress, refused, oldestOpen);
+    }
+
+    private async Task SaveRefusalAsync(PreviewPersonalDataErasure request, Guid actor,
+        CommandRefusedException exception, CancellationToken cancellationToken)
+    {
+        var reference = request.RequestReference.Trim();
+        var kind = SubjectKind(request.SubjectKind);
+        var row = await db.ErasureRequests.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
+            && x.RequestReference == reference, cancellationToken);
+        if (row is not null && (row.Status != ErasureRequestStatus.Refused
+            || row.SubjectKind != kind || row.SubjectId != request.SubjectId)) return;
+        var now = clock.UtcNow;
+        if (row is null)
+        {
+            row = new ErasureRequest
+            {
+                TenantId = tenant.TenantId, ErasureId = TimeOrderedId.New(now), SubjectKind = kind,
+                SubjectId = request.SubjectId, RequestReference = reference, Reason = request.Reason.Trim(),
+                RequestReceivedOn = request.RequestReceivedOn, RequestedBy = actor, RequestedAt = now,
+                Status = ErasureRequestStatus.Refused, RetentionBasis = RetentionBasis,
+            };
+            db.ErasureRequests.Add(row);
+        }
+        else
+        {
+            row.Reason = request.Reason.Trim();
+            row.RequestReceivedOn = request.RequestReceivedOn;
+            row.RequestedBy = actor;
+            row.RequestedAt = now;
+        }
+        row.Status = ErasureRequestStatus.Refused;
+        row.FailureRule = exception.Rule;
+        row.FailureDetail = exception.Message;
+        row.RefusalRecordsJson = JsonSerializer.Serialize(
+            exception is PersonalDataErasureRefusedException refusal ? refusal.Blockers : []);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static async Task WriteCsvRowAsync(TextWriter writer, IReadOnlyList<string?> values,
+        CancellationToken cancellationToken)
+    {
+        for (var index = 0; index < values.Count; index++)
+        {
+            if (index > 0) await writer.WriteAsync(',');
+            var value = values[index] ?? "";
+            if (value.Length > 0 && value[0] is '=' or '+' or '-' or '@' or '\t' or '\r') value = "'" + value;
+            if (value.IndexOfAny([',', '"', '\r', '\n']) >= 0)
+                value = '"' + value.Replace("\"", "\"\"", StringComparison.Ordinal) + '"';
+            await writer.WriteAsync(value.AsMemory(), cancellationToken);
+        }
+        await writer.WriteAsync("\r\n".AsMemory(), cancellationToken);
     }
 
     private async Task<List<(string Store, PersonalDataPreview Preview)>> PreviewHoldersAsync(

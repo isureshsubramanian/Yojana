@@ -11,6 +11,7 @@ public sealed class ErasureRequest : ITenantScoped
     public Guid SubjectId { get; set; }
     public required string RequestReference { get; set; }
     public required string Reason { get; set; }
+    public DateOnly RequestReceivedOn { get; set; }
     public Guid RequestedBy { get; set; }
     public DateTime RequestedAt { get; set; }
     public DateTime? StartedAt { get; set; }
@@ -21,6 +22,7 @@ public sealed class ErasureRequest : ITenantScoped
     public string ReviewDecisionsJson { get; set; } = "[]";
     public string? FailureRule { get; set; }
     public string? FailureDetail { get; set; }
+    public string RefusalRecordsJson { get; set; } = "[]";
 }
 
 public sealed class ErasureStoreCount : ITenantScoped
@@ -46,6 +48,7 @@ public static class ErasureRequestStatus
     public const string Running = "running";
     public const string Completed = "completed";
     public const string Failed = "failed";
+    public const string Refused = "refused";
 }
 
 public static class ErasureStoreStatus

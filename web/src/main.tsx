@@ -6,6 +6,7 @@ import "./styles/base.css";
 import "./styles/layout.css";
 import "./corrections/corrections.css";
 import "./p7/p7.css";
+import "./settings/privacy.css";
 import { IconSprite } from "./shell/Icons";
 import { router } from "./routes";
 

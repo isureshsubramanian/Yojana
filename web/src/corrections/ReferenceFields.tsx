@@ -131,6 +131,15 @@ export function PartyField({ id, label, value, onChange, optional, hint }: Field
     kind="party" placeholder="Search by partner code or name" noResult={(query) => `No business partner ${query} found`} />;
 }
 
+const CUSTOMER = ["customer"] as const;
+
+/** A customer party, chosen by code or name; vendors, carriers and the tenant's own legal entities stay out. */
+export function CustomerField({ id, label, value, onChange, optional, hint }: FieldProps<string>) {
+  const names = useReferenceNames({ parties: [value] });
+  return <ReferencePicker id={id} label={label} value={value} selectedLabel={names.party(value)} onChange={onChange} optional={optional} hint={hint}
+    kind="party" partyTypes={CUSTOMER} placeholder="Search by customer code or name" noResult={(query) => `No customer ${query} found`} />;
+}
+
 const LEGAL_ENTITY = ["legal_entity"] as const;
 
 /** A legal entity of the company (the one that owes a warranty, issues a document), chosen by code or name; the value is its party reference. */

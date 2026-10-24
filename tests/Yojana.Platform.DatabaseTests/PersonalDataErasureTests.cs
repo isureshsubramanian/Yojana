@@ -18,16 +18,55 @@ namespace Yojana.Platform.DatabaseTests;
 public sealed class PersonalDataErasureTests(PlatformHostFixture fixture)
 {
     [DatabaseFact]
+    public async Task List_summary_uses_received_date_for_the_one_month_warning()
+    {
+        fixture.Clock.UtcNow = new DateTime(2026, 9, 5, 8, 0, 0, DateTimeKind.Utc);
+        var tenant = await NewTenantAsync("erase-summary");
+        var administrator = await AddUserAsync(tenant, "Fictional Privacy Lead", [YojanaRole.TenantAdministrator]);
+        using (var seed = ScopeFor(tenant))
+        {
+            var db = seed.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            db.ErasureRequests.AddRange(
+                Row("DSR-2026-1101", ErasureRequestStatus.Completed, new DateOnly(2026, 8, 1), completed: fixture.Clock.UtcNow.AddDays(-1)),
+                Row("DSR-2026-1102", ErasureRequestStatus.Pending, new DateOnly(2026, 8, 10)),
+                Row("DSR-2026-1103", ErasureRequestStatus.Running, new DateOnly(2026, 8, 20)),
+                Row("DSR-2026-1104", ErasureRequestStatus.Refused, new DateOnly(2026, 8, 5)));
+            await db.SaveChangesAsync();
+        }
+
+        using var scope = ScopeFor(tenant);
+        var page = await scope.ServiceProvider.GetRequiredService<PersonalDataErasureService>()
+            .ListAsync(null, 50, default);
+        Assert.Equal((1, 2, 1), (page.Summary.CompletedLastTwelveMonths, page.Summary.InProgress,
+            page.Summary.Refused));
+        Assert.Equal(new DateOnly(2026, 8, 10), page.Summary.OldestOpen!.ReceivedOn);
+        Assert.Equal(new DateOnly(2026, 9, 10), page.Summary.OldestOpen.DueOn);
+        Assert.Equal(26, page.Summary.OldestOpen.AgeDays);
+        Assert.Equal("due_soon", page.Summary.OldestOpen.Warning);
+        Assert.All(page.Items, row => Assert.Equal("Fictional Privacy Lead", row.RequestedBy));
+
+        ErasureRequest Row(string reference, string status, DateOnly received, DateTime? completed = null) => new()
+        {
+            TenantId = tenant, ErasureId = Guid.CreateVersion7(), SubjectKind = ErasureSubjectKind.Party,
+            SubjectId = Guid.CreateVersion7(), RequestReference = reference, Reason = "verified request",
+            RequestReceivedOn = received, RequestedBy = administrator.Id, RequestedAt = fixture.Clock.UtcNow,
+            CompletedAt = completed, Status = status, RetentionBasis = PersonalDataErasureService.RetentionBasis,
+        };
+    }
+
+    [DatabaseFact]
     public async Task Party_natural_person_and_typed_confirmation_guards_are_coded()
     {
         var tenant = await NewTenantAsync("erase-confirm");
         using var scope = ScopeFor(tenant);
         var service = scope.ServiceProvider.GetRequiredService<PersonalDataErasureService>();
         var naturalPerson = await Assert.ThrowsAsync<CommandRefusedException>(() => service.PreviewAsync(
-            new("Party", Guid.CreateVersion7(), "DSR-2026-1001", "verified request", false), default));
+            new("Party", Guid.CreateVersion7(), "DSR-2026-1001", new DateOnly(2026, 9, 1),
+                "verified request", false), default));
         Assert.Equal("erasure_not_natural_person", naturalPerson.Rule);
         var mismatch = await Assert.ThrowsAsync<CommandRefusedException>(() => service.ConfirmAsync(
-            new("Party", Guid.CreateVersion7(), "DSR-2026-1002", "DSR-2026-1003", "verified request", true, []),
+            new("Party", Guid.CreateVersion7(), "DSR-2026-1002", new DateOnly(2026, 9, 1),
+                "DSR-2026-1003", "verified request", true, []),
             Guid.CreateVersion7(), scope.ServiceProvider.GetRequiredService<IMessageBus>(), default));
         Assert.Equal("erasure_confirmation_mismatch", mismatch.Rule);
     }
