@@ -160,7 +160,7 @@ export function Component() {
           <FindBar compact query={filters.q} onQuery={(q) => setFilter({ q })} facets={[]} activeFacet={null} onFacet={() => undefined} ariaLabel="Find a claim" placeholder="Claim number or any serial" />
           <FilterSelect label="Status" value={filters.status} onChange={(status) => setFilter({ status })} options={["open", "all", ...CLAIM_STATUSES]} />
           <FilterSelect label="Coverage source" value={filters.coverageSource} onChange={(coverageSource) => setFilter({ coverageSource })} options={["", ...(summary?.coverageSources.length ? summary.coverageSources : COVERAGE_SOURCES)]} empty="All" />
-          <select className={`chip-select${filters.campaignId ? " on" : ""}`} aria-label="Campaign" value={filters.campaignId} onChange={(event) => setFilter({ campaignId: event.target.value })}><option value="">Campaign · All</option>{campaigns.map((campaign) => <option value={campaign.campaignId} key={campaign.campaignId}>Campaign · {campaign.code} · {campaign.name}</option>)}</select>
+          <label className="chip-field"><span className="chip-k">Campaign</span><select className={`chip-select${filters.campaignId ? " on" : ""}`} aria-label="Campaign" value={filters.campaignId} onChange={(event) => setFilter({ campaignId: event.target.value })}><option value="">All</option>{campaigns.map((campaign) => <option value={campaign.campaignId} key={campaign.campaignId}>{campaign.code} · {campaign.name}</option>)}</select></label>
           <FilterSelect label="Service country" value={filters.serviceCountry} onChange={(serviceCountry) => setFilter({ serviceCountry })} options={["", ...(summary?.serviceCountries ?? [])]} empty="All" />
           <FilterSelect label="Recovery" value={filters.recovery} onChange={(recovery) => setFilter({ recovery })} options={["", "raised", "none"]} empty="Any" />
         </div></div></section>
@@ -174,7 +174,7 @@ export function Component() {
 }
 
 function FilterSelect({ label, value, options, empty, onChange }: { label: string; value: string; options: readonly string[]; empty?: string | undefined; onChange: (value: string) => void }) {
-  return <select className={`chip-select${value ? " on" : ""}`} aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>{[...new Set(options)].map((option) => <option key={option || "all"} value={option}>{label} · {option ? humanise(option) : empty}</option>)}</select>;
+  return <label className="chip-field"><span className="chip-k">{label}</span><select className={`chip-select${value ? " on" : ""}`} aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>{[...new Set(options)].map((option) => <option key={option || "all"} value={option}>{option ? humanise(option) : empty}</option>)}</select></label>;
 }
 
 function ClaimDrawer({ detail, catalogue }: { detail: ClaimDetail; catalogue: CurrencyInfo[] }) {

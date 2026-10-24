@@ -125,7 +125,7 @@ export function Component() {
                 {result && ([["all", `All ${result.units}`], ["complete", `Complete ${result.complete}`], ["missing", `Missing ${result.missingUnits}`], ["unexpected", `Unexpected ${result.unexpectedUnits}`]] as const).map(([id, label]) => (
                   <button type="button" key={id} className={`chip${facet === id ? " on" : ""}`} aria-pressed={facet === id} onClick={() => { setFacet(id); setPage(1); }}>{label}</button>
                 ))}
-                {slots.length > 0 && <select className={`chip-select${slotFilter ? " on" : ""}`} aria-label="Slot" value={slotFilter ?? ""} onChange={(e) => { setSlotFilter(e.target.value || null); setPage(1); }}><option value="">Slot · Any</option>{slots.map((s) => <option key={s} value={s}>{s} · not captured</option>)}</select>}
+                {slots.length > 0 && <label className="chip-field"><span className="chip-k">Slot</span><select className={`chip-select${slotFilter ? " on" : ""}`} aria-label="Slot" value={slotFilter ?? ""} onChange={(e) => { setSlotFilter(e.target.value || null); setPage(1); }}><option value="">Any</option>{slots.map((s) => <option key={s} value={s}>{s} · not captured</option>)}</select></label>}
               </div>
               <span className="meta nowrap" id="h-matrix">Expected versus captured per slot</span>
             </div>

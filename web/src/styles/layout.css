@@ -219,3 +219,8 @@
 .password-classes > legend { padding: 0; }
 .password-class-grid { display: grid; gap: 6px; padding: 4px 0 2px; }
 .password-class-grid .checkrow { padding: 0; border: 0; }
+/* A filter chip's name sits beside it, not inside every option, so the open list reads "All, Open, Approved". */
+.chip-field { display: inline-flex; align-items: center; gap: 6px; }
+.chip-field > .chip-k { font-size: 12px; font-weight: 500; color: var(--text-3); white-space: nowrap; }
+/* A select is as wide as its longest option; a long campaign or partner name must not stretch the chip across the bar. */
+.chip-field > .chip-select { max-width: 220px; text-overflow: ellipsis; }

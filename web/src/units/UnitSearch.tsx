@@ -114,14 +114,14 @@ export function Component() {
             <div className="card-body">
               <ScanInput size="lg" primary autoFocus value={scan} onChange={setScan} ariaLabel="Scan or type any identifier" placeholder="Scan or type any identifier" hint={<kbd className="key">/</kbd>} onSubmit={(s) => submit(s.value)} describedBy="lookup-help" />
               <div className="toolbar" style={{ marginTop: 12 }}>
-                <select className={`chip-select${type ? " on" : ""}`} aria-label="Identifier type" value={type} onChange={(e) => set({ type: e.target.value })}>
-                  <option value="">Identifier · Any type</option>
+                <label className="chip-field"><span className="chip-k">Identifier</span><select className={`chip-select${type ? " on" : ""}`} aria-label="Identifier type" value={type} onChange={(e) => set({ type: e.target.value })}>
+                  <option value="">Any type</option>
                   {TYPES.map((t) => <option key={t} value={t}>{sentence(t)}</option>)}
-                </select>
-                <select className={`chip-select${status ? " on" : ""}`} aria-label="Lifecycle status" value={status} onChange={(e) => set({ status: e.target.value })}>
-                  <option value="">Status · All</option>
+                </select></label>
+                <label className="chip-field"><span className="chip-k">Status</span><select className={`chip-select${status ? " on" : ""}`} aria-label="Lifecycle status" value={status} onChange={(e) => set({ status: e.target.value })}>
+                  <option value="">All</option>
                   {STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
-                </select>
+                </select></label>
                 <button type="button" className={`chip${superseded ? " on" : ""}`} aria-pressed={superseded} onClick={() => set({ superseded: superseded ? "no" : null })}>Superseded · {superseded ? "included" : "hidden"}{superseded && <Icon name="x" />}</button>
                 {docRef && <button type="button" className="chip on" onClick={() => set({ document: null })}>Document · {documentLabel(docRef)}<Icon name="x" /></button>}
                 {q && <button type="button" className="chip on" onClick={() => set({ q: null })}>Prefix · <span className="serial">{q}</span><Icon name="x" /></button>}
