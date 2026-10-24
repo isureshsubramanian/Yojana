@@ -137,10 +137,21 @@ app.MapGet("/api/platform/metrics/concurrency", () => Results.Ok(new
     .RequireAuthorization(YojanaPolicy.TenantMember);
 
 // Third-party notices ship inside the artefact and are reachable from the running application (MOD-01).
-app.MapGet("/notices", () =>
+// The file is about 10 MB of text, so it goes out gzip-compressed (about 1.2 MB) to clients that accept it, with an
+// ETag so the notices page does not download it again. The bytes are the shipped file, unchanged.
+app.MapGet("/notices", (HttpContext http) =>
 {
     var path = Path.Combine(AppContext.BaseDirectory, "Notices", "THIRD-PARTY-NOTICES.txt");
-    return File.Exists(path) ? Results.File(path, "text/plain; charset=utf-8") : Results.Problem("notices file missing from the artefact", statusCode: 500);
+    if (!File.Exists(path)) return Results.Problem("notices file missing from the artefact", statusCode: 500);
+    var notices = NoticesFile.For(path);
+    http.Response.Headers.ETag = notices.ETag;
+    http.Response.Headers.CacheControl = "public, max-age=3600";
+    http.Response.Headers.Vary = "Accept-Encoding";
+    if (http.Request.Headers.IfNoneMatch.ToString() == notices.ETag) return Results.StatusCode(StatusCodes.Status304NotModified);
+    if (!http.Request.Headers.AcceptEncoding.ToString().Contains("gzip", StringComparison.OrdinalIgnoreCase))
+        return Results.File(path, "text/plain; charset=utf-8");
+    http.Response.Headers.ContentEncoding = "gzip";
+    return Results.Bytes(notices.Gzip, "text/plain; charset=utf-8");
 }).AllowAnonymous();
 
 app.MapYojanaSecurityEndpoints();

@@ -36,11 +36,11 @@ export function Frame() {
 }
 
 /** The frame without navigation: sign-in and tenant selection. */
-export function BareFrame({ children }: { children: React.ReactNode }) {
+export function BareFrame({ children, wide = false }: { children: React.ReactNode; wide?: boolean }) {
   return (
     <div className="frame bare">
       <TopBar bare />
-      <main className="content center" id="main" tabIndex={-1}>{children}</main>
+      <main className={`content${wide ? " wide" : " center"}`} id="main" tabIndex={-1}>{children}</main>
     </div>
   );
 }

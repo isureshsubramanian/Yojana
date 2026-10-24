@@ -1,0 +1,20 @@
+/* Third-party notices: component list beside the selected component's licence text. */
+.content.wide { width: 100%; max-width: 1440px; margin: 0 auto; }
+.notices-page .page-header { margin-bottom: var(--gap); }
+.notices-toolbar { margin-bottom: var(--gap); }
+.notices-find { flex: 1 1 360px; max-width: 520px; }
+.notices-layout { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: var(--gap); align-items: start; }
+.notices-list ul { list-style: none; margin: 0; padding: 6px; max-height: calc(100vh - 300px); overflow: auto; }
+.notices-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: var(--radius-s); cursor: pointer; font-size: 13px; color: var(--text-1); }
+.notices-list li:hover, .notices-list li:focus-visible { background: var(--surface-2); outline: none; }
+.notices-list li[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.notices-name { min-width: 0; overflow-wrap: anywhere; }
+.notices-licence { flex: 0 0 auto; font-size: 11px; font-weight: 500; color: var(--text-3); white-space: nowrap; }
+.notices-empty { padding: 16px var(--card-pad); }
+.notices-detail { position: sticky; top: 72px; }
+.notices-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 0 0 16px; font-size: 13px; }
+.notices-facts dt { color: var(--text-3); }
+.notices-facts dd { margin: 0; color: var(--text-1); overflow-wrap: anywhere; }
+.notices-facts .notices-source { grid-column: 1 / -1; color: var(--text-3); font-size: 12px; }
+.notices-text { margin: 0; padding: 16px; max-height: calc(100vh - 380px); overflow: auto; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-s); font-family: var(--font-mono); font-size: 12px; line-height: 1.55; color: var(--text-1); white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 900px) { .notices-layout { grid-template-columns: 1fr; } .notices-list ul { max-height: 320px; } .notices-detail { position: static; } .notices-text { max-height: none; } }

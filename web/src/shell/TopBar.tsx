@@ -132,7 +132,7 @@ function UserMenu({ session }: { session: Session }) {
           <ModeMenuItems />
           <hr />
           <Link className="mi" role="menuitem" to="/account/security" onClick={() => setOpen(false)}>Account security<span className="k">Password</span></Link>
-          <a className="mi" role="menuitem" href="/notices" target="_blank" rel="noopener">Third-party notices<span className="k">↗</span></a>
+          <Link className="mi" role="menuitem" to="/third-party-notices">Third-party notices</Link>
           <button type="button" className="mi" role="menuitem" onClick={signOut}>Sign out<span className="k">{session.user.email}</span></button>
         </div>
       )}

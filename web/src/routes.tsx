@@ -31,6 +31,8 @@ export const router = createBrowserRouter([
   { path: "/forgot-password", lazy: () => import("./pages/ForgotPassword"), errorElement: <ErrorPage /> },
   { path: "/reset-password", lazy: () => import("./pages/ResetPassword"), errorElement: <ErrorPage /> },
   { path: "/accept-invitation", lazy: () => import("./pages/AcceptInvitation"), errorElement: <ErrorPage /> },
+  // Public: the licences require the notices to be readable by anyone who receives the software, signed in or not.
+  { path: "/third-party-notices", lazy: () => import("./pages/ThirdPartyNotices"), errorElement: <ErrorPage /> },
   { path: "/public/:tenantCode/lookup", lazy: () => import("./p7/PublicLookup"), errorElement: <ErrorPage /> },
   {
     id: ROOT_ROUTE_ID,
