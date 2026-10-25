@@ -413,6 +413,8 @@ public sealed class WebhookDatabaseTests(DeveloperHostFixture fixture)
         TenantId tenant, Guid subscriptionId, int count, DateTime createdAt)
     {
         var ids = new List<Guid>();
+        // Several rows in one save: reserve their queue positions so the send order is the insertion order.
+        var position = await WebhookDeliveryQueue.ReserveAsync(db, count, default);
         for (var index = 0; index < count; index++)
         {
             var at = createdAt.AddMilliseconds(index);
@@ -424,7 +426,7 @@ public sealed class WebhookDatabaseTests(DeveloperHostFixture fixture)
                 TenantId = tenant, DeliveryId = Guid.CreateVersion7(at.AddTicks(1)),
                 SubscriptionId = subscriptionId, EventId = eventId,
                 Status = WebhookDeliveryStatus.Pending, CreatedAt = at,
-                NextAttemptAt = createdAt.AddSeconds(-1),
+                NextAttemptAt = createdAt.AddSeconds(-1), QueuePosition = position++,
             });
         }
         await db.SaveChangesAsync();

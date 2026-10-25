@@ -121,6 +121,8 @@ public sealed class WebhookDelivery : ITenantScoped
     public Guid SubscriptionId { get; set; }
     public Guid EventId { get; set; }
     public Guid? ReplayOf { get; set; }
+    /// <summary>Strict send order within a subscription (head of line); from <c>seq_webhook_delivery</c>.</summary>
+    public long QueuePosition { get; set; }
     public required string Status { get; set; }
     public int AttemptCount { get; set; }
     public DateTime CreatedAt { get; set; }

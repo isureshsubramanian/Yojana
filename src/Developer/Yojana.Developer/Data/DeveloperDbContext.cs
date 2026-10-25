@@ -12,6 +12,7 @@ public sealed class DeveloperDbContext(DbContextOptions<DeveloperDbContext> opti
     : YojanaDbContext(options, tenant)
 {
     public const string SchemaName = "developer";
+    public const string DeliverySequence = "seq_webhook_delivery";
     public override string Schema => SchemaName;
 
     public DbSet<ApiClient> ApiClients => Set<ApiClient>();
@@ -26,6 +27,7 @@ public sealed class DeveloperDbContext(DbContextOptions<DeveloperDbContext> opti
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.HasSequence<long>(DeliverySequence, SchemaName).StartsAt(1).IncrementsBy(1);
         modelBuilder.Entity<ApiClient>(b =>
         {
             b.ToTable("api_client", table =>
@@ -103,6 +105,12 @@ public sealed class DeveloperDbContext(DbContextOptions<DeveloperDbContext> opti
                 .HasFilter("[replay_of] IS NULL").HasDatabaseName("ux_webhook_delivery_first");
             b.HasIndex(x => new { x.TenantId, x.SubscriptionId, x.Status, x.NextAttemptAt, x.DeliveryId });
             b.HasIndex(x => new { x.TenantId, x.SubscriptionId, x.CreatedAt, x.DeliveryId });
+            // created_at is millisecond precision and v7 ids do not sort by time in SQL Server, so neither orders a
+            // burst of deliveries; the queue position does. Rows inserted one at a time take the default; a caller
+            // inserting several ordered rows at once reserves a range (WebhookDeliveryQueue).
+            b.Property(x => x.QueuePosition)
+                .HasDefaultValueSql($"NEXT VALUE FOR [{SchemaName}].[{DeliverySequence}]");
+            b.HasIndex(x => new { x.TenantId, x.SubscriptionId, x.Status, x.QueuePosition });
         });
         modelBuilder.Entity<WebhookDeliveryAttempt>(b =>
         {

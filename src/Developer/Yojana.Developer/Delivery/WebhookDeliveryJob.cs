@@ -208,7 +208,7 @@ public sealed class WebhookDeliveryDispatcher(DeveloperDbContext db, ITenantCont
                               where candidate.TenantId == tenant.TenantId
                                  && candidate.SubscriptionId == subscriptionId
                                  && candidate.Status == WebhookDeliveryStatus.Pending
-                              orderby candidate.CreatedAt, candidate.DeliveryId
+                              orderby candidate.QueuePosition
                               select new
                               {
                                   Delivery = candidate,

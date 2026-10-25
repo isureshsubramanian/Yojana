@@ -23,6 +23,8 @@ namespace Yojana.Developer.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.HasSequence("seq_webhook_delivery", "developer");
+
             modelBuilder.Entity("Yojana.Developer.Data.Entities.ApiAccessToken", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -419,6 +421,12 @@ namespace Yojana.Developer.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("parked_at");
 
+                    b.Property<long>("QueuePosition")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("queue_position")
+                        .HasDefaultValueSql("NEXT VALUE FOR [developer].[seq_webhook_delivery]");
+
                     b.Property<Guid?>("ReplayOf")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("replay_of");
@@ -459,6 +467,9 @@ namespace Yojana.Developer.Migrations
 
                     b.HasIndex("TenantId", "SubscriptionId", "CreatedAt", "DeliveryId")
                         .HasDatabaseName("ix_webhook_delivery_tenant_id_subscription_id_created_at_delivery_id");
+
+                    b.HasIndex("TenantId", "SubscriptionId", "Status", "QueuePosition")
+                        .HasDatabaseName("ix_webhook_delivery_tenant_id_subscription_id_status_queue_position");
 
                     b.HasIndex("TenantId", "SubscriptionId", "Status", "NextAttemptAt", "DeliveryId")
                         .HasDatabaseName("ix_webhook_delivery_tenant_id_subscription_id_status_next_attempt_at_delivery_id");

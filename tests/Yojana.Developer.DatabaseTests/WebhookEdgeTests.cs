@@ -19,7 +19,8 @@ using Yojana.Serialisation.Contracts;
 namespace Yojana.Developer.DatabaseTests;
 
 // P14-T11 edge cases not already covered by WebhookDatabaseTests: an endpoint down past the retry window, a secret
-// rotated while a delivery is queued, a duplicate delivery, and a 100,000-unit bulk change.
+// rotated while a delivery is queued, a duplicate delivery, a burst of events inside one millisecond (and its replay),
+// and a 100,000-unit bulk change.
 [Collection("developer host")]
 public sealed class WebhookEdgeTests(DeveloperHostFixture fixture, ITestOutputHelper output)
 {
@@ -137,6 +138,52 @@ public sealed class WebhookEdgeTests(DeveloperHostFixture fixture, ITestOutputHe
     }
 
     [DatabaseFact]
+    public async Task Burst_staged_in_one_millisecond_and_its_replayed_period_arrive_in_event_order()
+    {
+        fixture.ResetWebhookProbe();
+        var setup = await fixture.NewTenantAsync("edge-burst");
+        using var client = await fixture.ClientAsync(setup.Tenant, setup.Administrator);
+        var created = await CreateAsync(client, "Burst endpoint", [PublicEventTypes.UnitCreated]);
+        var at = fixture.Clock.UtcNow;
+        var staged = new List<string>();
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+        {
+            await PointAtAsync(scope.ServiceProvider.GetRequiredService<DeveloperDbContext>(), created.Subscription.Id,
+                "/test/webhook/capture");
+            var stager = scope.ServiceProvider.GetRequiredService<PublicEventStager>();
+            // The clock does not move: every delivery shares one created_at, as a fast burst does in production.
+            for (var index = 0; index < 20; index++)
+            {
+                var message = new UnitCommissioned(new(UnitCommissioned.Schema, UnitCommissioned.Version,
+                    Guid.CreateVersion7(at), Guid.CreateVersion7(at), at, at, 1, Guid.CreateVersion7(),
+                    "system:test", null), Guid.CreateVersion7(), "receipt", "active", [], null, null, null);
+                await stager.StageAsync(message, default);
+            }
+            var db = scope.ServiceProvider.GetRequiredService<DeveloperDbContext>();
+            staged.AddRange((await db.Deliveries.Where(row => row.SubscriptionId == created.Subscription.Id)
+                .OrderBy(row => row.QueuePosition).Select(row => row.EventId).ToListAsync()).Select(id => id.ToString("D")));
+        }
+        Assert.Equal(20, staged.Count);
+        await DrainAsync(setup.Tenant, created.Subscription.Id, 20);
+        Assert.Equal(staged, fixture.CapturedWebhooks.Select(row => row.EventId));
+
+        var replay = await client.PostAsJsonAsync(
+            $"/api/developer/webhooks/{created.Subscription.Id:D}/deliveries/redeliver-range",
+            new RedeliverRangeRequest(at, at.AddSeconds(1)));
+        replay.EnsureSuccessStatusCode();
+        Assert.Equal(20, (await replay.Content.ReadFromJsonAsync<RedeliverRangeResponse>())!.Created);
+        await DrainAsync(setup.Tenant, created.Subscription.Id, 40);
+        Assert.Equal(staged.Concat(staged), fixture.CapturedWebhooks.Select(row => row.EventId));
+    }
+
+    private async Task DrainAsync(TenantId tenant, Guid subscriptionId, int expected)
+    {
+        for (var round = 0; round < 50 && fixture.CapturedWebhooks.Count < expected; round++)
+            await DispatchAsync(tenant, subscriptionId);
+        Assert.Equal(expected, fixture.CapturedWebhooks.Count);
+    }
+
+    [DatabaseFact]
     public async Task Hundred_thousand_unit_bulk_change_publishes_one_summary_and_pages_every_unit()
     {
         const int size = 100_000;
@@ -220,6 +267,7 @@ public sealed class WebhookEdgeTests(DeveloperHostFixture fixture, ITestOutputHe
         Guid subscriptionId, int count)
     {
         var ids = new List<Guid>();
+        var position = await WebhookDeliveryQueue.ReserveAsync(db, count, default);
         for (var index = 0; index < count; index++)
         {
             var at = fixture.Clock.UtcNow.AddMilliseconds(index);
@@ -235,7 +283,7 @@ public sealed class WebhookEdgeTests(DeveloperHostFixture fixture, ITestOutputHe
             {
                 TenantId = tenant, DeliveryId = Guid.CreateVersion7(at.AddTicks(1)), SubscriptionId = subscriptionId,
                 EventId = eventId, Status = WebhookDeliveryStatus.Pending, CreatedAt = at,
-                NextAttemptAt = at.AddSeconds(-1),
+                NextAttemptAt = at.AddSeconds(-1), QueuePosition = position++,
             });
         }
         await db.SaveChangesAsync();

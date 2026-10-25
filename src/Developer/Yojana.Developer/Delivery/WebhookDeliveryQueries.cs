@@ -84,19 +84,26 @@ public sealed class WebhookDeliveryQueries(DeveloperDbContext db, ITenantContext
         if (request.From >= request.To)
             throw new CommandRefusedException("webhook_date_range_invalid", "The replay range must have a from time before its to time.");
         var created = 0;
-        Guid? after = null;
+        long? after = null;
         while (true)
         {
             var query = db.Deliveries.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
                 && row.SubscriptionId == subscriptionId && row.CreatedAt >= request.From
                 && row.CreatedAt < request.To && row.ReplayOf == null);
-            if (after is { } cursor) query = query.Where(row => row.DeliveryId.CompareTo(cursor) > 0);
-            var batch = await query.OrderBy(row => row.DeliveryId).Take(500).ToListAsync(ct);
+            if (after is { } cursor) query = query.Where(row => row.QueuePosition > cursor);
+            // Replays keep the originals' send order: walk them in queue order and give the copies one range.
+            var batch = await query.OrderBy(row => row.QueuePosition).Take(500).ToListAsync(ct);
             if (batch.Count == 0) break;
-            db.Deliveries.AddRange(batch.Select(source => Replay(source, Guid.CreateVersion7(clock.UtcNow))));
+            var position = await WebhookDeliveryQueue.ReserveAsync(db, batch.Count, ct);
+            foreach (var source in batch)
+            {
+                var replay = Replay(source, Guid.CreateVersion7(clock.UtcNow));
+                replay.QueuePosition = position++;
+                db.Deliveries.Add(replay);
+            }
             await db.SaveChangesAsync(ct);
             created += batch.Count;
-            after = batch[^1].DeliveryId;
+            after = batch[^1].QueuePosition;
         }
         return new(created);
     }
