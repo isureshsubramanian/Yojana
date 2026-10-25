@@ -1,78 +1,194 @@
-export type QuestionStatus = "open" | "answered" | "closed_without_answer";
-export interface QuestionCounts { open: number; answered: number; closedWithoutAnswer: number; total: number }
-export interface QuestionListItem { questionId: string; title: string; status: QuestionStatus; askedByName: string; askedAt: string; directedToUserName: string | null; directedToRoleLabel: string | null; replyCount: number }
-export interface QuestionPage { recordKind: string; recordId: string; recordName: string; items: QuestionListItem[]; nextCursor: string | null; counts: QuestionCounts }
-export interface AllowedActions { canEditQuestion: boolean; canReply: boolean; canAcceptAnswer: boolean; canCloseWithoutAnswer: boolean; canReopen: boolean; canTurnIntoEntry: boolean; entryId: string | null }
-export interface QuestionAttachment { fileId: string; fileName: string; contentType: string; contentLength: number; uploadedByName: string; uploadedAt: string }
-export interface QuestionReply { replyId: string; body: string; authorName: string; at: string; editedAt: string | null; revisionCount: number; canEdit: boolean; attachments: QuestionAttachment[] }
-export interface QuestionThread { questionId: string; recordKind: string; recordId: string; recordName: string; title: string; body: string; status: QuestionStatus; directedToUserName: string | null; directedToRoleLabel: string | null; askedByName: string; askedAt: string; acceptedReplyId: string | null; closedReason: string | null; closedByName: string | null; closedAt: string | null; questionRevisionCount: number; allowedActions: AllowedActions; attachments: QuestionAttachment[]; replies: QuestionReply[] }
-export interface Revision { revisionId: string; body: string; revisedByName: string; revisedAt: string }
-export interface StaffChoice { userId: string; name: string; roles: string[] }
-export interface RoleChoice { role: string; label: string; people: number }
-export interface AddresseePage { people: { items: StaffChoice[]; nextCursor: string | null }; roles: RoleChoice[] }
-export interface SearchQuestion { questionId: string; title: string; status: QuestionStatus; recordKind: string; recordId: string; recordName: string; answer: string; rank: number; askedAt: string }
-export interface SearchPage { reviewedEntries: KnowledgeEntryListItem[]; questions: SearchQuestion[]; nextCursor: string | null }
-export interface RankedCount { key: string; label: string; count: number }
-export interface MyQuestion { questionId: string; title: string; status: QuestionStatus; recordKind: string; recordId: string; recordName: string; askedByName: string; directedTo: string; askedAt: string; lastActivityAt: string; replyCount: number; waitingDays: number }
-export interface MyQuestionPage { items: MyQuestion[]; nextCursor: string | null; summary: { waitingByAge: RankedCount[]; waitingByRecordKind: RankedCount[] } }
-export type QuestionNotificationMode = "immediately" | "daily_digest" | "off";
-export interface QuestionNotificationPreference { personalDefault: QuestionNotificationMode; roleDefault: QuestionNotificationMode; choice: QuestionNotificationMode | null }
-export interface QuestionBellItem { id: string; questionId: string | null; entryId: string | null; title: string; recordKind: string; recordId: string | null; recordName: string; reason: string; activityAt: string; link: string }
-export interface QuestionBellSummary { count: number; items: QuestionBellItem[] }
-
-export type EntryStatus = "draft" | "in_review" | "published" | "retired";
-export type EntryTagKind = "role" | "task" | "item_family" | "claim_cause";
-export interface EntryTag { kind: EntryTagKind; value: string; label: string }
-export interface EntryTagInput { kind: EntryTagKind; value: string }
-export interface WrittenAgainst { kind: "policy_version" | "screen"; reference: string; label: string; resolved?: boolean }
-export interface EntryRecordLink { recordKind: string; recordId: string; recordName: string; source: boolean }
-export interface EntryRound { round: number; version: number; submittedByName: string; submittedAt: string; decision: "approve" | "send_back" | null; reviewerName: string | null; reviewedAt: string | null; note: string | null }
-export interface EntryVersion { version: number; savedByName: string; savedAt: string }
-export interface EntryReviewReason { reasonId: string; kind: "policy_version_superseded" | "screen_changed"; label: string; detail: string; flaggedAt: string }
-export interface EntryAllowedActions { canEdit: boolean; canSubmit: boolean; canApprove: boolean; canSendBack: boolean; canRetire: boolean; canConfirmStillCorrect: boolean }
-export interface KnowledgeEntry {
-  entryId: string; title: string; problem: string; answer: string; steps: string; status: EntryStatus; currentVersion: number;
-  authorName: string; createdAt: string; lastSavedAt: string; publishedByName: string | null; publishedAt: string | null; retirementNote: string | null;
-  tags: EntryTag[]; writtenAgainst: WrittenAgainst[]; recordLinks: { visible: EntryRecordLink[]; hiddenCount: number };
-  source: { questionId: string; title: string; recordKind: string; recordId: string; recordName: string | null; acceptedAnswer: string };
-  reviewRounds: EntryRound[]; versions: EntryVersion[]; reviewerRoles: string[]; caseDisclosureTier: string;
-  needsReview: boolean; reviewReasons: EntryReviewReason[]; allowedActions: EntryAllowedActions;
-}
-export interface KnowledgeEntryListItem { entryId: string; title: string; answer: string; currentVersion: number; authorName: string; reviewerName: string; publishedAt: string; tags: EntryTag[]; rank: number; needsReview: boolean; reviewReasons: EntryReviewReason[] }
-export interface KnowledgeFacet { value: string; label: string; count: number }
-export interface KnowledgeEntryPage { items: KnowledgeEntryListItem[]; nextCursor: string | null; roles: KnowledgeFacet[]; tasks: KnowledgeFacet[] }
-export interface EntryReviewItem { entryId: string; title: string; currentVersion: number; authorName: string; activityAt: string; round: number | null; status: EntryStatus; needsReview: boolean; reviewReasons: EntryReviewReason[]; canConfirmStillCorrect: boolean }
-export interface EntryReviewPage { items: EntryReviewItem[]; nextCursor: string | null }
-export interface EntryFieldChange { field: string; before: string; after: string }
-export interface EntryTagChoices { roles: EntryTag[]; tasks: EntryTag[]; itemFamilies: EntryTag[]; claimCauses: EntryTag[] }
-export interface EntryDraftRequest { title: string; problem: string; answer: string; steps: string; tags: EntryTagInput[]; recordLinks: Array<{ recordKind: string; recordId: string }>; writtenAgainst: WrittenAgainst[] }
-export interface KnowledgeScreenReference { reference: string; label: string; publishedEntries: number; lastChangedAt: string | null; lastChangedByName: string | null }
-export interface KnowledgeScreenReferencePage { items: KnowledgeScreenReference[]; nextCursor: string | null }
-export interface ReferenceChoice { reference: string; label: string }
-export interface ReferenceChoicePage { items: ReferenceChoice[]; nextCursor: string | null }
-export interface PolicyVersionChoice { policyVersionId: string; label: string }
-export interface PolicyVersionChoicePage { items: PolicyVersionChoice[]; nextCursor: string | null }
-
-export interface TrainingPathSummary { pathId: string; role: string; roleLabel: string; introduction: string; version: number; entries: number; readEntries: number; finished: boolean; newMember: boolean; canMaintain: boolean }
-export interface TrainingPathList { items: TrainingPathSummary[]; canMaintain: boolean }
-export interface TrainingPathEntry { position: number; entryId: string; title: string; taskLabel: string | null; publishedVersion: number; read: boolean; readAt: string | null; needsReview: boolean; warning: string | null }
-export interface TrainingPath { pathId: string; role: string; roleLabel: string; introduction: string; version: number; entries: TrainingPathEntry[]; readEntries: number; finished: boolean; newMember: boolean; welcomeDismissed: boolean; canMaintain: boolean; canViewTeam: boolean }
-export interface TrainingWelcome { pathId: string; role: string; roleLabel: string; introduction: string; entries: number; readEntries: number }
-export interface TrainingTeamMember { name: string; joinedAt: string; newMember: boolean; readEntries: number; totalEntries: number; lastReadAt: string | null; finished: boolean }
-export interface TrainingTeam { role: string; roleLabel: string; people: TrainingTeamMember[]; nextCursor: string | null; questionsAskedInFirstThirtyDays: number }
+import * as z from "zod/mini";
+export const entryStatus = z.enum(["draft", "in_review", "published", "retired"]);
+export type EntryStatus = z.infer<typeof entryStatus>;
+export const entryTagKind = z.enum(["role", "task", "item_family", "claim_cause"]);
+export type EntryTagKind = z.infer<typeof entryTagKind>;
+export const questionNotificationMode = z.enum(["immediately", "daily_digest", "off"]);
+export type QuestionNotificationMode = z.infer<typeof questionNotificationMode>;
+export const questionStatus = z.enum(["open", "answered", "closed_without_answer"]);
+export type QuestionStatus = z.infer<typeof questionStatus>;
+export const questionCounts = z.object({ open: z.number(), answered: z.number(), closedWithoutAnswer: z.number(),
+  total: z.number() });
+export type QuestionCounts = z.infer<typeof questionCounts>;
+export const questionListItem = z.object({ questionId: z.string(), title: z.string(), status: questionStatus,
+  askedByName: z.string(), askedAt: z.string(), directedToUserName: z.nullable(z.string()),
+  directedToRoleLabel: z.nullable(z.string()), replyCount: z.number() });
+export type QuestionListItem = z.infer<typeof questionListItem>;
+export const questionPage = z.object({ recordKind: z.string(), recordId: z.string(), recordName: z.string(),
+  items: z.array(questionListItem), nextCursor: z.nullable(z.string()), counts: questionCounts });
+export type QuestionPage = z.infer<typeof questionPage>;
+export const allowedActions = z.object({ canEditQuestion: z.boolean(), canReply: z.boolean(),
+  canAcceptAnswer: z.boolean(), canCloseWithoutAnswer: z.boolean(), canReopen: z.boolean(),
+  canTurnIntoEntry: z.boolean(), entryId: z.nullable(z.string()) });
+export type AllowedActions = z.infer<typeof allowedActions>;
+export const questionAttachment = z.object({ fileId: z.string(), fileName: z.string(), contentType: z.string(),
+  contentLength: z.number(), uploadedByName: z.string(), uploadedAt: z.string() });
+export type QuestionAttachment = z.infer<typeof questionAttachment>;
+export const questionReply = z.object({ replyId: z.string(), body: z.string(), authorName: z.string(), at: z.string(),
+  editedAt: z.nullable(z.string()), revisionCount: z.number(), canEdit: z.boolean(),
+  attachments: z.array(questionAttachment) });
+export type QuestionReply = z.infer<typeof questionReply>;
+export const questionThread = z.object({ questionId: z.string(), recordKind: z.string(), recordId: z.string(),
+  recordName: z.string(), title: z.string(), body: z.string(), status: questionStatus,
+  directedToUserName: z.nullable(z.string()), directedToRoleLabel: z.nullable(z.string()), askedByName: z.string(),
+  askedAt: z.string(), acceptedReplyId: z.nullable(z.string()), closedReason: z.nullable(z.string()),
+  closedByName: z.nullable(z.string()), closedAt: z.nullable(z.string()), questionRevisionCount: z.number(),
+  allowedActions: allowedActions, attachments: z.array(questionAttachment), replies: z.array(questionReply) });
+export type QuestionThread = z.infer<typeof questionThread>;
+export const revision = z.object({ revisionId: z.string(), body: z.string(), revisedByName: z.string(),
+  revisedAt: z.string() });
+export type Revision = z.infer<typeof revision>;
+export const staffChoice = z.object({ userId: z.string(), name: z.string(), roles: z.array(z.string()) });
+export type StaffChoice = z.infer<typeof staffChoice>;
+export const roleChoice = z.object({ role: z.string(), label: z.string(), people: z.number() });
+export type RoleChoice = z.infer<typeof roleChoice>;
+export const addresseePage = z.object({ people: z.object({ items: z.array(staffChoice),
+  nextCursor: z.nullable(z.string()) }), roles: z.array(roleChoice) });
+export type AddresseePage = z.infer<typeof addresseePage>;
+export const searchQuestion = z.object({ questionId: z.string(), title: z.string(), status: questionStatus,
+  recordKind: z.string(), recordId: z.string(), recordName: z.string(), answer: z.string(), rank: z.number(),
+  askedAt: z.string() });
+export type SearchQuestion = z.infer<typeof searchQuestion>;
+export const entryReviewReason = z.object({ reasonId: z.string(), kind: z.enum(["policy_version_superseded",
+  "screen_changed"]), label: z.string(), detail: z.string(), flaggedAt: z.string() });
+export type EntryReviewReason = z.infer<typeof entryReviewReason>;
+export const entryTag = z.object({ kind: entryTagKind, value: z.string(), label: z.string() });
+export type EntryTag = z.infer<typeof entryTag>;
+export const knowledgeEntryListItem = z.object({ entryId: z.string(), title: z.string(), answer: z.string(),
+  currentVersion: z.number(), authorName: z.string(), reviewerName: z.string(), publishedAt: z.string(),
+  tags: z.array(entryTag), rank: z.number(), needsReview: z.boolean(), reviewReasons: z.array(entryReviewReason) });
+export type KnowledgeEntryListItem = z.infer<typeof knowledgeEntryListItem>;
+export const searchPage = z.object({ reviewedEntries: z.array(knowledgeEntryListItem),
+  questions: z.array(searchQuestion), nextCursor: z.nullable(z.string()) });
+export type SearchPage = z.infer<typeof searchPage>;
+export const rankedCount = z.object({ key: z.string(), label: z.string(), count: z.number() });
+export type RankedCount = z.infer<typeof rankedCount>;
+export const myQuestion = z.object({ questionId: z.string(), title: z.string(), status: questionStatus,
+  recordKind: z.string(), recordId: z.string(), recordName: z.string(), askedByName: z.string(),
+  directedTo: z.string(), askedAt: z.string(), lastActivityAt: z.string(), replyCount: z.number(),
+  waitingDays: z.number() });
+export type MyQuestion = z.infer<typeof myQuestion>;
+export const myQuestionPage = z.object({ items: z.array(myQuestion), nextCursor: z.nullable(z.string()),
+  summary: z.object({ waitingByAge: z.array(rankedCount), waitingByRecordKind: z.array(rankedCount) }) });
+export type MyQuestionPage = z.infer<typeof myQuestionPage>;
+export const questionNotificationPreference = z.object({ personalDefault: questionNotificationMode,
+  roleDefault: questionNotificationMode, choice: z.nullable(questionNotificationMode) });
+export type QuestionNotificationPreference = z.infer<typeof questionNotificationPreference>;
+export const questionBellItem = z.object({ id: z.string(), questionId: z.nullable(z.string()),
+  entryId: z.nullable(z.string()), title: z.string(), recordKind: z.string(), recordId: z.nullable(z.string()),
+  recordName: z.string(), reason: z.string(), activityAt: z.string(), link: z.string() });
+export type QuestionBellItem = z.infer<typeof questionBellItem>;
+export const questionBellSummary = z.object({ count: z.number(), items: z.array(questionBellItem) });
+export type QuestionBellSummary = z.infer<typeof questionBellSummary>;
+export const entryTagInput = z.object({ kind: entryTagKind, value: z.string() });
+export type EntryTagInput = z.infer<typeof entryTagInput>;
+export const writtenAgainst = z.object({ kind: z.enum(["policy_version", "screen"]), reference: z.string(),
+  label: z.string(), resolved: z.optional(z.boolean()) });
+export type WrittenAgainst = z.infer<typeof writtenAgainst>;
+export const entryRecordLink = z.object({ recordKind: z.string(), recordId: z.string(), recordName: z.string(),
+  source: z.boolean() });
+export type EntryRecordLink = z.infer<typeof entryRecordLink>;
+export const entryRound = z.object({ round: z.number(), version: z.number(), submittedByName: z.string(),
+  submittedAt: z.string(), decision: z.nullable(z.enum(["approve", "send_back"])),
+  reviewerName: z.nullable(z.string()), reviewedAt: z.nullable(z.string()), note: z.nullable(z.string()) });
+export type EntryRound = z.infer<typeof entryRound>;
+export const entryVersion = z.object({ version: z.number(), savedByName: z.string(), savedAt: z.string() });
+export type EntryVersion = z.infer<typeof entryVersion>;
+export const entryAllowedActions = z.object({ canEdit: z.boolean(), canSubmit: z.boolean(), canApprove: z.boolean(),
+  canSendBack: z.boolean(), canRetire: z.boolean(), canConfirmStillCorrect: z.boolean() });
+export type EntryAllowedActions = z.infer<typeof entryAllowedActions>;
+export const knowledgeEntry = z.object({ entryId: z.string(), title: z.string(), problem: z.string(),
+  answer: z.string(), steps: z.string(), status: entryStatus, currentVersion: z.number(), authorName: z.string(),
+  createdAt: z.string(), lastSavedAt: z.string(), publishedByName: z.nullable(z.string()),
+  publishedAt: z.nullable(z.string()), retirementNote: z.nullable(z.string()), tags: z.array(entryTag),
+  writtenAgainst: z.array(writtenAgainst), recordLinks: z.object({ visible: z.array(entryRecordLink),
+  hiddenCount: z.number() }), source: z.object({ questionId: z.string(), title: z.string(), recordKind: z.string(),
+  recordId: z.string(), recordName: z.nullable(z.string()), acceptedAnswer: z.string() }),
+  reviewRounds: z.array(entryRound), versions: z.array(entryVersion), reviewerRoles: z.array(z.string()),
+  caseDisclosureTier: z.string(), needsReview: z.boolean(), reviewReasons: z.array(entryReviewReason),
+  allowedActions: entryAllowedActions });
+export type KnowledgeEntry = z.infer<typeof knowledgeEntry>;
+export const knowledgeFacet = z.object({ value: z.string(), label: z.string(), count: z.number() });
+export type KnowledgeFacet = z.infer<typeof knowledgeFacet>;
+export const knowledgeEntryPage = z.object({ items: z.array(knowledgeEntryListItem),
+  nextCursor: z.nullable(z.string()), roles: z.array(knowledgeFacet), tasks: z.array(knowledgeFacet) });
+export type KnowledgeEntryPage = z.infer<typeof knowledgeEntryPage>;
+export const entryReviewItem = z.object({ entryId: z.string(), title: z.string(), currentVersion: z.number(),
+  authorName: z.string(), activityAt: z.string(), round: z.nullable(z.number()), status: entryStatus,
+  needsReview: z.boolean(), reviewReasons: z.array(entryReviewReason), canConfirmStillCorrect: z.boolean() });
+export type EntryReviewItem = z.infer<typeof entryReviewItem>;
+export const entryReviewPage = z.object({ items: z.array(entryReviewItem), nextCursor: z.nullable(z.string()) });
+export type EntryReviewPage = z.infer<typeof entryReviewPage>;
+export const entryFieldChange = z.object({ field: z.string(), before: z.string(), after: z.string() });
+export type EntryFieldChange = z.infer<typeof entryFieldChange>;
+export const entryTagChoices = z.object({ roles: z.array(entryTag), tasks: z.array(entryTag),
+  itemFamilies: z.array(entryTag), claimCauses: z.array(entryTag) });
+export type EntryTagChoices = z.infer<typeof entryTagChoices>;
+export const entryDraftRequest = z.object({ title: z.string(), problem: z.string(), answer: z.string(),
+  steps: z.string(), tags: z.array(entryTagInput), recordLinks: z.array(z.object({ recordKind: z.string(),
+  recordId: z.string() })), writtenAgainst: z.array(writtenAgainst) });
+export type EntryDraftRequest = z.infer<typeof entryDraftRequest>;
+export const knowledgeScreenReference = z.object({ reference: z.string(), label: z.string(),
+  publishedEntries: z.number(), lastChangedAt: z.nullable(z.string()), lastChangedByName: z.nullable(z.string()) });
+export type KnowledgeScreenReference = z.infer<typeof knowledgeScreenReference>;
+export const knowledgeScreenReferencePage = z.object({ items: z.array(knowledgeScreenReference),
+  nextCursor: z.nullable(z.string()) });
+export type KnowledgeScreenReferencePage = z.infer<typeof knowledgeScreenReferencePage>;
+export const referenceChoice = z.object({ reference: z.string(), label: z.string() });
+export type ReferenceChoice = z.infer<typeof referenceChoice>;
+export const referenceChoicePage = z.object({ items: z.array(referenceChoice), nextCursor: z.nullable(z.string()) });
+export type ReferenceChoicePage = z.infer<typeof referenceChoicePage>;
+export const policyVersionChoice = z.object({ policyVersionId: z.string(), label: z.string() });
+export type PolicyVersionChoice = z.infer<typeof policyVersionChoice>;
+export const policyVersionChoicePage = z.object({ items: z.array(policyVersionChoice),
+  nextCursor: z.nullable(z.string()) });
+export type PolicyVersionChoicePage = z.infer<typeof policyVersionChoicePage>;
+export const trainingPathSummary = z.object({ pathId: z.string(), role: z.string(), roleLabel: z.string(),
+  introduction: z.string(), version: z.number(), entries: z.number(), readEntries: z.number(), finished: z.boolean(),
+  newMember: z.boolean(), canMaintain: z.boolean() });
+export type TrainingPathSummary = z.infer<typeof trainingPathSummary>;
+export const trainingPathList = z.object({ items: z.array(trainingPathSummary), canMaintain: z.boolean() });
+export type TrainingPathList = z.infer<typeof trainingPathList>;
+export const trainingPathEntry = z.object({ position: z.number(), entryId: z.string(), title: z.string(),
+  taskLabel: z.nullable(z.string()), publishedVersion: z.number(), read: z.boolean(), readAt: z.nullable(z.string()),
+  needsReview: z.boolean(), warning: z.nullable(z.string()) });
+export type TrainingPathEntry = z.infer<typeof trainingPathEntry>;
+export const trainingPath = z.object({ pathId: z.string(), role: z.string(), roleLabel: z.string(),
+  introduction: z.string(), version: z.number(), entries: z.array(trainingPathEntry), readEntries: z.number(),
+  finished: z.boolean(), newMember: z.boolean(), welcomeDismissed: z.boolean(), canMaintain: z.boolean(),
+  canViewTeam: z.boolean() });
+export type TrainingPath = z.infer<typeof trainingPath>;
+export const trainingWelcome = z.object({ pathId: z.string(), role: z.string(), roleLabel: z.string(),
+  introduction: z.string(), entries: z.number(), readEntries: z.number() });
+export type TrainingWelcome = z.infer<typeof trainingWelcome>;
+export const trainingTeamMember = z.object({ name: z.string(), joinedAt: z.string(), newMember: z.boolean(),
+  readEntries: z.number(), totalEntries: z.number(), lastReadAt: z.nullable(z.string()), finished: z.boolean() });
+export type TrainingTeamMember = z.infer<typeof trainingTeamMember>;
+export const trainingTeam = z.object({ role: z.string(), roleLabel: z.string(), people: z.array(trainingTeamMember),
+  nextCursor: z.nullable(z.string()), questionsAskedInFirstThirtyDays: z.number() });
+export type TrainingTeam = z.infer<typeof trainingTeam>;
+export const knowledgeReportTiming = z.object({ medianSeconds: z.nullable(z.number()),
+  ninetiethPercentileSeconds: z.nullable(z.number()), samples: z.number() });
+export type KnowledgeReportTiming = z.infer<typeof knowledgeReportTiming>;
+export const knowledgeReportRank = z.object({ key: z.string(), label: z.string(), count: z.number() });
+export type KnowledgeReportRank = z.infer<typeof knowledgeReportRank>;
+export const knowledgeReportRecurrence = z.object({ entryId: z.string(), title: z.string(), reviewedBy: z.string(),
+  askedAgain: z.number(), pointedToIt: z.number(), lastAskedAt: z.string() });
+export type KnowledgeReportRecurrence = z.infer<typeof knowledgeReportRecurrence>;
+export const knowledgeReportAge = z.object({ key: z.string(), label: z.string(), count: z.number() });
+export type KnowledgeReportAge = z.infer<typeof knowledgeReportAge>;
+export const knowledgeReportEntryRead = z.object({ entryId: z.string(), title: z.string(), reads: z.number() });
+export type KnowledgeReportEntryRead = z.infer<typeof knowledgeReportEntryRead>;
+export const knowledgeReport = z.object({ window: z.object({ from: z.string(), through: z.string(),
+  timeZone: z.string(), fromUtc: z.string(), toUtc: z.string() }), questions: z.number(),
+  firstReply: knowledgeReportTiming, acceptedAnswer: knowledgeReportTiming, unanswered: z.number(),
+  pointedToAnEntry: z.number(), byDirectedRole: z.array(knowledgeReportRank),
+  byRecordKind: z.array(knowledgeReportRank), byTopic: z.array(knowledgeReportRank),
+  askedAgainDespiteEntry: z.array(knowledgeReportRecurrence), unansweredByAge: z.array(knowledgeReportAge),
+  readByNewTeamMembers: z.object({ newMembers: z.number(), reads: z.number(),
+  entries: z.array(knowledgeReportEntryRead) }), similarEntryMinimumRank: z.number(), visibilityNote: z.string(),
+  similarityNote: z.string() });
+export type KnowledgeReport = z.infer<typeof knowledgeReport>;
 
 export type KnowledgeReportPeriod = "30_days" | "90_days" | "12_months";
 export interface KnowledgeReportFilters { period: KnowledgeReportPeriod; directedRole?: string; recordKind?: string; topic?: string }
-export interface KnowledgeReportTiming { medianSeconds: number | null; ninetiethPercentileSeconds: number | null; samples: number }
-export interface KnowledgeReportRank { key: string; label: string; count: number }
-export interface KnowledgeReportRecurrence { entryId: string; title: string; reviewedBy: string; askedAgain: number; pointedToIt: number; lastAskedAt: string }
-export interface KnowledgeReportAge { key: string; label: string; count: number }
-export interface KnowledgeReportEntryRead { entryId: string; title: string; reads: number }
-export interface KnowledgeReport {
-  window: { from: string; through: string; timeZone: string; fromUtc: string; toUtc: string };
-  questions: number; firstReply: KnowledgeReportTiming; acceptedAnswer: KnowledgeReportTiming; unanswered: number; pointedToAnEntry: number;
-  byDirectedRole: KnowledgeReportRank[]; byRecordKind: KnowledgeReportRank[]; byTopic: KnowledgeReportRank[];
-  askedAgainDespiteEntry: KnowledgeReportRecurrence[]; unansweredByAge: KnowledgeReportAge[];
-  readByNewTeamMembers: { newMembers: number; reads: number; entries: KnowledgeReportEntryRead[] };
-  similarEntryMinimumRank: number; visibilityNote: string; similarityNote: string;
-}
