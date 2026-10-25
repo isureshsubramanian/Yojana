@@ -8,7 +8,7 @@ import { visibleSettings, type SettingsGroup } from "./registry";
 import { filterSettings, loadSettingsValues, type SettingsValue } from "./registryModel";
 import { settingsSummaryApi } from "./settingsSummaryApi";
 
-const groups: SettingsGroup[] = ["Organisation", "Documents", "Service operations", "Data and knowledge"];
+const groups: SettingsGroup[] = ["Organisation", "Documents", "Service operations", "Data and knowledge", "Developers"];
 
 export function Component() {
   const session = useSession();

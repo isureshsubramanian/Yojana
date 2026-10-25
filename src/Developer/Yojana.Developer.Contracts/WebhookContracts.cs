@@ -35,9 +35,15 @@ public sealed record WebhookSubscriptionView(
     string? PausedReason,
     DateTime CreatedAt,
     DateTime UpdatedAt,
-    string Version);
+    string Version,
+    DateTime? PreviousSecretExpiresAt,
+    WebhookSubscriptionActivity Activity);
 
-public sealed record WebhookSubscriptionPage(IReadOnlyList<WebhookSubscriptionView> Items, string? NextCursor);
+public sealed record WebhookSubscriptionActivity(long DeliveredLast24Hours, long TotalLast24Hours, long Parked);
+public sealed record WebhookSubscriptionSummary(long DeliveredLast24Hours, long WaitingToRetry, long Parked,
+    int PausedEndpoints);
+public sealed record WebhookSubscriptionPage(IReadOnlyList<WebhookSubscriptionView> Items, string? NextCursor,
+    WebhookSubscriptionSummary Summary);
 
 /// <summary>The signing secret is returned only by create and rotate.</summary>
 public sealed record WebhookSecretResponse(WebhookSubscriptionView Subscription, string Secret);
@@ -59,9 +65,18 @@ public sealed record WebhookDeliveryRow(
     DateTime? SucceededAt,
     DateTime? ParkedAt,
     DateTime? DiscardedAt,
-    Guid? ReplayOf);
+    Guid? ReplayOf,
+    string? RecordReference,
+    string? LastOutcome,
+    int? LastStatusCode,
+    int? LastDurationMs,
+    string? LastResponseExcerpt,
+    string? LastErrorCode);
 
-public sealed record WebhookDeliveryPage(IReadOnlyList<WebhookDeliveryRow> Items, string? NextCursor);
+public sealed record WebhookDeliveryStatusCounts(long All, long Succeeded, long Pending, long Parked,
+    long Discarded);
+public sealed record WebhookDeliveryPage(IReadOnlyList<WebhookDeliveryRow> Items, string? NextCursor, long Total,
+    WebhookDeliveryStatusCounts Counts);
 
 public sealed record WebhookDeliveryAttemptView(
     Guid Id,
@@ -81,6 +96,14 @@ public sealed record RedeliverRangeRequest(DateTime From, DateTime To);
 public sealed record RedeliverRangeResponse(int Created);
 public sealed record RedeliverWebhookResponse(Guid DeliveryId, Guid ReplayOf);
 public sealed record DiscardWebhookDeliveryResponse(Guid DeliveryId, string Status);
+
+public sealed record PublicEventCatalogueEntry(string Type, string Version, System.Text.Json.JsonElement Schema,
+    System.Text.Json.JsonElement Sample);
+public sealed record DeveloperCatalogue(IReadOnlyList<PublicEventCatalogueEntry> Events,
+    IReadOnlyList<string> Scopes);
+
+public sealed record WebhookSettingsView(int RetentionDays);
+public sealed record UpdateWebhookSettingsRequest(int RetentionDays);
 
 public sealed record BulkOperationUnitRow(Guid UnitId, string? Reference);
 public sealed record BulkOperationUnitPage(IReadOnlyList<BulkOperationUnitRow> Items, string? NextCursor);

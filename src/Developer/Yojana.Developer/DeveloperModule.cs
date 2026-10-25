@@ -88,6 +88,7 @@ public static class DeveloperModule
         builder.Services.AddScoped<WebhookTargetGuard>();
         builder.Services.AddScoped<WebhookTransport>();
         builder.Services.AddScoped<WebhookSubscriptionService>();
+        builder.Services.AddScoped<DeveloperWebhookSettingsService>();
         builder.Services.AddScoped<WebhookSubscriptionDispatchLock>();
         builder.Services.AddScoped<WebhookDeliveryDispatcher>();
         builder.Services.AddSingleton<WebhookDeliveryCoordinator>();

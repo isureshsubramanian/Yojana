@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi;
+using System.Text.Json.Nodes;
 using Yojana.Developer.PublicApi;
 using Yojana.Serialisation.Contracts;
 
@@ -45,7 +46,13 @@ public static class PublicOpenApi
                 if (context.Description.RelativePath?.EndsWith("/token", StringComparison.Ordinal) == true)
                     operation.Security = [];
                 if (metadata.OfType<PublicApiScopeMetadata>().FirstOrDefault() is { } scope)
+                {
                     operation.Description = $"Required scope: {scope.Scope}. " + operation.Description;
+                    // Contract with the in-product API reference: HTTP bearer schemes cannot express OAuth scopes,
+                    // so this extension carries the endpoint scope without coupling the UI to description wording.
+                    operation.AddExtension("x-yojana-scopes",
+                        new JsonNodeExtension(new JsonArray(JsonValue.Create(scope.Scope))));
+                }
                 var method = context.Description.HttpMethod;
                 if (method is "POST" or "PUT" && context.Description.RelativePath is not null
                     && !context.Description.RelativePath.EndsWith("/token", StringComparison.Ordinal))

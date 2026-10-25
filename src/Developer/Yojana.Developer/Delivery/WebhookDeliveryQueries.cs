@@ -27,24 +27,41 @@ public sealed class WebhookDeliveryQueries(DeveloperDbContext db, ITenantContext
         if (from > to) throw new CommandRefusedException("webhook_date_range_invalid", "From must not be after to.");
         var take = Math.Clamp(requestedTake ?? 50, 1, 200);
         var after = Decode(cursor);
-        var query = from delivery in db.Deliveries.AsNoTracking()
+        var baseQuery = from delivery in db.Deliveries.AsNoTracking()
                     join publicEvent in db.PublicEvents.AsNoTracking()
                         on new { delivery.TenantId, delivery.EventId }
                         equals new { publicEvent.TenantId, publicEvent.EventId }
                     where delivery.TenantId == tenant.TenantId
                        && delivery.SubscriptionId == subscriptionId
-                    select new { Delivery = delivery, EventType = publicEvent.Type };
-        if (status is not null) query = query.Where(row => row.Delivery.Status == status);
-        if (eventType is not null) query = query.Where(row => row.EventType == eventType);
-        if (from is { } lower) query = query.Where(row => row.Delivery.CreatedAt >= lower);
-        if (to is { } upper) query = query.Where(row => row.Delivery.CreatedAt < upper);
-        if (after is { } key) query = query.Where(row => row.Delivery.CreatedAt > key.At
-            || row.Delivery.CreatedAt == key.At && row.Delivery.DeliveryId.CompareTo(key.Id) > 0);
-        var rows = await query.OrderBy(row => row.Delivery.CreatedAt).ThenBy(row => row.Delivery.DeliveryId)
+                    select new { Delivery = delivery, EventType = publicEvent.Type, publicEvent.Body };
+        if (eventType is not null) baseQuery = baseQuery.Where(row => row.EventType == eventType);
+        if (from is { } lower) baseQuery = baseQuery.Where(row => row.Delivery.CreatedAt >= lower);
+        if (to is { } upper) baseQuery = baseQuery.Where(row => row.Delivery.CreatedAt < upper);
+        var counts = await baseQuery.GroupBy(row => row.Delivery.Status).Select(group => new
+            { Status = group.Key, Count = group.LongCount() }).ToDictionaryAsync(row => row.Status,
+                row => row.Count, ct);
+        var statusCounts = new WebhookDeliveryStatusCounts(counts.Values.Sum(),
+            counts.GetValueOrDefault(WebhookDeliveryStatus.Succeeded),
+            counts.GetValueOrDefault(WebhookDeliveryStatus.Pending),
+            counts.GetValueOrDefault(WebhookDeliveryStatus.Parked),
+            counts.GetValueOrDefault(WebhookDeliveryStatus.Discarded));
+        var query = status is null ? baseQuery : baseQuery.Where(row => row.Delivery.Status == status);
+        var total = status is null ? statusCounts.All : counts.GetValueOrDefault(status);
+        if (after is { } key) query = query.Where(row => row.Delivery.CreatedAt < key.At
+            || row.Delivery.CreatedAt == key.At && row.Delivery.DeliveryId.CompareTo(key.Id) < 0);
+        var rows = await query.OrderByDescending(row => row.Delivery.CreatedAt)
+            .ThenByDescending(row => row.Delivery.DeliveryId)
             .Take(take + 1).ToListAsync(ct);
-        var page = rows.Take(take).Select(row => Row(row.Delivery, row.EventType)).ToList();
+        var selected = rows.Take(take).ToList();
+        var ids = selected.Select(row => row.Delivery.DeliveryId).ToList();
+        var latestAttempts = ids.Count == 0 ? [] : (await db.DeliveryAttempts.AsNoTracking()
+                .Where(row => row.TenantId == tenant.TenantId && ids.Contains(row.DeliveryId))
+                .OrderByDescending(row => row.AttemptedAt).ThenByDescending(row => row.AttemptId).ToListAsync(ct))
+            .GroupBy(row => row.DeliveryId).ToDictionary(group => group.Key, group => group.First());
+        var page = selected.Select(row => Row(row.Delivery, row.EventType, row.Body,
+            latestAttempts.GetValueOrDefault(row.Delivery.DeliveryId))).ToList();
         return new(page, rows.Count > take && page.Count > 0
-            ? Encode(page[^1].CreatedAt, page[^1].Id) : null);
+            ? Encode(page[^1].CreatedAt, page[^1].Id) : null, total, statusCounts);
     }
 
     public async Task<WebhookDeliveryDetail?> DetailAsync(Guid subscriptionId, Guid deliveryId,
@@ -63,7 +80,20 @@ public sealed class WebhookDeliveryQueries(DeveloperDbContext db, ITenantContext
                 && row.DeliveryId == deliveryId).OrderBy(row => row.AttemptedAt).ThenBy(row => row.AttemptId)
             .Select(row => new WebhookDeliveryAttemptView(row.AttemptId, row.AttemptedAt, row.Outcome,
                 row.StatusCode, row.DurationMs, row.ResponseExcerpt, row.ErrorCode)).ToListAsync(ct);
-        return new(Row(joined.Delivery, joined.Event.Type), joined.Event.Body, attempts);
+        var last = attempts.LastOrDefault();
+        return new(Row(joined.Delivery, joined.Event.Type, joined.Event.Body, last is null ? null
+            : new WebhookDeliveryAttempt
+            {
+                AttemptId = last.Id,
+                TenantId = tenant.TenantId,
+                DeliveryId = joined.Delivery.DeliveryId,
+                AttemptedAt = last.AttemptedAt,
+                Outcome = last.Outcome,
+                StatusCode = last.StatusCode,
+                DurationMs = last.DurationMs,
+                ResponseExcerpt = last.ResponseExcerpt,
+                ErrorCode = last.ErrorCode,
+            }), joined.Event.Body, attempts);
     }
 
     public async Task<RedeliverWebhookResponse> RedeliverAsync(Guid subscriptionId, Guid deliveryId,
@@ -130,9 +160,23 @@ public sealed class WebhookDeliveryQueries(DeveloperDbContext db, ITenantContext
         CreatedAt = clock.UtcNow, NextAttemptAt = clock.UtcNow,
     };
 
-    private static WebhookDeliveryRow Row(WebhookDelivery row, string type) => new(row.DeliveryId,
+    private static WebhookDeliveryRow Row(WebhookDelivery row, string type, string body,
+        WebhookDeliveryAttempt? lastAttempt) => new(row.DeliveryId,
         row.EventId, type, row.Status, row.AttemptCount, row.CreatedAt, row.NextAttemptAt,
-        row.LastAttemptAt, row.SucceededAt, row.ParkedAt, row.DiscardedAt, row.ReplayOf);
+        row.LastAttemptAt, row.SucceededAt, row.ParkedAt, row.DiscardedAt, row.ReplayOf,
+        RecordReference(body), lastAttempt?.Outcome, lastAttempt?.StatusCode, lastAttempt?.DurationMs,
+        lastAttempt?.ResponseExcerpt, lastAttempt?.ErrorCode);
+
+    private static string? RecordReference(string body)
+    {
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(body);
+            return document.RootElement.TryGetProperty("record", out var record)
+                && record.TryGetProperty("reference", out var reference) ? reference.GetString() : null;
+        }
+        catch (System.Text.Json.JsonException) { return null; }
+    }
 
     private static string Encode(DateTime at, Guid id) => Convert.ToBase64String(Encoding.UTF8.GetBytes(
         at.Ticks.ToString(CultureInfo.InvariantCulture) + ":" + id.ToString("N")));

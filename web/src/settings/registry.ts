@@ -12,10 +12,11 @@ import { importFileSettingsApi } from "./importFileSettingsApi";
 import { numberingApi } from "./numberingApi";
 import { timeZoneSettingsApi } from "./timeZoneSettingsApi";
 import { visibleSettings as visibleSettingRecords } from "./registryModel";
+import { developerApi } from "./developers/developerApi";
 import type { SettingsValue } from "./registryModel";
 import type { SettingsSummaryLine } from "./settingsSummaryApi";
 
-export type SettingsGroup = "Organisation" | "Documents" | "Service operations" | "Data and knowledge";
+export type SettingsGroup = "Organisation" | "Documents" | "Service operations" | "Data and knowledge" | "Developers";
 type SettingsModule = Promise<{ Component: ComponentType }>;
 
 export interface SettingsRegistryEntry {
@@ -90,6 +91,13 @@ export const settingsRegistry: SettingsRegistryEntry[] = [
     summaryKey: "knowledge_screen_changes", summaryValue: line => ({ text: `${noun(count(line, "screensMarked"), "screen")} marked · ${noun(count(line, "entriesToReview"), "entry", "entries")} to review` }), route: () => import("./KnowledgeScreenChangesPage") },
   { group: "Data and knowledge", name: "Privacy", description: "Personal-data erasure requests and their audit log", path: "/settings/privacy", icon: "shield", roles: administrator,
     route: () => import("./Privacy") },
+
+  { group: "Developers", name: "API clients", description: "Application credentials, scopes and disclosure access", path: "/settings/developers/clients", icon: "key", roles: administrator,
+    route: () => import("./DeveloperClients") },
+  { group: "Developers", name: "Webhooks", description: "Signed change notifications and their delivery log", path: "/settings/developers/webhooks", icon: "int", roles: administrator,
+    currentValue: signal => developerApi.settings(signal).then(value => `${value.retentionDays} days delivery history`), route: () => import("./DeveloperWebhooks") },
+  { group: "Developers", name: "Developer documentation", description: "Authentication, API reference, signatures and event catalogue", path: "/settings/developers/docs", icon: "book", roles: administrator,
+    route: () => import("./DeveloperDocs") },
 ];
 
 export function visibleSettings(roles: readonly string[]): SettingsRegistryEntry[] {

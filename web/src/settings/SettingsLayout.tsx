@@ -12,7 +12,7 @@ const ORIGINS: Record<string, Crumb[]> = {
   "risk-review": [{ label: "Claims", to: "/claims" }, { label: "Risk review", to: "/claims/risk-review" }],
 };
 
-const groups: SettingsGroup[] = ["Organisation", "Documents", "Service operations", "Data and knowledge"];
+const groups: SettingsGroup[] = ["Organisation", "Documents", "Service operations", "Data and knowledge", "Developers"];
 
 export function Component() {
   const location = useLocation();
