@@ -163,6 +163,7 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         app.MapGet("/api/test/unhandled", (Func<IResult>)(() =>
                 throw new InvalidOperationException("secret stack and cookie must not escape")))
             .AllowAnonymous();
+        app.MapPost("/api/test/body", (ProblemTestBody body) => Results.NoContent()).AllowAnonymous();
         Host = app;
         await app.StartAsync();
     }
@@ -315,3 +316,5 @@ public sealed class DatabaseTheoryAttribute : TheoryAttribute
         }
     }
 }
+
+public sealed record ProblemTestBody(string Name, int Count);
