@@ -1,5 +1,5 @@
-import { api } from "../api/client";
-import type { RecoveryAnswer, RecoveryAnswerResult, RecoveryClaimPage, RecoveryClaimSummary, RecoveryNotRaisedReport, RecoveryPolicy } from "./types";
+import { apiParsed } from "../api/client.ts";
+import { recoveryAnswerResult, recoveryClaimPage, recoveryClaimSummary, recoveryNotRaisedReport, recoveryPolicy, type RecoveryAnswer, type RecoveryPolicy } from "./types.ts";
 
 function query(values: Record<string, string | number | undefined | null>): string {
   const result = new URLSearchParams();
@@ -9,11 +9,11 @@ function query(values: Record<string, string | number | undefined | null>): stri
 }
 
 export const recoveryApi = {
-  policy: (signal?: AbortSignal) => api<RecoveryPolicy>("/api/claims/recovery-policy", { signal }),
-  savePolicy: (body: RecoveryPolicy) => api<RecoveryPolicy>("/api/claims/recovery-policy", { method: "PUT", body }),
-  page: (filters: Record<string, string | number | undefined | null>, signal?: AbortSignal) => api<RecoveryClaimPage>(`/api/recovery-claims${query(filters)}`, { signal }),
-  summary: (signal?: AbortSignal) => api<RecoveryClaimSummary>("/api/recovery-claims/summary", { signal }),
-  notRaised: (days = 30, signal?: AbortSignal) => api<RecoveryNotRaisedReport>(`/api/recovery-claims/not-raised${query({ days })}`, { signal }),
+  policy: (signal?: AbortSignal) => apiParsed("/api/claims/recovery-policy", recoveryPolicy, { signal }),
+  savePolicy: (body: RecoveryPolicy) => apiParsed("/api/claims/recovery-policy", recoveryPolicy, { method: "PUT", body }),
+  page: (filters: Record<string, string | number | undefined | null>, signal?: AbortSignal) => apiParsed(`/api/recovery-claims${query(filters)}`, recoveryClaimPage, { signal }),
+  summary: (signal?: AbortSignal) => apiParsed("/api/recovery-claims/summary", recoveryClaimSummary, { signal }),
+  notRaised: (days = 30, signal?: AbortSignal) => apiParsed(`/api/recovery-claims/not-raised${query({ days })}`, recoveryNotRaisedReport, { signal }),
   exportUrl: (filters: Record<string, string | undefined | null>) => `/api/recovery-claims/export${query(filters)}`,
-  answer: (recoveryClaimId: string, body: RecoveryAnswer) => api<RecoveryAnswerResult>(`/api/recovery-claims/${recoveryClaimId}/approve`, { method: "POST", body }),
+  answer: (recoveryClaimId: string, body: RecoveryAnswer) => apiParsed(`/api/recovery-claims/${recoveryClaimId}/approve`, recoveryAnswerResult, { method: "POST", body }),
 };

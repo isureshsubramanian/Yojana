@@ -1,62 +1,188 @@
 // The Serialisation module's HTTP surface (P1-T19, P1-T20): read models as the server returns them, commands as the
 // contracts define them. Every list is a page with a total. Shapes mirror Yojana.Serialisation.Contracts.
-import { api } from "./client";
+import * as z from "zod/mini";
+import { apiParsed } from "./client.ts";
 import type { PageResult } from "../components/types";
 
+// Schemas follow the C# records (ADR-0019): C# nullable → z.nullable; a C# parameter with a default may be left out of a
+// request. Responses drop unknown fields; request bodies use looseObject so the declared fields are checked and any
+// field a caller adds is passed on, never silently dropped.
+const text = z.string();
+const nullableText = z.nullable(z.string());
+const count = z.number();
+const nullableCount = z.nullable(z.number());
+const flag = z.boolean();
+const texts = z.array(text);
+const maybe = <T extends z.ZodMiniType>(schema: T) => z.optional(z.nullable(schema));
+
 export interface Page<T> { items: T[]; total: number; skip: number; take: number }
-export interface DocumentRef { type: string; id: string; line?: number | null }
+export const pageOf = <T extends z.ZodMiniType>(item: T) => z.object({ items: z.array(item), total: count, skip: count, take: count });
+export const documentRef = z.object({ type: text, id: text, line: maybe(count) });
+export type DocumentRef = z.infer<typeof documentRef>;
 
-export interface LookupHit { unitId: string; identifierId: string; identifierType: string; scheme: string; normalisedValue: string; rawValue: string; open: boolean; supersededByIdentifierId: string | null; resolvesTo: string | null; itemId: string | null; lifecycleStatus: string }
-export interface LookupResult { query: string; resolution: "exact" | "superseded" | "ambiguous" | "none"; hits: LookupHit[] }
+const lookupHit = z.object({
+  unitId: text, identifierId: text, identifierType: text, scheme: text, normalisedValue: text, rawValue: text, open: flag,
+  supersededByIdentifierId: nullableText, resolvesTo: nullableText, itemId: nullableText, lifecycleStatus: text,
+});
+const lookupResult = z.object({ query: text, resolution: z.enum(["exact", "superseded", "ambiguous", "none"]), hits: z.array(lookupHit) });
+export type LookupHit = z.infer<typeof lookupHit>;
+export type LookupResult = z.infer<typeof lookupResult>;
 
-export interface UnitSearchRow { unitId: string; identifier: string; identifierType: string; scheme: string; open: boolean; resolvesTo: string | null; itemId: string; modelVersionId: string | null; lifecycleStatus: string; disposition: string; locationKind: string | null; locationId: string | null; ownerPartyRef: string | null; custodyPartyRef: string | null; lastEventType: string | null; lastEventTime: string; rawValue: string | null }
-export interface UnitSearchResult { page: Page<UnitSearchRow>; identifiers: number; units: number; items: number; identifierTypes: number; superseded: number; servedInMilliseconds: number; hasMore: boolean; totalIsLowerBound: boolean; summaryIsSample: boolean }
+const unitSearchRow = z.object({
+  unitId: text, identifier: text, identifierType: text, scheme: text, open: flag, resolvesTo: nullableText, itemId: text,
+  modelVersionId: nullableText, lifecycleStatus: text, disposition: text, locationKind: nullableText, locationId: nullableText,
+  ownerPartyRef: nullableText, custodyPartyRef: nullableText, lastEventType: nullableText, lastEventTime: text, rawValue: nullableText,
+});
+const unitSearchResult = z.object({
+  page: pageOf(unitSearchRow), identifiers: count, units: count, items: count, identifierTypes: count, superseded: count,
+  servedInMilliseconds: count, hasMore: flag, totalIsLowerBound: flag, summaryIsSample: flag,
+});
+export type UnitSearchRow = z.infer<typeof unitSearchRow>;
+export type UnitSearchResult = z.infer<typeof unitSearchResult>;
 export interface UnitSearchParams { q?: string | undefined; type?: string | undefined; status?: string | undefined; superseded?: boolean | undefined; document?: string | undefined; sort?: string | undefined; skip?: number | undefined; take?: number | undefined }
 
-export interface IdentifierRow { identifierId: string; type: string; scheme: string; rawValue: string; normalisedValue: string; scopeKey: string; issuerPartyRef: string | null; qualifier: string | null; validFrom: string; validTo: string | null; supersededByIdentifierId: string | null; supersedesIdentifierId: string | null; correctionReason: string | null; actorRef: string }
-export interface EpisodeRow { episodeId: string; kind: string; partyRef: string | null; partyType: string | null; locationId: string | null; locationKind: string | null; reason: string | null; source: string | null; confidence: string | null; validFrom: string; validTo: string | null; openingDocument: DocumentRef | null; closingDocument: DocumentRef | null; customerPoRef: string | null; customerItemRef: string | null; dueBack: string | null }
-export interface AsBuiltRow { linkId: string; slot: string | null; relation: string; childUnitId: string | null; childSerial: string | null; childItemId: string | null; childLotId: string | null; quantity: number | null; releaseStatus: string | null; throughPhantomItemId: string | null; installedAt: string; removedAt: string | null }
-export interface HistoryRow { eventId: string; seq: number; eventType: string; eventTime: string; recordedTime: string; bizStep: string | null; disposition: string | null; locationId: string | null; actorRef: string; document: DocumentRef | null; attributes: string | null }
-export interface BuildRecordRow { buildRecordId: string; version: number; releasedAt: string; payloadHash: string; releaseSignatureRef: string | null }
-export interface UnitDetail {
-  unitId: string; lifecycleStatus: string; origin: string; serialisationPoint: string; retentionClass: string; historyDepth: string; lotId: string | null; expiryDate: string | null;
-  derivedFromUnitId: string | null; mergedIntoUnitId: string | null; itemId: string; modelVersionId: string | null; disposition: string; conditionGrade: string | null; locationId: string | null; locationKind: string | null;
-  custodyPartyRef: string | null; ownerPartyRef: string | null; openOwnershipEpisodeId: string | null; openCustodyEpisodeId: string | null; overlayFlags: string; lastEventSeq: number; lastEventTime: string;
-  identifiers: IdentifierRow[]; episodes: EpisodeRow[]; asBuilt: AsBuiltRow[]; buildRecords: BuildRecordRow[]; parentUnitId: string | null; eventCount: number; ownerAndHolderDiffer: boolean;
-}
+const identifierRow = z.object({
+  identifierId: text, type: text, scheme: text, rawValue: text, normalisedValue: text, scopeKey: text, issuerPartyRef: nullableText,
+  qualifier: nullableText, validFrom: text, validTo: nullableText, supersededByIdentifierId: nullableText,
+  supersedesIdentifierId: nullableText, correctionReason: nullableText, actorRef: text,
+});
+const episodeRow = z.object({
+  episodeId: text, kind: text, partyRef: nullableText, partyType: nullableText, locationId: nullableText, locationKind: nullableText,
+  reason: nullableText, source: nullableText, confidence: nullableText, validFrom: text, validTo: nullableText,
+  openingDocument: z.nullable(documentRef), closingDocument: z.nullable(documentRef), customerPoRef: nullableText,
+  customerItemRef: nullableText, dueBack: nullableText,
+});
+const asBuiltRow = z.object({
+  linkId: text, slot: nullableText, relation: text, childUnitId: nullableText, childSerial: nullableText, childItemId: nullableText,
+  childLotId: nullableText, quantity: nullableCount, releaseStatus: nullableText, throughPhantomItemId: nullableText,
+  installedAt: text, removedAt: nullableText,
+});
+const historyRow = z.object({
+  eventId: text, seq: count, eventType: text, eventTime: text, recordedTime: text, bizStep: nullableText, disposition: nullableText,
+  locationId: nullableText, actorRef: text, document: z.nullable(documentRef), attributes: nullableText,
+});
+const buildRecordRow = z.object({ buildRecordId: text, version: count, releasedAt: text, payloadHash: text, releaseSignatureRef: nullableText });
+const unitDetail = z.object({
+  unitId: text, lifecycleStatus: text, origin: text, serialisationPoint: text, retentionClass: text, historyDepth: text,
+  lotId: nullableText, expiryDate: nullableText, derivedFromUnitId: nullableText, mergedIntoUnitId: nullableText, itemId: text,
+  modelVersionId: nullableText, disposition: text, conditionGrade: nullableText, locationId: nullableText, locationKind: nullableText,
+  custodyPartyRef: nullableText, ownerPartyRef: nullableText, openOwnershipEpisodeId: nullableText, openCustodyEpisodeId: nullableText,
+  overlayFlags: text, lastEventSeq: count, lastEventTime: text, identifiers: z.array(identifierRow), episodes: z.array(episodeRow),
+  asBuilt: z.array(asBuiltRow), buildRecords: z.array(buildRecordRow), parentUnitId: nullableText, eventCount: count,
+  ownerAndHolderDiffer: flag,
+});
+export type IdentifierRow = z.infer<typeof identifierRow>;
+export type EpisodeRow = z.infer<typeof episodeRow>;
+export type AsBuiltRow = z.infer<typeof asBuiltRow>;
+export type HistoryRow = z.infer<typeof historyRow>;
+export type BuildRecordRow = z.infer<typeof buildRecordRow>;
+export type UnitDetail = z.infer<typeof unitDetail>;
 
-export interface ScanField { key: string; value: string; description: string | null; errors: string[] }
-export interface ScanResult { format: number | string; raw: string; cleaned: string; symbologyIdentifier: string | null; fields: ScanField[]; separatorsRecovered: number; alternatives: string[] }
+const scanField = z.object({ key: text, value: text, description: nullableText, errors: texts });
+// ScanFormat is a C# enum the host writes as a number (no string-enum converter is registered).
+const scanResult = z.object({
+  format: z.union([count, text]), raw: text, cleaned: text, symbologyIdentifier: nullableText, fields: z.array(scanField),
+  separatorsRecovered: count, alternatives: texts,
+});
+export type ScanField = z.infer<typeof scanField>;
+export type ScanResult = z.infer<typeof scanResult>;
 
-export interface IdentifierInput { type: string; rawValue: string; issuerPartyRef?: string | null }
-export interface CommissionLine { identifiers: IdentifierInput[]; clientReference?: string | null; lotId?: string | null; expiryDate?: string | null }
-export interface CommissionUnits { commandId: string; itemId: string; origin: string; lines: CommissionLine[]; eventTime: string; legalEntityId?: string; document?: DocumentRef | null; locationId?: string | null; locationKind?: string | null; source?: string | null; skipInvalidLines?: boolean; brandIsOurs?: boolean | null; confirmedNotModelNumber?: boolean; modelNumberConfirmationReason?: string | null }
-export interface CommissionLineResult { index: number; clientReference: string | null; unitId: string | null; outcome: "commissioned" | "pending" | "refused" | "duplicate" | string; reasons: string[] }
-export interface CommissionUnitsResult { lines: CommissionLineResult[]; commissioned: number; pending: number; refused: number; duplicates: number }
+const identifierInput = z.looseObject({ type: text, rawValue: text, issuerPartyRef: maybe(text) });
+const commissionLine = z.looseObject({ identifiers: z.array(identifierInput), clientReference: maybe(text), lotId: maybe(text), expiryDate: maybe(text) });
+const commissionUnits = z.looseObject({
+  commandId: text, itemId: text, origin: text, lines: z.array(commissionLine), eventTime: text, legalEntityId: z.optional(text),
+  document: maybe(documentRef), locationId: maybe(text), locationKind: maybe(text), source: maybe(text),
+  skipInvalidLines: z.optional(flag), brandIsOurs: maybe(flag), confirmedNotModelNumber: z.optional(flag),
+  modelNumberConfirmationReason: maybe(text),
+});
+const commissionLineResult = z.object({ index: count, clientReference: nullableText, unitId: nullableText, outcome: text, reasons: texts });
+const commissionUnitsResult = z.object({ lines: z.array(commissionLineResult), commissioned: count, pending: count, refused: count, duplicates: count });
+export type IdentifierInput = z.infer<typeof identifierInput>;
+export type CommissionLine = z.infer<typeof commissionLine>;
+export type CommissionUnits = z.infer<typeof commissionUnits>;
+export type CommissionLineResult = z.infer<typeof commissionLineResult>;
+export type CommissionUnitsResult = z.infer<typeof commissionUnitsResult>;
 
-export interface CorrectIdentifier { commandId: string; unitId: string; identifierType: string; newRawValue: string; reason: string; eventTime: string; legalEntityId?: string; approverRef?: string | null; note?: string | null; confirmedNotModelNumber?: boolean; modelNumberConfirmationReason?: string | null }
-export interface CorrectIdentifierResult { unitId: string; supersededIdentifierId: string; newIdentifierId: string; oldNormalisedValue: string; newNormalisedValue: string }
-export interface AssignIdentifier { commandId: string; unitId: string; identifier: IdentifierInput; eventTime: string; actorRef: string; legalEntityId?: string }
-export interface UnitFlagCommand { commandId: string; unitId: string; flag: string; eventTime: string; actorRef?: string; legalEntityId?: string; reason?: string | null }
-export interface UnitFlagResult { unitId: string; flags: string[]; changed: boolean; investigationRaised: boolean }
+const correctIdentifier = z.looseObject({
+  commandId: text, unitId: text, identifierType: text, newRawValue: text, reason: text, eventTime: text,
+  legalEntityId: z.optional(text), approverRef: maybe(text), note: maybe(text), confirmedNotModelNumber: z.optional(flag),
+  modelNumberConfirmationReason: maybe(text),
+});
+const correctIdentifierResult = z.object({ unitId: text, supersededIdentifierId: text, newIdentifierId: text, oldNormalisedValue: text, newNormalisedValue: text });
+const assignIdentifier = z.looseObject({ commandId: text, unitId: text, identifier: identifierInput, eventTime: text, actorRef: text, legalEntityId: z.optional(text) });
+const assignIdentifierResult = z.object({ unitId: text, identifierId: text, normalisedValue: text, lifecycleStatus: text });
+const unitFlagCommand = z.looseObject({ commandId: text, unitId: text, flag: text, eventTime: text, actorRef: z.optional(text), legalEntityId: z.optional(text), reason: maybe(text) });
+const unitFlagResult = z.object({ unitId: text, flags: texts, changed: flag, investigationRaised: flag });
+export type CorrectIdentifier = z.infer<typeof correctIdentifier>;
+export type CorrectIdentifierResult = z.infer<typeof correctIdentifierResult>;
+export type AssignIdentifier = z.infer<typeof assignIdentifier>;
+export type UnitFlagCommand = z.infer<typeof unitFlagCommand>;
+export type UnitFlagResult = z.infer<typeof unitFlagResult>;
 
-export interface SerialSchemeRow { code: string; identifierType: string; prefix: string; blockFormat: string | null; separator: string; counterDigits: number; example: string }
-export interface SerialRangeRow { rangeId: string; scheme: string; startValue: string | null; endValue: string | null; count: number; commissionedCount: number; status: string; randomised: boolean; allocatedToDocumentType: string | null; allocatedToDocumentId: string | null; itemId: string | null; reservedAt: string; reservedBy: string; note: string | null }
-export interface SerialRangeList { page: Page<SerialRangeRow>; scheme: string; ranges: number; serialsIssued: number; nextFree: string | null }
-export interface AllocateSerialRange { commandId: string; scheme: string; quantity: number; allocatedTo: DocumentRef; eventTime: string; legalEntityId?: string; start?: string | null; randomised?: boolean; itemId?: string | null; note?: string | null; confirmedNotModelNumber?: boolean; modelNumberConfirmationReason?: string | null }
-export interface AllocateSerialRangeResult { rangeId: string; scheme: string; startValue: string | null; endValue: string | null; count: number; randomised: boolean; serials: string[]; startMoved: boolean; [extra: string]: unknown }
+const serialSchemeRow = z.object({ code: text, identifierType: text, prefix: text, blockFormat: nullableText, separator: text, counterDigits: count, example: text });
+const serialRangeRow = z.object({
+  rangeId: text, scheme: text, startValue: nullableText, endValue: nullableText, count, commissionedCount: count, status: text,
+  randomised: flag, allocatedToDocumentType: nullableText, allocatedToDocumentId: nullableText, itemId: nullableText,
+  reservedAt: text, reservedBy: text, note: nullableText,
+});
+const serialRangeList = z.object({ page: pageOf(serialRangeRow), scheme: text, ranges: count, serialsIssued: count, nextFree: nullableText });
+const allocateSerialRange = z.looseObject({
+  commandId: text, scheme: text, quantity: count, allocatedTo: documentRef, eventTime: text, legalEntityId: z.optional(text),
+  start: maybe(text), randomised: z.optional(flag), itemId: maybe(text), note: maybe(text), confirmedNotModelNumber: z.optional(flag),
+  modelNumberConfirmationReason: maybe(text),
+});
+const allocateSerialRangeResult = z.object({
+  rangeId: text, scheme: text, startValue: nullableText, endValue: nullableText, count, randomised: flag, serials: texts,
+  startMoved: flag, requestedStart: maybe(text),
+});
+export type SerialSchemeRow = z.infer<typeof serialSchemeRow>;
+export type SerialRangeRow = z.infer<typeof serialRangeRow>;
+export type SerialRangeList = z.infer<typeof serialRangeList>;
+export type AllocateSerialRange = z.infer<typeof allocateSerialRange>;
+export type AllocateSerialRangeResult = z.infer<typeof allocateSerialRangeResult>;
 
-export interface CompletenessQuery { serials?: string[] | null; selectionId?: string | null; document?: DocumentRef | null; effectiveAt?: string | null; skip?: number; take?: number }
-export interface CompletenessSlot { slot: string; expectedItemCode: string; expectedItemId: string; outcome: string; capturedSerial: string | null; capturedUnitId: string | null; capturedItemId: string | null }
-export interface CompletenessRow { unitId: string; serial: string | null; itemId: string; policy: string; expected: number; captured: number; missing: number; unexpected: number; complete: boolean; slots: CompletenessSlot[] }
-export interface CompletenessResult { page: Page<CompletenessRow>; units: number; complete: number; missingUnits: number; missingSerials: number; unexpectedUnits: number; slots: string[]; unknown: string[] }
+const completenessQuery = z.looseObject({ serials: maybe(texts), selectionId: maybe(text), document: maybe(documentRef), effectiveAt: maybe(text), skip: z.optional(count), take: z.optional(count) });
+const completenessSlot = z.object({
+  slot: text, expectedItemCode: text, expectedItemId: text, outcome: text, capturedSerial: nullableText, capturedUnitId: nullableText,
+  capturedItemId: nullableText,
+});
+const completenessRow = z.object({
+  unitId: text, serial: nullableText, itemId: text, policy: text, expected: count, captured: count, missing: count,
+  unexpected: count, complete: flag, slots: z.array(completenessSlot),
+});
+const completenessResult = z.object({
+  page: pageOf(completenessRow), units: count, complete: count, missingUnits: count, missingSerials: count,
+  unexpectedUnits: count, slots: texts, unknown: texts,
+});
+export type CompletenessQuery = z.infer<typeof completenessQuery>;
+export type CompletenessSlot = z.infer<typeof completenessSlot>;
+export type CompletenessRow = z.infer<typeof completenessRow>;
+export type CompletenessResult = z.infer<typeof completenessResult>;
 
-export interface SelectionSource { kind: string; document?: DocumentRef | null; partyRef?: string | null; itemId?: string | null; from?: string | null; to?: string | null; eventType?: string | null; serials?: string[] | null; scheme?: string | null; rangeStart?: string | null; rangeEnd?: string | null }
-export interface ResolveSelectionSetResult { selectionId: string; resolved: number; unknown: string[]; rejected: string[]; source: SelectionSource }
-export interface BulkOperationArguments { eventTime: string; actorRef: string; legalEntityId?: string; sourceDocument: DocumentRef; reason?: string | null; note?: string | null; extra?: Record<string, string> | null }
-export interface UnitOutcome { unitId: string; serial: string | null; outcome: string; reason: string | null; detail: string | null }
-export interface BulkPreviewResult { selectionId: string; operation: string; total: number; change: number; skip: number; block: number; page: UnitOutcome[]; pageSkip: number; pageTake: number }
-export interface BulkExecutionResult { commandId: string; selectionId: string; operation: string; total: number; done: number; skipped: number; blocked: number; validationReportId: string; replayed: boolean }
+export const selectionSource = z.looseObject({
+  kind: text, document: maybe(documentRef), partyRef: maybe(text), itemId: maybe(text), from: maybe(text), to: maybe(text),
+  eventType: maybe(text), serials: maybe(texts), scheme: maybe(text), rangeStart: maybe(text), rangeEnd: maybe(text),
+});
+const resolveSelectionSetResult = z.object({ selectionId: text, resolved: count, unknown: texts, rejected: texts, source: selectionSource });
+const bulkOperationArguments = z.looseObject({
+  eventTime: text, actorRef: text, legalEntityId: z.optional(text), sourceDocument: documentRef, reason: maybe(text), note: maybe(text),
+  extra: maybe(z.record(text, text)),
+});
+const unitOutcome = z.object({ unitId: text, serial: nullableText, outcome: text, reason: nullableText, detail: nullableText });
+const bulkPreviewResult = z.object({
+  selectionId: text, operation: text, total: count, change: count, skip: count, block: count, page: z.array(unitOutcome),
+  pageSkip: count, pageTake: count,
+});
+const bulkExecutionResult = z.object({
+  commandId: text, selectionId: text, operation: text, total: count, done: count, skipped: count, blocked: count,
+  validationReportId: text, replayed: flag,
+});
+export type SelectionSource = z.infer<typeof selectionSource>;
+export type ResolveSelectionSetResult = z.infer<typeof resolveSelectionSetResult>;
+export type BulkOperationArguments = z.infer<typeof bulkOperationArguments>;
+export type UnitOutcome = z.infer<typeof unitOutcome>;
+export type BulkPreviewResult = z.infer<typeof bulkPreviewResult>;
+export type BulkExecutionResult = z.infer<typeof bulkExecutionResult>;
 
 export const RELEASE_OPERATION = "release_units";
 
@@ -77,29 +203,29 @@ export function toPage<T>(page: Page<T>): PageResult<T> {
 }
 
 export const units = {
-  lookup: (q: string, type?: string, signal?: AbortSignal) => api<LookupResult>(`/api/units/lookup${query({ q, type })}`, { signal }),
-  search: (p: UnitSearchParams, signal?: AbortSignal) => api<UnitSearchResult>(`/api/units/search${query({ ...p })}`, { signal }),
-  detail: (unitId: string, signal?: AbortSignal) => api<UnitDetail>(`/api/units/${unitId}`, { signal }),
-  history: (unitId: string, skip: number, take: number, signal?: AbortSignal) => api<Page<HistoryRow>>(`/api/units/${unitId}/history${query({ skip, take })}`, { signal }),
-  scan: (raw: string) => api<ScanResult>("/api/units/scan", { method: "POST", body: { raw } }),
-  commission: (command: CommissionUnits) => api<CommissionUnitsResult>("/api/units/commission", { method: "POST", body: command }),
-  correctIdentifier: (command: CorrectIdentifier) => api<CorrectIdentifierResult>("/api/units/correct-identifier", { method: "POST", body: command }),
-  assignIdentifier: (command: AssignIdentifier) => api<{ unitId: string; identifierId: string; normalisedValue: string; lifecycleStatus: string }>("/api/units/assign-identifier", { method: "POST", body: command }),
-  flag: (command: UnitFlagCommand) => api<UnitFlagResult>("/api/units/flag", { method: "POST", body: command }),
-  unflag: (command: UnitFlagCommand) => api<UnitFlagResult>("/api/units/unflag", { method: "POST", body: command }),
-  completeness: (q: CompletenessQuery, signal?: AbortSignal) => api<CompletenessResult>("/api/units/completeness", { method: "POST", body: q, signal }),
+  lookup: (q: string, type?: string, signal?: AbortSignal) => apiParsed(`/api/units/lookup${query({ q, type })}`, lookupResult, { signal }),
+  search: (p: UnitSearchParams, signal?: AbortSignal) => apiParsed(`/api/units/search${query({ ...p })}`, unitSearchResult, { signal }),
+  detail: (unitId: string, signal?: AbortSignal) => apiParsed(`/api/units/${unitId}`, unitDetail, { signal }),
+  history: (unitId: string, skip: number, take: number, signal?: AbortSignal) => apiParsed(`/api/units/${unitId}/history${query({ skip, take })}`, pageOf(historyRow), { signal }),
+  scan: (raw: string) => apiParsed("/api/units/scan", scanResult, { method: "POST", body: { raw } }),
+  commission: (command: CommissionUnits) => apiParsed("/api/units/commission", commissionUnitsResult, { method: "POST", body: z.parse(commissionUnits, command) }),
+  correctIdentifier: (command: CorrectIdentifier) => apiParsed("/api/units/correct-identifier", correctIdentifierResult, { method: "POST", body: z.parse(correctIdentifier, command) }),
+  assignIdentifier: (command: AssignIdentifier) => apiParsed("/api/units/assign-identifier", assignIdentifierResult, { method: "POST", body: z.parse(assignIdentifier, command) }),
+  flag: (command: UnitFlagCommand) => apiParsed("/api/units/flag", unitFlagResult, { method: "POST", body: z.parse(unitFlagCommand, command) }),
+  unflag: (command: UnitFlagCommand) => apiParsed("/api/units/unflag", unitFlagResult, { method: "POST", body: z.parse(unitFlagCommand, command) }),
+  completeness: (q: CompletenessQuery, signal?: AbortSignal) => apiParsed("/api/units/completeness", completenessResult, { method: "POST", body: z.parse(completenessQuery, q), signal }),
 };
 
 export const ranges = {
-  schemes: (signal?: AbortSignal) => api<SerialSchemeRow[]>("/api/serial-ranges/schemes", { signal }),
-  list: (scheme: string, status: string | null, skip: number, take: number, signal?: AbortSignal) => api<SerialRangeList>(`/api/serial-ranges/${query({ scheme, status, skip, take })}`, { signal }),
-  allocate: (command: AllocateSerialRange) => api<AllocateSerialRangeResult>("/api/serial-ranges/", { method: "POST", body: command }),
+  schemes: (signal?: AbortSignal) => apiParsed("/api/serial-ranges/schemes", z.array(serialSchemeRow), { signal }),
+  list: (scheme: string, status: string | null, skip: number, take: number, signal?: AbortSignal) => apiParsed(`/api/serial-ranges/${query({ scheme, status, skip, take })}`, serialRangeList, { signal }),
+  allocate: (command: AllocateSerialRange) => apiParsed("/api/serial-ranges/", allocateSerialRangeResult, { method: "POST", body: z.parse(allocateSerialRange, command) }),
 };
 
 export const selections = {
-  resolve: (source: SelectionSource, actorRef: string) => api<ResolveSelectionSetResult>("/api/selections/", { method: "POST", body: { commandId: newCommandId(), source, actorRef } }),
+  resolve: (source: SelectionSource, actorRef: string) => apiParsed("/api/selections/", resolveSelectionSetResult, { method: "POST", body: { commandId: newCommandId(), source: z.parse(selectionSource, source), actorRef } }),
   preview: (selectionId: string, operation: string, args: BulkOperationArguments, skip: number, take: number, find: string | null, outcomeFilter: string | null, signal?: AbortSignal) =>
-    api<BulkPreviewResult>(`/api/selections/${selectionId}/preview`, { method: "POST", body: { selectionId, operation, arguments: args, skip, take, find, outcomeFilter }, signal }),
+    apiParsed(`/api/selections/${selectionId}/preview`, bulkPreviewResult, { method: "POST", body: { selectionId, operation, arguments: z.parse(bulkOperationArguments, args), skip, take, find, outcomeFilter }, signal }),
   execute: (selectionId: string, operation: string, args: BulkOperationArguments, approverRef: string | null) =>
-    api<BulkExecutionResult>(`/api/selections/${selectionId}/execute`, { method: "POST", body: { commandId: newCommandId(), selectionId, operation, arguments: args, approval: { approverRef, required: false } } }),
+    apiParsed(`/api/selections/${selectionId}/execute`, bulkExecutionResult, { method: "POST", body: { commandId: newCommandId(), selectionId, operation, arguments: z.parse(bulkOperationArguments, args), approval: { approverRef, required: false } } }),
 };

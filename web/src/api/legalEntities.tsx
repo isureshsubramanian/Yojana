@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
-import { api } from "./client";
+import * as z from "zod/mini";
+import { apiParsed } from "./client.ts";
 
-export interface LegalEntityOption { id: string; code: string; name: string }
-export interface LegalEntityOptions { defaultId: string | null; entities: LegalEntityOption[] }
+const legalEntityOption = z.object({ id: z.string(), code: z.string(), name: z.string() });
+const legalEntityOptions = z.object({ defaultId: z.nullable(z.string()), entities: z.array(legalEntityOption) });
+export type LegalEntityOption = z.infer<typeof legalEntityOption>;
+export type LegalEntityOptions = z.infer<typeof legalEntityOptions>;
 
 export const legalEntitiesApi = {
-  get: (signal?: AbortSignal) => api<LegalEntityOptions>("/api/settings/legal-entities", signal ? { signal } : undefined),
-  setDefault: (partyId: string) => api<LegalEntityOptions>("/api/settings/legal-entities/default", { method: "PUT", body: { partyId } }),
+  get: (signal?: AbortSignal) => apiParsed("/api/settings/legal-entities", legalEntityOptions, signal ? { signal } : undefined),
+  setDefault: (partyId: string) => apiParsed("/api/settings/legal-entities/default", legalEntityOptions, { method: "PUT", body: { partyId } }),
 };
 
 export function useLegalEntities(enabled = true) {

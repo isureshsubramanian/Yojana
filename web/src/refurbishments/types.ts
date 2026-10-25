@@ -1,45 +1,60 @@
-export interface RefurbishmentOperationRow {
-  operationId: string; sequence: number; description: string; technicianRef: string | null;
-  plannedHours: number; actualHours: number | null; status: string; signedBy: string | null; signedAt: string | null;
-}
-export interface RefurbishmentPartRow {
-  partId: string; action: string; childUnitId: string | null; childItemId: string | null; slot: string | null;
-  destination: string | null; vendorPartyRef: string | null; assemblyLinkId: string | null;
-  unitCost: number | null; currency: string | null; recordedAt: string;
-}
-export interface RefurbishmentLabourRow {
-  labourId: string; operationId: string | null; hours: number; hourlyRate: number; amount: number;
-  currency: string; technicianRef: string; recordedAt: string;
-}
-export interface RefurbishmentCostRow {
-  costId: string; kind: string; amount: number; currency: string; description: string; postedAt: string; eventId: string;
-}
-export interface RefurbishmentReleaseCheck { key: string; label: string; detail: string; passed: boolean; required: boolean }
-export interface RefurbishmentWorkOrderRow {
-  workOrderId: string; workOrderNumber: string; kind: string; targetUnitId: string; itemId: string;
-  sourceRmaLineId: string | null; status: string; cycleNumber: number; identityPolicy: string; maxCycles: number;
-  openedAt: string; openedBy: string; releasedAt: string | null; releasedBy: string | null; releasedUnitId: string | null;
-  grade: string | null; totalCost: number; currency: string | null; operations: RefurbishmentOperationRow[];
-  parts: RefurbishmentPartRow[]; labour: RefurbishmentLabourRow[]; costs: RefurbishmentCostRow[];
-  targetSerial: string | null; releasedSerial: string | null; currentLocationId: string | null;
-  releaseChecks: RefurbishmentReleaseCheck[]; version: string;
-}
-export interface RefurbishmentWorkOrderPage { items: RefurbishmentWorkOrderRow[]; total: number; skip: number; take: number }
-
-export interface RefurbishmentItemClassPolicy { itemClass: string; identity: string; maxCycles: number; replacementPolicyCode: string | null }
-export interface RefurbishmentItemCyclePolicy { itemId: string; maxCycles: number }
-export interface RefurbishmentPolicy {
-  defaultIdentity: string; defaultMaxCycles: number; itemClasses: RefurbishmentItemClassPolicy[];
-  defaultReplacementPolicyCode: string | null; items: RefurbishmentItemCyclePolicy[] | null;
-}
-
-export interface SanitisationRow {
-  sanitisationRecordId: string; manufacturer: string; model: string; mediaSerial: string; mediaType: string;
-  method: string; tool: string; toolVersion: string | null; verificationMethod: string; operatorRef: string;
-  sanitisedAt: string; certificateRef: string; signatureRef: string | null; eventId: string;
-}
-export interface UnitTestRow { testRecordId: string; testKind: string; result: string; measurementsJson: string; equipment: string; operatorRef: string; testedAt: string; eventId: string }
-export interface UsageReadingRow { usageReadingId: string; meterKind: string; value: number; unit: string; readAt: string; meterReplacement: boolean; operatorRef: string; eventId: string }
-export interface UnitAttributeHistoryRow { attributeHistoryId: string; key: string; value: string | null; effectiveFrom: string; actorRef: string; eventId: string }
+import * as z from "zod/mini";
+export const refurbishmentOperationRow = z.object({ operationId: z.string(), sequence: z.number(),
+  description: z.string(), technicianRef: z.nullable(z.string()), plannedHours: z.number(),
+  actualHours: z.nullable(z.number()), status: z.string(), signedBy: z.nullable(z.string()),
+  signedAt: z.nullable(z.string()) });
+export type RefurbishmentOperationRow = z.infer<typeof refurbishmentOperationRow>;
+export const refurbishmentPartRow = z.object({ partId: z.string(), action: z.string(),
+  childUnitId: z.nullable(z.string()), childItemId: z.nullable(z.string()), slot: z.nullable(z.string()),
+  destination: z.nullable(z.string()), vendorPartyRef: z.nullable(z.string()), assemblyLinkId: z.nullable(z.string()),
+  unitCost: z.nullable(z.number()), currency: z.nullable(z.string()), recordedAt: z.string() });
+export type RefurbishmentPartRow = z.infer<typeof refurbishmentPartRow>;
+export const refurbishmentLabourRow = z.object({ labourId: z.string(), operationId: z.nullable(z.string()),
+  hours: z.number(), hourlyRate: z.number(), amount: z.number(), currency: z.string(), technicianRef: z.string(),
+  recordedAt: z.string() });
+export type RefurbishmentLabourRow = z.infer<typeof refurbishmentLabourRow>;
+export const refurbishmentCostRow = z.object({ costId: z.string(), kind: z.string(), amount: z.number(),
+  currency: z.string(), description: z.string(), postedAt: z.string(), eventId: z.string() });
+export type RefurbishmentCostRow = z.infer<typeof refurbishmentCostRow>;
+export const refurbishmentReleaseCheck = z.object({ key: z.string(), label: z.string(), detail: z.string(),
+  passed: z.boolean(), required: z.boolean() });
+export type RefurbishmentReleaseCheck = z.infer<typeof refurbishmentReleaseCheck>;
+export const refurbishmentWorkOrderRow = z.object({ workOrderId: z.string(), workOrderNumber: z.string(),
+  kind: z.string(), targetUnitId: z.string(), itemId: z.string(), sourceRmaLineId: z.nullable(z.string()),
+  status: z.string(), cycleNumber: z.number(), identityPolicy: z.string(), maxCycles: z.number(), openedAt: z.string(),
+  openedBy: z.string(), releasedAt: z.nullable(z.string()), releasedBy: z.nullable(z.string()),
+  releasedUnitId: z.nullable(z.string()), grade: z.nullable(z.string()), totalCost: z.number(),
+  currency: z.nullable(z.string()), operations: z.array(refurbishmentOperationRow),
+  parts: z.array(refurbishmentPartRow), labour: z.array(refurbishmentLabourRow), costs: z.array(refurbishmentCostRow),
+  targetSerial: z.nullable(z.string()), releasedSerial: z.nullable(z.string()),
+  currentLocationId: z.nullable(z.string()), releaseChecks: z.array(refurbishmentReleaseCheck), version: z.string() });
+export type RefurbishmentWorkOrderRow = z.infer<typeof refurbishmentWorkOrderRow>;
+export const refurbishmentWorkOrderPage = z.object({ items: z.array(refurbishmentWorkOrderRow), total: z.number(),
+  skip: z.number(), take: z.number() });
+export type RefurbishmentWorkOrderPage = z.infer<typeof refurbishmentWorkOrderPage>;
+export const refurbishmentItemClassPolicy = z.object({ itemClass: z.string(), identity: z.string(),
+  maxCycles: z.number(), replacementPolicyCode: z.nullable(z.string()) });
+export type RefurbishmentItemClassPolicy = z.infer<typeof refurbishmentItemClassPolicy>;
+export const refurbishmentItemCyclePolicy = z.object({ itemId: z.string(), maxCycles: z.number() });
+export type RefurbishmentItemCyclePolicy = z.infer<typeof refurbishmentItemCyclePolicy>;
+export const refurbishmentPolicy = z.object({ defaultIdentity: z.string(), defaultMaxCycles: z.number(),
+  itemClasses: z.array(refurbishmentItemClassPolicy), defaultReplacementPolicyCode: z.nullable(z.string()),
+  items: z.nullable(z.array(refurbishmentItemCyclePolicy)) });
+export type RefurbishmentPolicy = z.infer<typeof refurbishmentPolicy>;
+export const sanitisationRow = z.object({ sanitisationRecordId: z.string(), manufacturer: z.string(),
+  model: z.string(), mediaSerial: z.string(), mediaType: z.string(), method: z.string(), tool: z.string(),
+  toolVersion: z.nullable(z.string()), verificationMethod: z.string(), operatorRef: z.string(),
+  sanitisedAt: z.string(), certificateRef: z.string(), signatureRef: z.nullable(z.string()), eventId: z.string() });
+export type SanitisationRow = z.infer<typeof sanitisationRow>;
+export const unitTestRow = z.object({ testRecordId: z.string(), testKind: z.string(), result: z.string(),
+  measurementsJson: z.string(), equipment: z.string(), operatorRef: z.string(), testedAt: z.string(),
+  eventId: z.string() });
+export type UnitTestRow = z.infer<typeof unitTestRow>;
+export const usageReadingRow = z.object({ usageReadingId: z.string(), meterKind: z.string(), value: z.number(),
+  unit: z.string(), readAt: z.string(), meterReplacement: z.boolean(), operatorRef: z.string(), eventId: z.string() });
+export type UsageReadingRow = z.infer<typeof usageReadingRow>;
+export const unitAttributeHistoryRow = z.object({ attributeHistoryId: z.string(), key: z.string(),
+  value: z.nullable(z.string()), effectiveFrom: z.string(), actorRef: z.string(), eventId: z.string() });
+export type UnitAttributeHistoryRow = z.infer<typeof unitAttributeHistoryRow>;
 
 export type RefurbishmentDialog = "add_operation" | "remove_part" | "install_part" | "labour" | "cost" | "release" | "cancel" | null;

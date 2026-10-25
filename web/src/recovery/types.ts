@@ -1,101 +1,52 @@
-export interface RecoveryClaimRow {
-  recoveryClaimId: string;
-  recoveryNumber: string;
-  raisedAt: string;
-  customerClaimId: string;
-  customerClaimNumber: string;
-  claimDate: string;
-  claimApprovedAt: string | null;
-  childUnitId: string;
-  childSerial: string;
-  childItemId: string;
-  parentUnitId: string | null;
-  parentSerial: string | null;
-  vendorPartyRef: string;
-  vendorTermStart: string | null;
-  vendorTermEnd: string | null;
-  vendorTermMonths: number | null;
-  claimMonthOfTerm: number | null;
-  requestedAmount: number;
-  approvedAmount: number | null;
-  currency: string;
-  status: string;
-  ageDays: number;
-  approvedAt: string | null;
-  approvedBy: string | null;
-  vendorReference: string | null;
-  vendorNote: string | null;
-  version: string;
-}
+import * as z from "zod/mini";
+export const recoveryCampaignClaimsRule = z.enum(["no_recovery", "recover_like_warranty"]);
+export type RecoveryCampaignClaimsRule = z.infer<typeof recoveryCampaignClaimsRule>;
+export const recoveryNotRaisedReason = z.enum(["vendor_term_ended", "no_vendor_term", "recall_claim", "campaign_claim", "several_covered_parts", "part_not_named", "line_kind_not_recovered"]);
+export type RecoveryNotRaisedReason = z.infer<typeof recoveryNotRaisedReason>;
+export const recoveryWholeUnitRule = z.enum(["single_covered_part", "named_part_only"]);
+export type RecoveryWholeUnitRule = z.infer<typeof recoveryWholeUnitRule>;
+export const recoveryClaimRow = z.object({ recoveryClaimId: z.string(), recoveryNumber: z.string(),
+  raisedAt: z.string(), customerClaimId: z.string(), customerClaimNumber: z.string(), claimDate: z.string(),
+  claimApprovedAt: z.nullable(z.string()), childUnitId: z.string(), childSerial: z.string(), childItemId: z.string(),
+  parentUnitId: z.nullable(z.string()), parentSerial: z.nullable(z.string()), vendorPartyRef: z.string(),
+  vendorTermStart: z.nullable(z.string()), vendorTermEnd: z.nullable(z.string()),
+  vendorTermMonths: z.nullable(z.number()), claimMonthOfTerm: z.nullable(z.number()), requestedAmount: z.number(),
+  approvedAmount: z.nullable(z.number()), currency: z.string(), status: z.string(), ageDays: z.number(),
+  approvedAt: z.nullable(z.string()), approvedBy: z.nullable(z.string()), vendorReference: z.nullable(z.string()),
+  vendorNote: z.nullable(z.string()), version: z.string() });
+export type RecoveryClaimRow = z.infer<typeof recoveryClaimRow>;
+export const recoveryClaimPage = z.object({ rows: z.array(recoveryClaimRow), total: z.number(), skip: z.number(),
+  take: z.number() });
+export type RecoveryClaimPage = z.infer<typeof recoveryClaimPage>;
+export const recoveryCurrencyTotal = z.object({ currency: z.string(), claimCount: z.number(),
+  requestedAmount: z.number(), approvedAmount: z.number() });
+export type RecoveryCurrencyTotal = z.infer<typeof recoveryCurrencyTotal>;
+export const recoveryFilterOption = z.object({ id: z.string(), count: z.number() });
+export type RecoveryFilterOption = z.infer<typeof recoveryFilterOption>;
+export const oldestOpenRecovery = z.object({ ageDays: z.number(), recoveryNumber: z.string(),
+  vendorPartyRef: z.string() });
+export type OldestOpenRecovery = z.infer<typeof oldestOpenRecovery>;
+export const recoveryClaimSummary = z.object({ openCount: z.number(), openAmounts: z.array(recoveryCurrencyTotal),
+  approvedThisYear: z.array(recoveryCurrencyTotal), termExpiredWithoutRecovery: z.number(),
+  oldestOpen: z.nullable(oldestOpenRecovery), vendors: z.array(recoveryFilterOption),
+  childItems: z.array(recoveryFilterOption) });
+export type RecoveryClaimSummary = z.infer<typeof recoveryClaimSummary>;
+export const recoveryPolicy = z.object({ wholeUnitLines: recoveryWholeUnitRule,
+  campaignClaims: recoveryCampaignClaimsRule, lineKinds: z.array(z.string()), vendorAnswerDueDays: z.number() });
+export type RecoveryPolicy = z.infer<typeof recoveryPolicy>;
+export const recoveryNotRaisedRow = z.object({ customerClaimId: z.string(), customerClaimNumber: z.string(),
+  claimDate: z.string(), approvedAt: z.string(), unitId: z.string(), unitSerial: z.string(), itemId: z.string(),
+  reason: recoveryNotRaisedReason, vendorPartyRef: z.nullable(z.string()), vendorTermStart: z.nullable(z.string()),
+  vendorTermEnd: z.nullable(z.string()), vendorTermMonths: z.nullable(z.number()),
+  claimMonthOfTerm: z.nullable(z.number()) });
+export type RecoveryNotRaisedRow = z.infer<typeof recoveryNotRaisedRow>;
+export const recoveryNotRaisedReport = z.object({ days: z.number(), rows: z.array(recoveryNotRaisedRow) });
+export type RecoveryNotRaisedReport = z.infer<typeof recoveryNotRaisedReport>;
+export const recoveryAnswer = z.looseObject({ commandId: z.string(), approvedAmount: z.number(), eventTime: z.string(),
+  vendorReference: z.nullable(z.string()), vendorNote: z.nullable(z.string()) });
+export type RecoveryAnswer = z.infer<typeof recoveryAnswer>;
+export const recoveryAnswerResult = z.object({ recoveryClaimId: z.string(), status: z.string(),
+  requestedAmount: z.number(), approvedAmount: z.nullable(z.number()), eventId: z.string(), replayed: z.boolean(),
+  vendorReference: z.nullable(z.string()), vendorNote: z.nullable(z.string()) });
+export type RecoveryAnswerResult = z.infer<typeof recoveryAnswerResult>;
 
-export interface RecoveryClaimPage { rows: RecoveryClaimRow[]; total: number; skip: number; take: number }
-
-export interface RecoveryCurrencyTotal { currency: string; claimCount: number; requestedAmount: number; approvedAmount: number }
-export interface RecoveryFilterOption { id: string; count: number }
-export interface OldestOpenRecovery { ageDays: number; recoveryNumber: string; vendorPartyRef: string }
-
-export interface RecoveryClaimSummary {
-  openCount: number;
-  openAmounts: RecoveryCurrencyTotal[];
-  approvedThisYear: RecoveryCurrencyTotal[];
-  termExpiredWithoutRecovery: number;
-  oldestOpen: OldestOpenRecovery | null;
-  vendors: RecoveryFilterOption[];
-  childItems: RecoveryFilterOption[];
-}
-
-export type RecoveryNotRaisedReason =
-  | "vendor_term_ended"
-  | "no_vendor_term"
-  | "recall_claim"
-  | "campaign_claim"
-  | "several_covered_parts"
-  | "part_not_named"
-  | "line_kind_not_recovered";
-
-export type RecoveryWholeUnitRule = "single_covered_part" | "named_part_only";
-export type RecoveryCampaignClaimsRule = "no_recovery" | "recover_like_warranty";
-
-export interface RecoveryPolicy {
-  wholeUnitLines: RecoveryWholeUnitRule;
-  campaignClaims: RecoveryCampaignClaimsRule;
-  lineKinds: string[];
-  vendorAnswerDueDays: number;
-}
-
-export interface RecoveryNotRaisedRow {
-  customerClaimId: string;
-  customerClaimNumber: string;
-  claimDate: string;
-  approvedAt: string;
-  unitId: string;
-  unitSerial: string;
-  itemId: string;
-  reason: RecoveryNotRaisedReason;
-  vendorPartyRef: string | null;
-  vendorTermStart: string | null;
-  vendorTermEnd: string | null;
-  vendorTermMonths: number | null;
-  claimMonthOfTerm: number | null;
-}
-
-export interface RecoveryNotRaisedReport { days: number; rows: RecoveryNotRaisedRow[] }
-
-export interface RecoveryAnswer {
-  commandId: string;
-  approvedAmount: number;
-  eventTime: string;
-  vendorReference: string | null;
-  vendorNote: string | null;
-}
-
-export interface RecoveryAnswerResult {
-  recoveryClaimId: string;
-  status: string;
-  requestedAmount: number;
-  approvedAmount: number | null;
-  eventId: string;
-  replayed: boolean;
-  vendorReference: string | null;
-  vendorNote: string | null;
-}
