@@ -1,0 +1,8 @@
+{
+  "name": "Microsoft.OpenApi (the package ships only the SPDX identifier MIT)",
+  "matchRepositoryUrls": [],
+  "matchPackages": [ "Microsoft.OpenApi/2.12.2" ],
+  "licenceFile": "texts/microsoft-openapi-net-v2.12.2-LICENSE.txt",
+  "sourceUrl": "https://raw.githubusercontent.com/microsoft/OpenAPI.NET/v2.12.2/LICENSE",
+  "takenOn": "2026-10-25"
+}

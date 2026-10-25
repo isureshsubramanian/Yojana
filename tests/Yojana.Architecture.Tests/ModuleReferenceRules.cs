@@ -129,6 +129,27 @@ public sealed class ModuleReferenceRules
     }
 
     [Fact]
+    public void Developer_reaches_other_modules_only_through_contracts_and_platform_infrastructure()
+    {
+        var references = Graph()["Yojana.Developer"];
+        Assert.Contains("Yojana.Developer.Contracts", references);
+        Assert.Contains("Yojana.Platform", references);
+        Assert.DoesNotContain("Yojana.Serialisation", references);
+        Assert.DoesNotContain("Yojana.Integration", references);
+        Assert.DoesNotContain("Yojana.Knowledge", references);
+    }
+
+    [Fact]
+    public void Other_modules_reach_developer_only_through_its_contracts()
+    {
+        var violations = Graph().Where(pair => pair.Key is not "Yojana.Developer" and not "Yojana.Web")
+            .SelectMany(pair => pair.Value.Where(reference => reference == "Yojana.Developer")
+                .Select(reference => $"{pair.Key} -> {reference}"))
+            .ToList();
+        Assert.Empty(violations);
+    }
+
+    [Fact]
     public void Outbound_source_ports_are_contracts_without_infrastructure_dependencies()
     {
         var source = File.ReadAllText(Path.Combine(Root, "src/Serialisation/Yojana.Serialisation.Contracts/OutboundSourcePorts.cs"));

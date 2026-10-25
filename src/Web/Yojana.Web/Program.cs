@@ -4,6 +4,7 @@ using Wolverine;
 using Wolverine.EntityFrameworkCore;
 using Yojana.Integration;
 using Yojana.Knowledge;
+using Yojana.Developer;
 using Yojana.Platform;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Security;
@@ -40,10 +41,12 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 PlatformSetup.IncludeHandlers(typeof(SerialisationModule).Assembly);
 PlatformSetup.IncludeHandlers(typeof(IntegrationModule).Assembly);
 PlatformSetup.IncludeHandlers(typeof(KnowledgeModule).Assembly);
+PlatformSetup.IncludeHandlers(typeof(DeveloperModule).Assembly);
 builder.AddYojanaPlatform();
 builder.AddSerialisationModule();
 builder.AddIntegrationModule();
 builder.AddKnowledgeModule();
+builder.AddDeveloperModule();
 builder.Services.AddScoped<ScreenCommandLegalEntityFilter>();
 
 var app = builder.Build();
@@ -125,6 +128,7 @@ var screenEndpoints = app.MapGroup(string.Empty).AddEndpointFilter<ScreenCommand
 screenEndpoints.MapSerialisationEndpoints();
 screenEndpoints.MapIntegrationEndpoints();
 app.MapKnowledgeEndpoints();
+app.MapDeveloperEndpoints();
 app.MapSettingsSummaryEndpoints();
 app.MapYojanaLegalEntityEndpoints();
 app.MapYojanaPrivacyEndpoints();

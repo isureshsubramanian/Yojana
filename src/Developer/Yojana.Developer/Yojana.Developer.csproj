@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Yojana.Developer.Contracts/Yojana.Developer.Contracts.csproj" />
+    <ProjectReference Include="../../Platform/Yojana.Platform/Yojana.Platform.csproj" />
+    <ProjectReference Include="../../Serialisation/Yojana.Serialisation.Contracts/Yojana.Serialisation.Contracts.csproj" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+  </ItemGroup>
+</Project>

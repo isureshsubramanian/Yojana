@@ -51,6 +51,8 @@
     }
   },
   "reviewedPackages": {
+    "Microsoft.AspNetCore.OpenApi/10.0.13": {"spdx": "MIT", "readOn": "2026-10-25", "bundledLicenceFiles": [], "bundledNoticeFiles": ["THIRD-PARTY-NOTICES.TXT"]},
+    "Microsoft.OpenApi/2.12.2": {"spdx": "MIT", "readOn": "2026-10-25", "bundledLicenceFiles": [], "bundledNoticeFiles": []},
     "Microsoft.Extensions.Hosting.WindowsServices/10.0.13": {"spdx": "MIT", "readOn": "2026-10-20", "bundledLicenceFiles": [], "bundledNoticeFiles": ["THIRD-PARTY-NOTICES.TXT"]},
     "System.ServiceProcess.ServiceController/10.0.13": {"spdx": "MIT", "readOn": "2026-10-20", "bundledLicenceFiles": [], "bundledNoticeFiles": ["THIRD-PARTY-NOTICES.TXT"]},
     "System.Diagnostics.EventLog/10.0.13": {"spdx": "MIT", "readOn": "2026-10-20", "bundledLicenceFiles": [], "bundledNoticeFiles": ["THIRD-PARTY-NOTICES.TXT"]},

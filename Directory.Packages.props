@@ -7,6 +7,11 @@
   <ItemGroup>
     <!-- Relay only: MIT; licence and bundled notices audited at add-time. -->
     <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.13" />
+    <!-- Public API description (P14, ADR-0018 D7, OD-46): Microsoft.AspNetCore.OpenApi 10.0.13, MIT, Microsoft (dotnet/aspnetcore),
+         version kept with the 10.0.13 runtime of SDK 10.0.402. Bundles THIRD-PARTY-NOTICES.TXT (reproduced). Brings
+         Microsoft.OpenApi 2.12.2 (MIT, Microsoft, microsoft/OpenAPI.NET; no licence file in the package, text taken from the
+         repository at add time). Read 2026-10-25. -->
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.13" />
     <!-- Data: MIT (dotnet/efcore, dotnet/SqlClient) -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.13" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.13" />

@@ -1,5 +1,9 @@
 <Solution>
   <Folder Name="/src/" />
+  <Folder Name="/src/Developer/">
+    <Project Path="src/Developer/Yojana.Developer.Contracts/Yojana.Developer.Contracts.csproj" />
+    <Project Path="src/Developer/Yojana.Developer/Yojana.Developer.csproj" />
+  </Folder>
   <Folder Name="/src/Integration/">
     <Project Path="src/Integration/Yojana.Integration.Contracts/Yojana.Integration.Contracts.csproj" />
     <Project Path="src/Integration/Yojana.Integration/Yojana.Integration.csproj" />
@@ -35,6 +39,7 @@
     <Project Path="tests/Yojana.Platform.Tests/Yojana.Platform.Tests.csproj" />
     <Project Path="tests/Yojana.Integration.DatabaseTests/Yojana.Integration.DatabaseTests.csproj" />
     <Project Path="tests/Yojana.Knowledge.DatabaseTests/Yojana.Knowledge.DatabaseTests.csproj" />
+    <Project Path="tests/Yojana.Developer.DatabaseTests/Yojana.Developer.DatabaseTests.csproj" />
     <Project Path="tests/Yojana.RenderWorker.Tests/Yojana.RenderWorker.Tests.csproj" />
     <Project Path="tests/Yojana.Serialisation.DatabaseTests/Yojana.Serialisation.DatabaseTests.csproj" />
     <Project Path="tests/Yojana.Serialisation.Tests/Yojana.Serialisation.Tests.csproj" />
