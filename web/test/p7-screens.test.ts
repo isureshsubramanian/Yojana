@@ -3,11 +3,19 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { acceptedImportFormats, acceptsImportFile, actionOptions, prefixMatches, serviceRecordPath, coverageLabel, disclosureLocked, human, internalSections, portalUnitSections, publicLookupFields, reconciliationKpis, splitValues, xrefIndent } from "../src/p7/model.ts";
 import { countryName } from "../src/reference/countries.ts";
+import { portalContextSchema } from "../src/p7/types.ts";
 
 test("import job accepts every approved spreadsheet format and rejects unrelated files", () => {
   assert.deepEqual(acceptedImportFormats, ["csv", "xlsx", "xls"]);
   assert.equal(acceptsImportFile("vendor.XLS"), true);
   assert.equal(acceptsImportFile("notes.pdf"), false);
+});
+
+test("P7 API schemas accept the DTO and refuse a missing required field", () => {
+  assert.equal(portalContextSchema.safeParse({ organisationName: "Fictional Service Organisation" }).success, true);
+  assert.equal(portalContextSchema.safeParse({}).success, false);
+  const source = readFileSync(new URL("../src/p7/api.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /\bapi(?:<[^>]*>)?\(/);
 });
 
 test("upload history is server-paged, filterable and offers both downloads", () => {

@@ -1,14 +1,22 @@
-import { api } from "../api/client";
-import type { Catalogue, PackPreview, RuleContext, RuleResolution } from "./types";
+import * as z from "zod/mini";
+import { apiParsed } from "../api/client.ts";
+import { catalogueSchema, packPreviewSchema, ruleContextSchema, ruleResolutionSchema, type RuleContext } from "./types.ts";
 
 const root = "/api/settings/jurisdictions";
+const text = z.string();
+const regionGroupSavedSchema = z.object({ regionGroupId: text, version: text, replayed: z.boolean() });
+const jurisdictionRuleSavedSchema = z.object({ ruleId: text, rootRuleId: text, version: z.number(), versionToken: text, replayed: z.boolean() });
+const jurisdictionRuleClosedSchema = z.object({ ruleId: text, effectiveTo: text, versionToken: text, replayed: z.boolean() });
+const rulePackImportedSchema = z.object({ rulePackId: text, regionGroupsAdded: z.number(), rulesAdded: z.number(), replayed: z.boolean() });
+const importPackRequestSchema = z.object({ commandId: text, rulePackId: text });
+const whatAppliesRequestSchema = z.object({ kind: z.nullable(text), context: ruleContextSchema });
 export const jurisdictionApi = {
-  catalogue: (country: string, kind: string, signal?: AbortSignal) => api<Catalogue>(`${root}?country=${encodeURIComponent(country)}&kind=${encodeURIComponent(kind)}`, { signal }),
-  saveGroup: (body: unknown) => api(root + "/region-groups", { method: "POST", body }),
-  saveRule: (body: unknown) => api(root + "/rules", { method: "POST", body }),
-  closeRule: (id: string, body: unknown) => api(`${root}/rules/${id}/close`, { method: "POST", body }),
-  packPreview: (id: string) => api<PackPreview>(`${root}/packs/${id}/preview`),
-  importPack: (id: string) => api(`${root}/packs/${id}/import`, { method: "POST", body: { commandId: crypto.randomUUID(), rulePackId: id } }),
-  whatApplies: (kind: string, context: RuleContext) => api<{ rules: RuleResolution[] }>(root + "/what-applies", { method: "POST", body: { kind: kind || null, context } }),
+  catalogue: (country: string, kind: string, signal?: AbortSignal) => apiParsed(`${root}?country=${encodeURIComponent(country)}&kind=${encodeURIComponent(kind)}`, catalogueSchema, { signal }),
+  saveGroup: (body: unknown) => apiParsed(root + "/region-groups", regionGroupSavedSchema, { method: "POST", body }),
+  saveRule: (body: unknown) => apiParsed(root + "/rules", jurisdictionRuleSavedSchema, { method: "POST", body }),
+  closeRule: (id: string, body: unknown) => apiParsed(`${root}/rules/${id}/close`, jurisdictionRuleClosedSchema, { method: "POST", body }),
+  packPreview: (id: string) => apiParsed(`${root}/packs/${id}/preview`, packPreviewSchema),
+  importPack: (id: string) => { const body = { commandId: crypto.randomUUID(), rulePackId: id }; return apiParsed(`${root}/packs/${id}/import`, rulePackImportedSchema, { method: "POST", body: z.parse(importPackRequestSchema, body) }); },
+  whatApplies: (kind: string, context: RuleContext) => { const body = { kind: kind || null, context }; return apiParsed(root + "/what-applies", z.object({ rules: z.array(ruleResolutionSchema) }), { method: "POST", body: z.parse(whatAppliesRequestSchema, body) }); },
 };
 

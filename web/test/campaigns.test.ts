@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { campaignCoverSummary, campaignSchedule, campaignTone, pageNumber, repairPresentation, title } from "../src/campaigns/format.ts";
+import { campaignFunnelStepSchema } from "../src/campaigns/types.ts";
 
 test("campaign status presentation remains text-led", () => {
   assert.equal(campaignTone("active"), "ok");
@@ -22,3 +24,12 @@ test("campaign schedule ends only after the inclusive runs-until date", () => {
   assert.deepEqual(campaignSchedule("2026-10-17", "2026-10-18"), { ended: true, label: "Ended 2026-10-17" });
   assert.deepEqual(campaignSchedule(null, "2026-10-18"), { ended: false, label: "No end date" });
 });
+
+test("campaign API schemas accept the DTO and refuse a missing required field", () => {
+  assert.equal(zSafe(campaignFunnelStepSchema, { kind: "firmware", count: 14 }), true);
+  assert.equal(zSafe(campaignFunnelStepSchema, { kind: "firmware" }), false);
+  const source = readFileSync(new URL("../src/campaigns/api.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /\bapi(?:<[^>]*>)?\(/);
+});
+
+function zSafe(schema: typeof campaignFunnelStepSchema, value: unknown): boolean { return schema.safeParse(value).success; }

@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { addRegionMember, buildRegionGroupRequest, buildWhatAppliesRequest, effectiveRangeLabel, formatRuleValue, pageRules, parseRuleValue, ruleKindLabel, ruleValueLabel, ruleValuePlaceholder, scopeDetails, starterName } from "../src/jurisdictions/model.ts";
-import type { JurisdictionRule } from "../src/jurisdictions/types.ts";
+import { ruleKindSchema, type JurisdictionRule } from "../src/jurisdictions/types.ts";
 import { countryLabel, filterCountryOptions } from "../src/reference/countries.ts";
 import { isSubdivisionCode, subdivisionParts } from "../src/reference/subdivisions.ts";
 
@@ -15,6 +16,13 @@ test("value editors serialise each catalogue value shape", () => {
   assert.deepEqual(parseRuleValue("phrase_list", "void warranty\n no cover \n"), ["void warranty", "no cover"]);
   assert.deepEqual(parseRuleValue("text_language", "Keep receipt", "fr"), { text: "Keep receipt", language: "fr", placement: "all", verbatim: true });
   assert.deepEqual(parseRuleValue("json", "{\"threshold\":42}"), { threshold: 42 });
+});
+
+test("jurisdiction API schemas accept the DTO and refuse a missing required field", () => {
+  assert.equal(ruleKindSchema.safeParse({ kind: "record_retention", valueType: "days", unit: "days", description: "Retention period" }).success, true);
+  assert.equal(ruleKindSchema.safeParse({ kind: "record_retention", valueType: "days", unit: "days" }).success, false);
+  const source = readFileSync(new URL("../src/jurisdictions/api.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /\bapi(?:<[^>]*>)?\(/);
 });
 
 test("catalogue values are formatted by kind and structured values have labelled parts", () => {

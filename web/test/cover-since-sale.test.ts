@@ -8,12 +8,21 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { changedFamilies, changeLabel, coverChangeLabel, coverQuery, moneyLabel } from "../src/entitlements/coverModel.ts";
-import type { CoverFamily, CoverSinceSale } from "../src/entitlements/coverTypes.ts";
+import { coverSummarySchema, type CoverFamily, type CoverSinceSale } from "../src/entitlements/coverTypes.ts";
 
 const bundle = await build({ entryPoints: [fileURLToPath(new URL("../src/entitlements/CoverSinceSalePanel.tsx", import.meta.url))], bundle: true,
   platform: "node", format: "cjs", jsx: "automatic", packages: "external", loader: { ".css": "empty" }, write: false });
 const compiled = { exports: {} as { CoverSinceSaleView: import("react").ComponentType<{ data: CoverSinceSale }> } };
 new Function("require", "module", "exports", bundle.outputFiles[0]!.text)(createRequire(import.meta.url), compiled, compiled.exports);
+
+test("cover-history API schemas accept the DTO and refuse a missing required field", () => {
+  const response = { unitsSold: 20, unitsChanged: 3, changes: 4, value: [{ currency: "GBP", amount: 125 }], byKind: [{ kind: "purchase", units: 3, medianMonthsAfterSale: 2, value: [{ currency: "GBP", amount: 125 }] }], medianMonthsToFirstPurchase: 2 };
+  assert.equal(coverSummarySchema.safeParse(response).success, true);
+  const { unitsSold: _unitsSold, ...missing } = response;
+  assert.equal(coverSummarySchema.safeParse(missing).success, false);
+  const source = readFileSync(new URL("../src/entitlements/coverApi.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /\bapi(?:<[^>]*>)?\(/);
+});
 
 test("populated unit comparison renders the sale, named policies, separate currencies and amendment evidence", () => {
   const data: CoverSinceSale = { unitId: "hidden-unit-key", serial: "RS11-2509-04417", itemName: "RS-1100 rack server", customerName: "Meridian Data Labs",

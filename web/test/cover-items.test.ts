@@ -7,7 +7,7 @@ import { build } from "esbuild";
 import { createElement, type ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMemoryRouter, RouterProvider } from "react-router";
-import type { WhatsCoveredPage, ItemCover, PolicyCoverItem, ClaimGuidance, ClaimCause } from "../src/entitlements/coverItems.ts";
+import { claimCauseSchema, type WhatsCoveredPage, type ItemCover, type PolicyCoverItem, type ClaimGuidance, type ClaimCause } from "../src/entitlements/coverItems.ts";
 
 async function compile<T = Record<string, ComponentType<any>>>(path: string) {
   const result = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, platform: "node", format: "cjs", jsx: "automatic", packages: "external", loader: { ".css": "empty" }, write: false });
@@ -16,6 +16,13 @@ async function compile<T = Record<string, ComponentType<any>>>(path: string) {
   return module.exports;
 }
 const { coverItemsApi, unitTab, startClaimUrl, policyCoverUrl } = await compile<typeof import("../src/entitlements/coverItems.ts")>("../src/entitlements/coverItems.ts");
+
+test("cover-items API schemas accept the DTO and refuse a missing required field", () => {
+  assert.equal(claimCauseSchema.safeParse({ code: "electrical_failure", customerWording: "Electrical failure", active: true }).success, true);
+  assert.equal(claimCauseSchema.safeParse({ code: "electrical_failure", customerWording: "Electrical failure" }).success, false);
+  const source = readFileSync(new URL("../src/entitlements/coverItems.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /\bapi(?:<[^>]*>)?\(/);
+});
 function renderInRouter(element: import("react").ReactNode) {
   const session = { user: { id: "hidden-user", displayName: "Fictional Service Agent", email: "quality@example.invalid" }, tenant: { code: "fixture", name: "Fictional Preview" }, roles: [], tenants: [] };
   const router = createMemoryRouter([{ id: "root", path: "*", loader: () => session, element }], { initialEntries: ["/"], hydrationData: { loaderData: { root: session } } });
@@ -26,9 +33,9 @@ const causeEditor = await compile("../src/entitlements/ClaimCausesEditor.tsx");
 const policy = await compile("../src/entitlements/PolicyItemsEditor.tsx");
 const claim = await compile("../src/claims/ClaimCausePanel.tsx");
 const tabs = await compile("../src/units/UnitTabBar.tsx");
-const damage: ItemCover = { entitlementId: "hidden-damage", familyCode: "accidental_damage", familyName: "Accidental damage", policyName: "Accidental damage 24 months", policyVersion: 2, from: "2026-03-12", until: "2028-03-11", asOf: "2026-09-01", future: false, usage: [{ meterType: "claims", limit: 2, used: 0, remaining: 2, period: "term" }] };
+const damage: ItemCover = { entitlementId: "hidden-damage", familyCode: "accidental_damage", familyName: "Accidental damage", policyName: "Accidental damage 24 months", policyVersion: 2, from: "2026-03-12", until: "2028-03-11", asOf: "2026-09-01", future: false, usage: [{ meterType: "claims", limit: 2, used: 0, remaining: 2, period: "term" }], policyCode: null };
 const base: ItemCover = { ...damage, entitlementId: "hidden-base", familyCode: "base_warranty", familyName: "Base warranty", policyName: "Standard 12 months", usage: [] };
-const data: WhatsCoveredPage = { unitId: "hidden-unit", serial: "RS11-2509-04417", itemName: "RS-1100 rack server", customerName: "Meridian Data Labs", asOf: "2026-09-01", covers: [base, damage, { ...base, familyName: "Extended term", future: true, from: "2026-11-25" }], coveredCount: 11, excludedCount: 7, total: 1, skip: 0, take: 7, notice: "Applicability cannot be established", items: [{ key: "cause:LIQUID_SPILL", customerWording: "Liquid spills", category: "cause", causeCodes: ["LIQUID_SPILL"], covered: true, canBeCovered: "—", grants: [{ code: "ADP-LIQ", customerWording: "Liquid spills", internalNote: "Secret service instruction", category: "cause", partsScope: { partCategories: [], itemFamilies: [] }, cover: damage }], excludes: [{ code: "EX-LIQ", customerWording: "Liquid damage", internalNote: null, category: "cause", partsScope: { partCategories: [], itemFamilies: [] }, cover: base }] }] };
+const data: WhatsCoveredPage = { unitId: "hidden-unit", serial: "RS11-2509-04417", itemName: "RS-1100 rack server", customerName: "Meridian Data Labs", asOf: "2026-09-01", covers: [base, damage, { ...base, familyName: "Extended term", future: true, from: "2026-11-25" }], coveredCount: 11, excludedCount: 7, total: 1, skip: 0, take: 7, notice: "Applicability cannot be established", customerEmailEnabled: false, coveredTotal: 11, excludedTotal: 7, offers: null, items: [{ key: "cause:LIQUID_SPILL", customerWording: "Liquid spills", category: "cause", causeCodes: ["LIQUID_SPILL"], causeNames: null, covered: true, canBeCovered: "—", grants: [{ code: "ADP-LIQ", customerWording: "Liquid spills", internalNote: "Secret service instruction", category: "cause", partsScope: { partCategories: [], itemFamilies: [] }, cover: damage, partsScopeDescription: "All parts", causeCodes: null }], excludes: [{ code: "EX-LIQ", customerWording: "Liquid damage", internalNote: null, category: "cause", partsScope: { partCategories: [], itemFamilies: [] }, cover: base, partsScopeDescription: "All parts", causeCodes: null }] }] };
 const item: PolicyCoverItem = { code: "LEGACY-1", type: "excluded", customerWording: "Consumables, batteries after 12 months", internalNote: "Secret service instruction", category: null, partsScope: { partCategories: [], itemFamilies: [] }, causeCodes: [] };
 
 test("what's covered renders customer wording, named grants, independent limits and future start", () => {
@@ -90,7 +97,15 @@ test("every unit tab is shareable, keeps other URL state and works back to Entit
 
 test("new APIs page reads and send no browser actor", async () => {
   const original = globalThis.fetch; const calls: { path: string; body: unknown }[] = [];
-  globalThis.fetch = async (input, init) => { calls.push({ path: String(input), body: init?.body ? JSON.parse(String(init.body)) : null }); return new Response(JSON.stringify({ items: [], total: 0, skip: 0, take: 25 }), { status: 200, headers: { "content-type": "application/json" } }); };
+  globalThis.fetch = async (input, init) => {
+    const path = String(input); const body = init?.body ? JSON.parse(String(init.body)) : null; calls.push({ path, body });
+    const returnedItems = body && typeof body === "object" && "items" in body && Array.isArray(body.items) ? body.items : [];
+    const response = path.includes("whats-covered") ? data
+      : path.includes("claim-guidance") ? { causeCode: "LIQUID_SPILL", covered: false, grants: [], excludes: [], sayToCustomer: "Not covered", notice: "Guidance only" }
+      : path.includes("/items") ? { items: [], total: 0, skip: 25, take: 25, version: "loaded-version" }
+      : { items: returnedItems, total: 1, skip: 0, take: 1, version: "next-version" };
+    return new Response(JSON.stringify(response), { status: 200, headers: { "content-type": "application/json" } });
+  };
   try {
     await coverItemsApi.unit("unit", "covered", "liquid", 7, 7); await coverItemsApi.guidance("unit", "LIQUID_SPILL", "2026-09-10", "2026-09-01"); await coverItemsApi.items("version", "excluded", 25); await coverItemsApi.saveCauses([{ code: "CUSTOM", customerWording: "Another cause", active: true }], "loaded-version");
     assert.match(calls[0]!.path, /skip=7&take=7/); assert.match(calls[1]!.path, /cause=LIQUID_SPILL/); assert.match(calls[1]!.path, /claimDate=2026-09-10/); assert.match(calls[1]!.path, /occurredDate=2026-09-01/); assert.match(calls[2]!.path, /skip=25/);

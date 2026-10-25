@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { ageBucketLabel, campaignCoverNote, campaignCoverTerms, campaignOptionHint, coverageSourceLabel, denialReasonLabel, humanise, money, moneyTotals, overlayFlagsText, stackOutcome } from "../src/claims/format.ts";
-import type { ClaimCampaignOption } from "../src/claims/types.ts";
+import { claimChangeResultSchema, type ClaimCampaignOption } from "../src/claims/types.ts";
 
 const catalogue = [
   { code: "JPY", name: "Japanese Yen", symbol: "¥", minorDigits: 0 },
@@ -24,6 +25,15 @@ test("claim labels humanise reasons, ageing buckets and policy outcomes", () => 
   assert.equal(stackOutcome({ outcome: "matched" }), "Matched");
   assert.equal(stackOutcome({ outcome: "no_match" }), "No match");
   assert.equal(stackOutcome({ outcome: "not_reached" }), "Not reached");
+});
+
+test("claims API schemas accept the DTO and refuse a missing required field", () => {
+  const response = { claimId: crypto.randomUUID(), status: "settled", eventId: crypto.randomUUID(), replayed: false };
+  assert.equal(claimChangeResultSchema.safeParse(response).success, true);
+  const { eventId: _eventId, ...missing } = response;
+  assert.equal(claimChangeResultSchema.safeParse(missing).success, false);
+  const source = readFileSync(new URL("../src/claims/api.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /\bapi(?:<[^>]*>)?\(/);
 });
 
 test("waiting-period decisions name the purchase and first claimable dates", () => {

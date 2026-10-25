@@ -1,10 +1,27 @@
-export interface CoverMoney { currency: string; amount: number }
-export interface CoverTerm { policyName: string; startDate: string | null; endDate: string | null; status: string; future: boolean }
-export interface CoverChange { eventId: string; kind: string; familyName: string; policyName: string; businessDate: string; monthsAfterSale: number; documentNumber: string | null; documentLine: number | null; amount: number | null; currency: string | null; payerName: string | null; actorName: string; approverName: string | null; reason: string | null; counted: boolean; fields: { field: string; before: string | null; after: string | null }[] }
-export interface CoverFamily { familyName: string; atSale: CoverTerm | null; today: CoverTerm | null; change: string; closedReason: string | null; changes: CoverChange[] }
-export interface CoverSinceSale { unitId: string; serial: string; itemName: string; customerName: string | null; saleDate: string | null; saleDocumentNumber: string | null; changeCount: number; value: CoverMoney[]; coveredTo: string | null; families: CoverFamily[]; changes: CoverChange[]; notice: string | null }
-export interface CoverChangeLabel { kind: string; familyName: string; policyName: string }
-export interface CoverUnit { unitId: string; serial: string; itemName: string; customerName: string | null; itemFamilyName: string | null; saleDate: string; saleDocumentNumber: string | null; changeCount: number; kinds: string[]; value: CoverMoney[]; lastChangeAt: string; changes: CoverChangeLabel[] }
-export interface CoverPage { rows: CoverUnit[]; nextCursor: string | null }
-export interface CoverSummary { unitsSold: number; unitsChanged: number; changes: number; value: CoverMoney[]; byKind: { kind: string; units: number; medianMonthsAfterSale: number | null; value: CoverMoney[] }[]; medianMonthsToFirstPurchase: number | null }
-export interface CoverFilters { soldFrom?: string; soldTo?: string; customer?: string; itemFamily?: string; changeKind?: string; serial?: string }
+import * as z from "zod/mini";
+
+const text = z.string();
+const nullableText = z.nullable(text);
+const count = z.number();
+export const coverMoneySchema = z.object({ currency: text, amount: count });
+export type CoverMoney = z.infer<typeof coverMoneySchema>;
+export const coverTermSchema = z.object({ policyName: text, startDate: nullableText, endDate: nullableText, status: text, future: z.boolean() });
+export type CoverTerm = z.infer<typeof coverTermSchema>;
+const coverFieldChangeSchema = z.object({ field: text, before: nullableText, after: nullableText });
+export const coverChangeSchema = z.object({ eventId: text, kind: text, familyName: text, policyName: text, businessDate: text, monthsAfterSale: count, documentNumber: nullableText, documentLine: z.nullable(count), amount: z.nullable(count), currency: nullableText, payerName: nullableText, actorName: text, approverName: nullableText, reason: nullableText, counted: z.boolean(), fields: z.array(coverFieldChangeSchema) });
+export type CoverChange = z.infer<typeof coverChangeSchema>;
+export const coverFamilySchema = z.object({ familyName: text, atSale: z.nullable(coverTermSchema), today: z.nullable(coverTermSchema), change: text, closedReason: nullableText, changes: z.array(coverChangeSchema) });
+export type CoverFamily = z.infer<typeof coverFamilySchema>;
+export const coverSinceSaleSchema = z.object({ unitId: text, serial: text, itemName: text, customerName: nullableText, saleDate: nullableText, saleDocumentNumber: nullableText, changeCount: count, value: z.array(coverMoneySchema), coveredTo: nullableText, families: z.array(coverFamilySchema), changes: z.array(coverChangeSchema), notice: nullableText });
+export type CoverSinceSale = z.infer<typeof coverSinceSaleSchema>;
+export const coverChangeLabelSchema = z.object({ kind: text, familyName: text, policyName: text });
+export type CoverChangeLabel = z.infer<typeof coverChangeLabelSchema>;
+export const coverUnitSchema = z.object({ unitId: text, serial: text, itemName: text, customerName: nullableText, itemFamilyName: nullableText, saleDate: text, saleDocumentNumber: nullableText, changeCount: count, kinds: z.array(text), value: z.array(coverMoneySchema), lastChangeAt: text, changes: z.array(coverChangeLabelSchema) });
+export type CoverUnit = z.infer<typeof coverUnitSchema>;
+export const coverPageSchema = z.object({ rows: z.array(coverUnitSchema), nextCursor: nullableText });
+export type CoverPage = z.infer<typeof coverPageSchema>;
+const coverChangeKindSummarySchema = z.object({ kind: text, units: count, medianMonthsAfterSale: z.nullable(count), value: z.array(coverMoneySchema) });
+export const coverSummarySchema = z.object({ unitsSold: count, unitsChanged: count, changes: count, value: z.array(coverMoneySchema), byKind: z.array(coverChangeKindSummarySchema), medianMonthsToFirstPurchase: z.nullable(count) });
+export type CoverSummary = z.infer<typeof coverSummarySchema>;
+export const coverFiltersSchema = z.object({ soldFrom: z.optional(text), soldTo: z.optional(text), customer: z.optional(text), itemFamily: z.optional(text), changeKind: z.optional(text), serial: z.optional(text) });
+export type CoverFilters = z.infer<typeof coverFiltersSchema>;
