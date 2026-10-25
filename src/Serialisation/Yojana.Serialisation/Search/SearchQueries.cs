@@ -90,14 +90,16 @@ public sealed class SearchQueries(SerialisationDbContext db, ITenantContext tena
         var tenantId = tenant.TenantId;
         var variants = new[] { upper, stripped }.Where(v => v.Length > 0).Distinct().ToList();
 
-        // exact and prefix hits: index seeks on (tenant, term)
+        // exact and prefix hits: index seeks on (tenant, term), read in key order so TOP stops the seek. The exact term is the
+        // smallest string with its own prefix, so it still comes first. Ordering by term length sorted every match first:
+        // 0.5-4.9 s for a word shared by 1.19 M units in the OD-13 test (2026-10-26), against 3 ms for a rare word.
         var candidates = new List<TermHit>();
         foreach (var v in variants)
         {
             var pattern = Escape(v) + "%";
             candidates.AddRange(await db.SearchTerms.AsNoTracking()
                 .Where(t => t.TenantId == tenantId && EF.Functions.Like(t.Term, pattern, "\\"))
-                .OrderBy(t => t.Term.Length).ThenBy(t => t.Term).Take(CandidateLimit)
+                .OrderBy(t => t.Term).Take(CandidateLimit)
                 .Select(t => new TermHit(t.EntityType, t.EntityId, t.Term, t.Kind, t.Detail)).ToListAsync(cancellationToken));
         }
 
@@ -190,9 +192,12 @@ public sealed class SearchQueries(SerialisationDbContext db, ITenantContext tena
     private async Task AddFullTextAsync(Dictionary<(string, Guid), Hit> scored, List<string> variants, TenantId tenantId, CancellationToken cancellationToken)
     {
         // CONTAINSTABLE prefix terms on search_text and title; the rank (0..1000) maps to 40..79 so a seek hit always outranks it.
+        // The full-text index is one per database, across tenants, so its own top_n would rank other tenants' rows first and
+        // could leave a small tenant with no hits. The tenant filter comes first and TOP after it: 81-212 ms for a word in
+        // all 1.19 M rows of the OD-13 test (2026-10-26), 2-4 ms for a rare one.
         var ft = string.Join(" OR ", variants.Select(v => "\"" + v.Replace("\"", "") + "*\""));
         var hits = await db.Database.SqlQueryRaw<FullTextHit>(
-            "SELECT e.entity_type AS EntityType, e.entity_id AS EntityId, k.[RANK] AS Rank FROM CONTAINSTABLE(serialisation.search_entry, (search_text, title), {0}, 200) AS k JOIN serialisation.search_entry AS e ON e.entry_id = k.[KEY] WHERE e.tenant_id = {1}", ft, tenantId.Value)
+            "SELECT TOP (200) e.entity_type AS EntityType, e.entity_id AS EntityId, k.[RANK] AS Rank FROM CONTAINSTABLE(serialisation.search_entry, (search_text, title), {0}) AS k JOIN serialisation.search_entry AS e ON e.entry_id = k.[KEY] WHERE e.tenant_id = {1} ORDER BY k.[RANK] DESC", ft, tenantId.Value)
             .ToListAsync(cancellationToken);
         foreach (var hit in hits)
         {
