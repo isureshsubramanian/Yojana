@@ -1,5 +1,19 @@
 namespace Yojana.Serialisation.Contracts;
 
+public sealed record CampaignStarted(PublishedSummaryHeader Header, Guid CampaignId, string CampaignCode,
+    int UnitCount) : IPublishedSummaryEvent
+{
+    public const string Schema = "Campaign.Started";
+    public const string Version = "1.0";
+}
+
+public sealed record CampaignEnded(PublishedSummaryHeader Header, Guid CampaignId, string CampaignCode,
+    int UnitCount) : IPublishedSummaryEvent
+{
+    public const string Schema = "Campaign.Ended";
+    public const string Version = "1.0";
+}
+
 /// <summary>
 /// One bounded batch of units added by SelectCampaignUnits. Several messages can share a selection command when the
 /// campaign is large; BatchNumber and BatchCount reassemble that logical selection without one oversized outbox row.

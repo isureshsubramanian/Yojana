@@ -1,5 +1,19 @@
 namespace Yojana.Serialisation.Contracts;
 
+public sealed record ReplacementReturned(
+    PublishedEventHeader Header,
+    Guid WarrantyReplacementId,
+    Guid ReplacementLinkId,
+    Guid OriginalUnitId,
+    Guid ReplacementUnitId,
+    Guid RmaId,
+    string ReplacementNumber,
+    string Status) : IPublishedUnitEvent
+{
+    public const string Schema = "Replacement.Returned";
+    public const string Version = "1.0";
+}
+
 public sealed record ReplacementShipped(
     PublishedEventHeader Header,
     Guid WarrantyReplacementId,

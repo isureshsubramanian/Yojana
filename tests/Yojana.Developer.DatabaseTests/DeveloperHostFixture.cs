@@ -1,5 +1,6 @@
 using System.Net;
 using System.Security.Claims;
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
@@ -35,6 +36,8 @@ public sealed class DeveloperHostFixture : IAsyncLifetime
     public MutableDeveloperClock Clock { get; } = new(new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc));
     public WebApplication Host { get; private set; } = null!;
     public IServiceProvider Services => Host.Services;
+    public ConcurrentQueue<Guid> DeliveredWebhookEvents { get; } = new();
+    private int recoveringEndpointCalls;
 
     public async Task InitializeAsync()
     {
@@ -55,6 +58,7 @@ public sealed class DeveloperHostFixture : IAsyncLifetime
         builder.Configuration["Platform:StartScheduler"] = "false";
         builder.Configuration["Platform:ServiceName"] = "yojana-developer-tests";
         builder.Configuration["Platform:SignIn:AuditHmacKey"] = "developer-database-tests-only-hmac-key";
+        builder.Configuration["Developer:Webhooks:AllowLoopbackTargetsForTests"] = "true";
         ConfigureLocalKey(builder.Configuration);
         PlatformSetup.IncludeHandlers(typeof(SerialisationModule).Assembly);
         PlatformSetup.IncludeHandlers(typeof(IntegrationModule).Assembly);
@@ -65,6 +69,9 @@ public sealed class DeveloperHostFixture : IAsyncLifetime
         builder.AddIntegrationModule();
         builder.AddDeveloperModule();
         builder.AddSerialisationPublicApi();
+        builder.Services.RemoveAll<Yojana.Serialisation.Contracts.IItemQueryPort>();
+        builder.Services.AddSingleton<Yojana.Serialisation.Contracts.IItemQueryPort>(services =>
+            services.GetRequiredService<Yojana.Serialisation.Ports.InMemoryItemPorts>());
         var app = builder.Build();
         app.UseApiProblemDetails();
         app.UseMiddleware<Yojana.Developer.PublicApi.PublicApiErrorCodeMiddleware>();
@@ -73,6 +80,37 @@ public sealed class DeveloperHostFixture : IAsyncLifetime
         app.MapDeveloperEndpoints();
         app.MapYojanaPrivacyEndpoints();
         app.MapSettingsSummaryEndpoints();
+        app.MapPost("/test/webhook/echo", async (HttpRequest request) =>
+        {
+            using var document = await System.Text.Json.JsonDocument.ParseAsync(request.Body);
+            return document.RootElement.TryGetProperty("challenge", out var challenge)
+                ? Results.Ok(new { challenge = challenge.GetString() })
+                : Results.Ok(new { received = true });
+        }).AllowAnonymous();
+        app.MapPost("/test/webhook/fail", () => Results.StatusCode(503)).AllowAnonymous();
+        app.MapPost("/test/webhook/gone", () => Results.StatusCode(410)).AllowAnonymous();
+        app.MapPost("/test/webhook/redirect", () => Results.Redirect("/test/webhook/echo", false, false)).AllowAnonymous();
+        app.MapPost("/test/webhook/slow", async (CancellationToken ct) =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(15), ct);
+            return Results.Ok();
+        }).AllowAnonymous();
+        app.MapPost("/test/webhook/record", async (HttpRequest request) =>
+            await RecordOrEchoAsync(request, Results.Ok())).AllowAnonymous();
+        app.MapPost("/test/webhook/fail-twice", async (HttpRequest request) =>
+        {
+            if (await EchoChallengeAsync(request) is { } challenge) return challenge;
+            RecordEvent(request);
+            return Interlocked.Increment(ref recoveringEndpointCalls) <= 2
+                ? Results.StatusCode(503) : Results.Ok();
+        }).AllowAnonymous();
+        app.MapPost("/test/webhook/slow-ten-seconds", async (HttpRequest request, CancellationToken ct) =>
+        {
+            if (await EchoChallengeAsync(request) is { } challenge) return challenge;
+            RecordEvent(request);
+            await Task.Delay(TimeSpan.FromSeconds(10), ct);
+            return Results.Ok();
+        }).AllowAnonymous();
         app.MapGet("/test/sign-in/{tenantId:guid}", async (Guid tenantId, Guid userId, bool? portal,
             PlatformDbContext platform, HttpContext http) =>
         {
@@ -120,7 +158,8 @@ public sealed class DeveloperHostFixture : IAsyncLifetime
         var other = Guid.CreateVersion7();
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-        db.Tenants.Add(new Tenant { Id = tenant, Code = prefix + Guid.NewGuid().ToString("N")[..8], Name = "Fictional " + prefix, CreatedAt = Clock.UtcNow });
+        var codePrefix = prefix.Length > 11 ? prefix[..11] : prefix;
+        db.Tenants.Add(new Tenant { Id = tenant, Code = codePrefix + Guid.NewGuid().ToString("N")[..8], Name = "Fictional " + prefix, CreatedAt = Clock.UtcNow });
         AddUser(db, tenant, administrator, "Fictional Administrator", [YojanaRole.TenantAdministrator]);
         AddUser(db, tenant, staff, "Fictional Service Lead", [YojanaRole.ServiceSupervisor]);
         AddUser(db, tenant, other, "Fictional Technician", [YojanaRole.Technician]);
@@ -135,6 +174,32 @@ public sealed class DeveloperHostFixture : IAsyncLifetime
         var response = await client.GetAsync($"/test/sign-in/{tenant.Value:D}?userId={userId:D}&portal={portal.ToString().ToLowerInvariant()}");
         response.EnsureSuccessStatusCode();
         return client;
+    }
+
+    public void ResetWebhookProbe()
+    {
+        DeliveredWebhookEvents.Clear();
+        Interlocked.Exchange(ref recoveringEndpointCalls, 0);
+    }
+
+    private async Task<IResult> RecordOrEchoAsync(HttpRequest request, IResult result)
+    {
+        if (await EchoChallengeAsync(request) is { } challenge) return challenge;
+        RecordEvent(request);
+        return result;
+    }
+
+    private static async Task<IResult?> EchoChallengeAsync(HttpRequest request)
+    {
+        using var document = await System.Text.Json.JsonDocument.ParseAsync(request.Body);
+        return document.RootElement.TryGetProperty("challenge", out var challenge)
+            ? Results.Ok(new { challenge = challenge.GetString() }) : null;
+    }
+
+    private void RecordEvent(HttpRequest request)
+    {
+        if (Guid.TryParse(request.Headers["Yojana-Event-Id"], out var eventId))
+            DeliveredWebhookEvents.Enqueue(eventId);
     }
 
     private static void AddUser(PlatformDbContext db, TenantId tenant, Guid id, string name, List<string> roles)

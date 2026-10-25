@@ -108,7 +108,7 @@ public sealed class PublicEvent : ITenantScoped
     public required string Body { get; set; }
     public bool Test { get; set; }
     /// <summary>Filter keys copied from the source event, so subscriptions match without reading other modules.</summary>
-    public Guid? ItemFamilyId { get; set; }
+    public string? ItemFamily { get; set; }
     public Guid? CustomerPartyRef { get; set; }
     public Guid? LegalEntityId { get; set; }
 }
@@ -125,6 +125,7 @@ public sealed class WebhookDelivery : ITenantScoped
     public int AttemptCount { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime NextAttemptAt { get; set; }
+    public DateTime? RetryWindowStartedAt { get; set; }
     public DateTime? LastAttemptAt { get; set; }
     public DateTime? SucceededAt { get; set; }
     public DateTime? ParkedAt { get; set; }

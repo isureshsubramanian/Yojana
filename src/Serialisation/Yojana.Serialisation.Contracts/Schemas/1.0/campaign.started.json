@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"Campaign.Started","type":"object","required":["header","campaign_id","campaign_code","unit_count"],"properties":{"header":{"type":"object"},"campaign_id":{"type":"string","format":"uuid"},"campaign_code":{"type":"string"},"unit_count":{"type":"integer","minimum":0}}}

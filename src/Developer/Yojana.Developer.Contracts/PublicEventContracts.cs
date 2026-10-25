@@ -53,6 +53,8 @@ public static class PublicEventTypes
         RecoveryClaimRaised, RecoveryClaimAnswered, RmaStageChanged, ReplacementShipped, ReplacementReturned,
         RefurbishmentReleased, CertificateIssued, CertificateSuperseded, ImportCompleted, CampaignStarted, CampaignEnded,
     ];
+
+    public static readonly IReadOnlyList<string> All = [EndpointVerify, .. Subscribable];
 }
 
 /// <summary>API client scopes (ADR-0018 D5). One scope per resource and action.</summary>

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Quartz;
 using Wolverine;
+using System.Security.Cryptography;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
@@ -17,12 +18,39 @@ namespace Yojana.Serialisation.Replacements;
 /// <summary>Closes only the link whose original unit is the accepted physical receipt.</summary>
 public static class ReplacementReturnReceiptHandler
 {
-    public static async Task Handle(RmaReceived message, SerialisationDbContext db, ITenantContext tenant, CancellationToken cancellationToken)
+    public static async Task Handle(RmaReceived message, SerialisationDbContext db, ITenantContext tenant,
+        IMessageBus bus, CancellationToken cancellationToken)
     {
         if (message.Outcome != ReturnOutcome.Accepted || message.ReceivedUnitId is not { } receivedUnitId) return;
         var links = await db.ReplacementLinks.Where(row => row.TenantId == tenant.TenantId
             && row.State == ReplacementLinkState.AwaitingReturn && row.OriginalUnitId == receivedUnitId).ToListAsync(cancellationToken);
-        foreach (var link in links) link.State = ReplacementLinkState.ClosedReturned;
+        var documentIds = links.Select(row => row.WarrantyReplacementId!.Value).Distinct().ToList();
+        var numbers = await db.WarrantyReplacements.AsNoTracking()
+            .Where(row => row.TenantId == tenant.TenantId && documentIds.Contains(row.WarrantyReplacementId))
+            .ToDictionaryAsync(row => row.WarrantyReplacementId, row => row.ReplacementNumber, cancellationToken);
+        foreach (var link in links)
+        {
+            link.State = ReplacementLinkState.ClosedReturned;
+            var eventId = DerivedEventId(message.Header.EventId, link.ReplacementLinkId);
+            await bus.PublishAsync(new ReplacementReturned(new(ReplacementReturned.Schema,
+                    ReplacementReturned.Version, eventId, link.OriginalUnitId, message.Header.EventTime,
+                    message.Header.RecordedTime, message.Header.Seq, message.Header.LegalEntityId,
+                    message.Header.ActorRef, message.Header.Document), link.WarrantyReplacementId!.Value,
+                    link.ReplacementLinkId,
+                    link.OriginalUnitId, link.ReplacementUnitId, message.RmaId,
+                    numbers[link.WarrantyReplacementId!.Value], ReplacementLinkState.ClosedReturned),
+                new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
+        }
+    }
+
+    private static Guid DerivedEventId(Guid sourceEventId, Guid linkId)
+    {
+        Span<byte> input = stackalloc byte[32];
+        sourceEventId.TryWriteBytes(input);
+        linkId.TryWriteBytes(input[16..]);
+        Span<byte> hash = stackalloc byte[32];
+        SHA256.HashData(input, hash);
+        return new Guid(hash[..16]);
     }
 }
 

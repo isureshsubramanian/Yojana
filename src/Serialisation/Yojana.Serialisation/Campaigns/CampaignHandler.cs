@@ -61,7 +61,7 @@ public static class CampaignHandler
 
     public static async Task<CampaignResult> Handle(UpdateCampaign command, SerialisationDbContext db,
         ISerialSchemeSource schemes, IIdentifierPolicySource identifierPolicies, ITenantContext tenant, IClock clock,
-        CancellationToken cancellationToken)
+        IMessageBus bus, CancellationToken cancellationToken)
     {
         ValidateCampaign(command.Code, command.Name, command.CoverageSource, command.ReserveTag, command.ReasonCode, command.ReasonNote,
             command.PartsPct, command.LabourPct, command.TravelPct);
@@ -77,6 +77,7 @@ public static class CampaignHandler
             && runsUntil < DateOnly.FromDateTime(selectedAt))
             throw new CommandRefusedException("campaign_runs_until_before_selection", $"Runs until {runsUntil:yyyy-MM-dd} cannot be before the first selection on {selectedAt:yyyy-MM-dd}.");
 
+        var previousStatus = campaign.Status;
         if (campaign.Status == CampaignStatus.Active)
         {
             if (command.Status is not (CampaignStatus.Active or CampaignStatus.Closed))
@@ -115,6 +116,22 @@ public static class CampaignHandler
 
         campaign.UpdatedAt = clock.UtcNow;
         campaign.UpdatedBy = command.ActorRef;
+        if (previousStatus != campaign.Status && campaign.Status is CampaignStatus.Active or CampaignStatus.Closed)
+        {
+            var unitCount = await db.CampaignUnits.CountAsync(row => row.TenantId == tenant.TenantId
+                && row.CampaignId == campaign.CampaignId, cancellationToken);
+            var header = new PublishedSummaryHeader(
+                campaign.Status == CampaignStatus.Active ? CampaignStarted.Schema : CampaignEnded.Schema,
+                campaign.Status == CampaignStatus.Active ? CampaignStarted.Version : CampaignEnded.Version,
+                TimeOrderedId.New(command.EventTime), command.EventTime, clock.UtcNow, command.LegalEntityId,
+                command.ActorRef, null);
+            if (campaign.Status == CampaignStatus.Active)
+                await bus.PublishAsync(new CampaignStarted(header, campaign.CampaignId, campaign.Code, unitCount),
+                    new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
+            else
+                await bus.PublishAsync(new CampaignEnded(header, campaign.CampaignId, campaign.Code, unitCount),
+                    new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
+        }
         return new(ToRow(campaign, oldCriteria));
     }
 
@@ -160,6 +177,17 @@ public static class CampaignHandler
                 loaded.Campaign.ReasonCode, loaded.Campaign.ReasonNote, loaded.Campaign.RunsUntil,
                 loaded.Campaign.PartsPct, loaded.Campaign.LabourPct, loaded.Campaign.TravelPct,
                 command.CommandId, index + 1, batches.Count, matched.Count, total, units),
+                new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
+        }
+
+        if (snapshots.Count > 0)
+        {
+            await bus.PublishAsync(new BulkOperationCompleted(
+                    new(BulkOperationCompleted.Schema, BulkOperationCompleted.Version,
+                        TimeOrderedId.New(command.EventTime), command.EventTime, clock.UtcNow,
+                        command.LegalEntityId, command.ActorRef, null),
+                    command.CommandId, "campaign_selection", snapshots.Count,
+                    snapshots.Select(row => row.UnitId).ToList()),
                 new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
         }
 

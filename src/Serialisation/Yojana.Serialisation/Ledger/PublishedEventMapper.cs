@@ -15,7 +15,8 @@ namespace Yojana.Serialisation.Ledger;
 /// transactional outbox: the messages leave only when the handler's unit of work commits. The mapping reads the event's
 /// attributes (what the command recorded) and never a table, so publishing cannot see uncommitted state of another unit.
 /// </summary>
-public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant, LedgerPublication publication)
+public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant, LedgerPublication publication,
+    BulkPublicationContext bulk)
 {
     public async Task PublishAsync(IReadOnlyList<UnitEvent> written,
         IReadOnlyList<UnitDispositionTransition> dispositionChanges, CancellationToken cancellationToken)
@@ -27,7 +28,7 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
         var searchRequests = new List<SearchProjectionRequested>();
         foreach (var @event in written)
         {
-            var message = Map(@event);
+            var message = Map(@event, bulk);
             if (message is not null)
             {
                 await bus.PublishAsync(message, new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
@@ -115,12 +116,12 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
             Header(e, UnitLifecycleChanged.Schema, UnitLifecycleChanged.Version), status, e.EventType);
     }
 
-    public static IPublishedUnitEvent? Map(UnitEvent e)
+    public static IPublishedUnitEvent? Map(UnitEvent e, BulkPublicationContext? bulk = null)
     {
         using var doc = e.Attributes is null ? null : JsonDocument.Parse(e.Attributes);
         var a = doc?.RootElement;
         var document = e.DocumentType is null || e.DocumentId is null ? null : new DocumentRef(e.DocumentType, e.DocumentId.Value, e.DocumentLine);
-        PublishedEventHeader Header(string schema, string version) => PublishedEventMapper.Header(e, schema, version);
+        PublishedEventHeader Header(string schema, string version) => PublishedEventMapper.Header(e, schema, version, bulk);
         switch (e.EventType)
         {
             case UnitEventType.Commissioned:
@@ -267,6 +268,11 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
                     a?.TryGetProperty("after", out var coverageAfter) == true
                         ? coverageAfter.Deserialize<CoverageDecisionSnapshot>(LedgerJson.Options)!
                         : new CoverageDecisionSnapshot(0, 0, ClaimCoverageSource.Chargeable, null, null, null, 0));
+            case ClaimEventType.Submitted:
+                return new ClaimSubmitted(Header(ClaimSubmitted.Schema, ClaimSubmitted.Version),
+                    GuidOrNull(a, "claim_id") ?? Guid.Empty, Str(a, "claim_number") ?? "",
+                    Str(a, "status") ?? ClaimStatus.Submitted, Str(a, "remedy") ?? "",
+                    Guids(a!.Value, "line_ids"));
             case ClaimEventType.Adjudicated:
                 return new ClaimAdjudicated(Header(ClaimAdjudicated.Schema, ClaimAdjudicated.Version), GuidOrNull(a, "claim_id") ?? Guid.Empty,
                     GuidOrNull(a, "cohort_id"), Str(a, "coverage_source") ?? ClaimCoverageSource.Chargeable,
@@ -415,8 +421,20 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
         }
     }
 
-    private static PublishedEventHeader Header(UnitEvent e, string schema, string version) =>
-        new(schema, version, e.EventId, e.UnitId, e.EventTime, e.RecordedTime, e.Seq, e.LegalEntityId, e.ActorRef, e.DocumentType is null || e.DocumentId is null ? null : new DocumentRef(e.DocumentType, e.DocumentId.Value, e.DocumentLine));
+    private static PublishedEventHeader Header(UnitEvent e, string schema, string version,
+        BulkPublicationContext? bulk = null)
+    {
+        using var attributes = e.Attributes is null ? null : JsonDocument.Parse(e.Attributes);
+        var root = attributes?.RootElement;
+        return new(schema, version, e.EventId, e.UnitId, e.EventTime, e.RecordedTime, e.Seq,
+            e.LegalEntityId, e.ActorRef,
+            e.DocumentType is null || e.DocumentId is null
+                ? null
+                : new DocumentRef(e.DocumentType, e.DocumentId.Value, e.DocumentLine),
+            GuidOrNull(root, "operation_id") ?? bulk?.OperationId,
+            Int(root, "operation_size") ?? bulk?.OperationSize,
+            Str(root, "operation_kind") ?? bulk?.OperationKind);
+    }
 
     private static int? Int(JsonElement? element, string name) => element is { ValueKind: JsonValueKind.Object } el && el.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.Number ? p.GetInt32() : null;
 
@@ -487,4 +505,18 @@ public sealed class PublishedEventMapper(IMessageBus bus, ITenantContext tenant,
 public sealed class LedgerPublication
 {
     public bool Suppressed { get; set; }
+}
+
+/// <summary>
+/// TIGHT COUPLING with Selection.BulkExecutor: both share one scoped execution marker while a bulk command appends
+/// unit events. Passing it through every established command would change those commands' public contracts. If the
+/// executor stops bracketing its apply loop, large operations leak per-unit public events instead of one summary.
+/// </summary>
+public sealed class BulkPublicationContext
+{
+    public Guid? OperationId { get; set; }
+    public int? OperationSize { get; set; }
+    public string? OperationKind { get; set; }
+
+    public void Clear() => (OperationId, OperationSize, OperationKind) = (null, null, null);
 }
