@@ -41,6 +41,8 @@ public sealed class ApiAccessToken : ITenantScoped
     public TenantId TenantId { get; set; }
     public required byte[] TokenHash { get; set; }
     public Guid ClientId { get; set; }
+    /// <summary>Space-separated scopes granted when this token was issued.</summary>
+    public required string Scopes { get; set; }
     public DateTime IssuedAt { get; set; }
     public DateTime ExpiresAt { get; set; }
     public DateTime? RevokedAt { get; set; }

@@ -92,6 +92,10 @@ public sealed class ClaimEvidence : ITenantScoped
     public required string Kind { get; set; }
     public required string Reference { get; set; }
     public string? Description { get; set; }
+    /// <summary>P14 public-API evidence; null for reference-only evidence and earlier claims.</summary>
+    public string? AttachmentFileName { get; set; }
+    public string? AttachmentContentType { get; set; }
+    public byte[]? AttachmentContent { get; set; }
     public DateTime RecordedAt { get; set; }
     public required string ActorRef { get; set; }
 }

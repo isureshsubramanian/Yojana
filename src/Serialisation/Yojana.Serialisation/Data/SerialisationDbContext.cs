@@ -1070,6 +1070,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(e => e.Kind).HasMaxLength(40);
             b.Property(e => e.Reference).HasMaxLength(500);
             b.Property(e => e.Description).HasMaxLength(1000);
+            b.Property(e => e.AttachmentFileName).HasMaxLength(260);
+            b.Property(e => e.AttachmentContentType).HasMaxLength(100).IsUnicode(false);
             b.Property(e => e.ActorRef).HasMaxLength(200);
             b.HasIndex(e => new { e.TenantId, e.ClaimId, e.RecordedAt });
             b.HasOne<Claim>().WithMany().HasForeignKey(e => new { e.TenantId, e.ClaimId }).OnDelete(DeleteBehavior.Cascade);

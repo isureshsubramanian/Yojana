@@ -1725,6 +1725,21 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(200)")
                         .HasColumnName("actor_ref");
 
+                    b.Property<byte[]>("AttachmentContent")
+                        .HasColumnType("varbinary(max)")
+                        .HasColumnName("attachment_content");
+
+                    b.Property<string>("AttachmentContentType")
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("attachment_content_type");
+
+                    b.Property<string>("AttachmentFileName")
+                        .HasMaxLength(260)
+                        .HasColumnType("nvarchar(260)")
+                        .HasColumnName("attachment_file_name");
+
                     b.Property<Guid>("ClaimId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("claim_id");
