@@ -1,42 +1,50 @@
-import { api } from "../api/client.ts";
+import * as z from "zod/mini";
+import { apiParsed, checkedBody } from "../api/client.ts";
 
-export type ErasureStatus = "pending" | "running" | "completed" | "failed" | "refused";
-export type ErasureSubjectKind = "Party" | "User";
-export type ReviewAction = "Redact" | "Keep";
+export const reviewAction = z.enum(["Redact", "Keep"]);
+export type ReviewAction = z.infer<typeof reviewAction>;
 
-export interface ErasureBlocker {
-  kind: string; recordId: string | null; reference: string; status: string; detail: string;
-}
-export interface ErasureStoreCount {
-  store: string; kind: string; previewCount: number; erasedCount: number; action: string;
-  status: "previewed" | "completed"; completedAt: string | null;
-}
-export interface ErasureRow {
-  erasureId: string; subjectKind: ErasureSubjectKind; subjectId: string; token: string;
-  requestReference: string; requestedBy: string; requestReceivedOn: string; status: ErasureStatus;
-  requestedAt: string; completedAt: string | null; failureRule: string | null;
-}
-export interface ErasureSummary {
-  completedLastTwelveMonths: number; inProgress: number; refused: number;
-  oldestOpen: { receivedOn: string; dueOn: string; ageDays: number; warning: "none" | "due_soon" | "overdue" } | null;
-}
-export interface ErasurePage { items: ErasureRow[]; nextCursor: string | null; summary: ErasureSummary }
-export interface ErasureDetail extends ErasureRow {
-  reason: string; requestReceivedOn: string; startedAt: string | null; failedAt: string | null;
-  retentionBasis: string; counts: ErasureStoreCount[]; failureDetail: string | null; blockers: ErasureBlocker[];
-}
-export interface ErasureReviewItem {
-  itemKey: string; store: string; recordReference: string; field: string; excerpt: string | null;
-}
-export interface ErasurePreview {
-  subjectKind: ErasureSubjectKind; subjectId: string; token: string;
-  counts: { store: string; kind: string; count: number; action: string }[];
-  reviewItems: ErasureReviewItem[]; accuracyNote: string;
-}
-export interface ErasureRequestInput {
-  subjectKind: ErasureSubjectKind; subjectId: string; requestReference: string;
-  requestReceivedOn: string; reason: string; subjectIsNaturalPerson: boolean;
-}
+export const erasureStatus = z.enum(["pending", "running", "completed", "failed", "refused"]);
+export type ErasureStatus = z.infer<typeof erasureStatus>;
+export const erasureSubjectKind = z.enum(["Party", "User"]);
+export type ErasureSubjectKind = z.infer<typeof erasureSubjectKind>;
+export const erasureBlocker = z.object({ kind: z.string(), recordId: z.nullable(z.string()), reference: z.string(),
+  status: z.string(), detail: z.string() });
+export type ErasureBlocker = z.infer<typeof erasureBlocker>;
+export const erasureStoreCount = z.object({ store: z.string(), kind: z.string(), previewCount: z.number(),
+  erasedCount: z.number(), action: z.string(), status: z.enum(["previewed", "completed"]),
+  completedAt: z.nullable(z.string()) });
+export type ErasureStoreCount = z.infer<typeof erasureStoreCount>;
+export const erasureRow = z.object({ erasureId: z.string(), subjectKind: erasureSubjectKind, subjectId: z.string(),
+  token: z.string(), requestReference: z.string(), requestedBy: z.string(), requestReceivedOn: z.string(),
+  status: erasureStatus, requestedAt: z.string(), completedAt: z.nullable(z.string()),
+  failureRule: z.nullable(z.string()) });
+export type ErasureRow = z.infer<typeof erasureRow>;
+export const erasureSummary = z.object({ completedLastTwelveMonths: z.number(), inProgress: z.number(),
+  refused: z.number(), oldestOpen: z.nullable(z.object({ receivedOn: z.string(), dueOn: z.string(),
+  ageDays: z.number(), warning: z.enum(["none", "due_soon", "overdue"]) })) });
+export type ErasureSummary = z.infer<typeof erasureSummary>;
+export const erasurePage = z.object({ items: z.array(erasureRow), nextCursor: z.nullable(z.string()),
+  summary: erasureSummary });
+export type ErasurePage = z.infer<typeof erasurePage>;
+export const erasureDetail = z.extend(erasureRow, { reason: z.string(), requestReceivedOn: z.string(),
+  startedAt: z.nullable(z.string()), failedAt: z.nullable(z.string()), retentionBasis: z.string(),
+  counts: z.array(erasureStoreCount), failureDetail: z.nullable(z.string()), blockers: z.array(erasureBlocker) });
+export type ErasureDetail = z.infer<typeof erasureDetail>;
+export const erasureReviewItem = z.object({ itemKey: z.string(), store: z.string(), recordReference: z.string(),
+  field: z.string(), excerpt: z.nullable(z.string()) });
+export type ErasureReviewItem = z.infer<typeof erasureReviewItem>;
+export const erasurePreview = z.object({ subjectKind: erasureSubjectKind, subjectId: z.string(), token: z.string(),
+  counts: z.array(z.object({ store: z.string(), kind: z.string(), count: z.number(), action: z.string() })),
+  reviewItems: z.array(erasureReviewItem), accuracyNote: z.string() });
+export type ErasurePreview = z.infer<typeof erasurePreview>;
+export const erasureRequestInput = z.object({ subjectKind: erasureSubjectKind, subjectId: z.string(),
+  requestReference: z.string(), requestReceivedOn: z.string(), reason: z.string(),
+  subjectIsNaturalPerson: z.boolean() });
+export type ErasureRequestInput = z.infer<typeof erasureRequestInput>;
+export const erasureConfirmInput = z.extend(erasureRequestInput, { confirmation: z.string(),
+  reviewDecisions: z.array(z.object({ itemKey: z.string(), action: reviewAction })) });
+export type ErasureConfirmInput = z.infer<typeof erasureConfirmInput>;
 
 const query = (cursor?: string) => {
   const values = new URLSearchParams({ take: "50" });
@@ -45,9 +53,9 @@ const query = (cursor?: string) => {
 };
 
 export const privacyApi = {
-  page: (cursor?: string, signal?: AbortSignal) => api<ErasurePage>(`/api/privacy/erasures?${query(cursor)}`, { signal }),
-  detail: (erasureId: string, signal?: AbortSignal) => api<ErasureDetail>(`/api/privacy/erasures/${erasureId}`, { signal }),
-  preview: (request: ErasureRequestInput) => api<ErasurePreview>("/api/privacy/erasures/preview", { method: "POST", body: request }),
-  confirm: (request: ErasureRequestInput & { confirmation: string; reviewDecisions: { itemKey: string; action: ReviewAction }[] }) =>
-    api<ErasureDetail>("/api/privacy/erasures/confirm", { method: "POST", body: request }),
+  page: (cursor?: string, signal?: AbortSignal) => apiParsed(`/api/privacy/erasures?${query(cursor)}`, erasurePage, { signal }),
+  detail: (erasureId: string, signal?: AbortSignal) => apiParsed(`/api/privacy/erasures/${erasureId}`, erasureDetail, { signal }),
+  preview: (request: ErasureRequestInput) => apiParsed("/api/privacy/erasures/preview", erasurePreview, { method: "POST", body: checkedBody(erasureRequestInput, request) }),
+  confirm: (request: ErasureConfirmInput) =>
+    apiParsed("/api/privacy/erasures/confirm", erasureDetail, { method: "POST", body: checkedBody(erasureConfirmInput, request) }),
 };

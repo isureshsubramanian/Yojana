@@ -1,13 +1,13 @@
+import * as z from "zod/mini";
 import { tenantZoneAbbreviation } from "../components/tenantTimeFormat.ts";
 
-export type CertificateDatePattern = "d MMM yyyy" | "dd/MM/yyyy" | "MM/dd/yyyy" | "yyyy-MM-dd";
-export type CertificateTimePattern = "HH:mm" | "h:mm tt";
-
-export interface CertificateDateFormatChoice {
-  language: string;
-  datePattern: CertificateDatePattern;
-  timePattern: CertificateTimePattern;
-}
+export const certificateDatePattern = z.enum(["d MMM yyyy", "dd/MM/yyyy", "MM/dd/yyyy", "yyyy-MM-dd"]);
+export type CertificateDatePattern = z.infer<typeof certificateDatePattern>;
+export const certificateTimePattern = z.enum(["HH:mm", "h:mm tt"]);
+export type CertificateTimePattern = z.infer<typeof certificateTimePattern>;
+export const certificateDateFormatChoice = z.object({ language: z.string(), datePattern: certificateDatePattern,
+  timePattern: certificateTimePattern });
+export type CertificateDateFormatChoice = z.infer<typeof certificateDateFormatChoice>;
 
 export const certificateDatePatterns: readonly CertificateDatePattern[] = [
   "d MMM yyyy", "dd/MM/yyyy", "MM/dd/yyyy", "yyyy-MM-dd",

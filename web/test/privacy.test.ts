@@ -83,7 +83,11 @@ test("privacy client sends the received date and uses server paging and detail",
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     calls.push({ path: String(input), body: init?.body ? String(init.body) : null });
     if (String(input).includes("/preview")) return new Response(JSON.stringify({ subjectKind: "Party", subjectId: "id", token: "token", counts: [], reviewItems: [], accuracyNote: "note" }), { status: 200 });
-    if (String(input).match(/erasures\/[^?]+$/)) return new Response(JSON.stringify({ erasureId: "id", counts: [], blockers: [] }), { status: 200 });
+    if (String(input).match(/erasures\/[^?]+$/)) return new Response(JSON.stringify({
+      erasureId: "id", subjectKind: "Party", subjectId: "subject-id", token: "token", requestReference: "DSR-1", requestedBy: "Priya Raman",
+      requestReceivedOn: "2026-09-01", status: "completed", requestedAt: "2026-09-02T08:00:00Z", completedAt: "2026-09-02T08:05:00Z", failureRule: null,
+      reason: "request", startedAt: "2026-09-02T08:01:00Z", failedAt: null, retentionBasis: "contract", counts: [], failureDetail: null, blockers: [],
+    }), { status: 200 });
     return new Response(JSON.stringify({ items: [], nextCursor: null, summary: { completedLastTwelveMonths: 0, inProgress: 0, refused: 0, oldestOpen: null } }), { status: 200 });
   }) as typeof fetch;
   try {

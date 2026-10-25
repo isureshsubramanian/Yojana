@@ -1,24 +1,15 @@
-import { api } from "../api/client.ts";
+import * as z from "zod/mini";
+import { apiParsed } from "../api/client.ts";
 
-export interface SecurityEventRow {
-  occurredAt: string;
-  kind: string;
-  userName: string | null;
-  actorName: string | null;
-  clientAddress: string | null;
-  userAgent: string | null;
-  reason: string;
-}
-
-export interface SecurityEventPage { items: SecurityEventRow[]; nextCursor: string | null }
-
-export interface SecurityEventSummary {
-  signIns: number;
-  failedSignIns: number;
-  lockouts: number;
-  passwordResets: number;
-  methodChanges: number;
-}
+export const securityEventRow = z.object({ occurredAt: z.string(), kind: z.string(), userName: z.nullable(z.string()),
+  actorName: z.nullable(z.string()), clientAddress: z.nullable(z.string()), userAgent: z.nullable(z.string()),
+  reason: z.string() });
+export type SecurityEventRow = z.infer<typeof securityEventRow>;
+export const securityEventPage = z.object({ items: z.array(securityEventRow), nextCursor: z.nullable(z.string()) });
+export type SecurityEventPage = z.infer<typeof securityEventPage>;
+export const securityEventSummary = z.object({ signIns: z.number(), failedSignIns: z.number(), lockouts: z.number(),
+  passwordResets: z.number(), methodChanges: z.number() });
+export type SecurityEventSummary = z.infer<typeof securityEventSummary>;
 
 export interface SecurityEventFilter {
   kind?: string;
@@ -39,8 +30,8 @@ export function securityEventQuery(filter: SecurityEventFilter): string {
 
 export const securityEventsApi = {
   page: (filter: SecurityEventFilter, signal?: AbortSignal) =>
-    api<SecurityEventPage>(`/api/security/events?${securityEventQuery(filter)}`, { signal }),
+    apiParsed(`/api/security/events?${securityEventQuery(filter)}`, securityEventPage, { signal }),
   // Windows are tenant-day instants from tenantTime.dayBounds, so "today" matches the list's Today filter (ADR-0007).
   summary: (todayFrom: string, weekFrom: string, signal?: AbortSignal) =>
-    api<SecurityEventSummary>(`/api/security/events/summary?${new URLSearchParams({ todayFrom, weekFrom })}`, { signal }),
+    apiParsed(`/api/security/events/summary?${new URLSearchParams({ todayFrom, weekFrom })}`, securityEventSummary, { signal }),
 };

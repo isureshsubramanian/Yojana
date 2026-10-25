@@ -1,29 +1,23 @@
-import { api } from "../api/client";
-import type { CertificateDateFormatChoice } from "./certificateDateFormats";
+import * as z from "zod/mini";
+import { apiParsed } from "../api/client";
+import { certificateDateFormatChoice } from "./certificateDateFormats.ts";
 
-export type ReleaseRecordIssuePoint = "at_first_shipment" | "at_build_release" | "on_request";
-
-export interface ReleaseRecordIssuePointOverride {
-  itemClass: string;
-  issuePoint: ReleaseRecordIssuePoint;
-}
-
-export interface ReleaseRecordIssuePointSettings {
-  defaultIssuePoint: ReleaseRecordIssuePoint;
-  itemClassOverrides: ReleaseRecordIssuePointOverride[];
-  version: string;
-}
-
-export interface CertificateDateFormatSettings {
-  languages: CertificateDateFormatChoice[];
-  version: string;
-}
+export const releaseRecordIssuePoint = z.enum(["at_first_shipment", "at_build_release", "on_request"]);
+export type ReleaseRecordIssuePoint = z.infer<typeof releaseRecordIssuePoint>;
+export const releaseRecordIssuePointOverride = z.object({ itemClass: z.string(), issuePoint: releaseRecordIssuePoint });
+export type ReleaseRecordIssuePointOverride = z.infer<typeof releaseRecordIssuePointOverride>;
+export const releaseRecordIssuePointSettings = z.object({ defaultIssuePoint: releaseRecordIssuePoint,
+  itemClassOverrides: z.array(releaseRecordIssuePointOverride), version: z.string() });
+export type ReleaseRecordIssuePointSettings = z.infer<typeof releaseRecordIssuePointSettings>;
+export const certificateDateFormatSettings = z.object({ languages: z.array(certificateDateFormatChoice),
+  version: z.string() });
+export type CertificateDateFormatSettings = z.infer<typeof certificateDateFormatSettings>;
 
 export const certificateSettingsApi = {
-  get: (signal?: AbortSignal | undefined) => api<ReleaseRecordIssuePointSettings>(
-    "/api/certificates/settings/release-record-issue-point", { signal }),
-  save: (settings: ReleaseRecordIssuePointSettings) => api<ReleaseRecordIssuePointSettings>(
-    "/api/certificates/settings/release-record-issue-point", {
+  get: (signal?: AbortSignal | undefined) => apiParsed(
+    "/api/certificates/settings/release-record-issue-point", releaseRecordIssuePointSettings, { signal }),
+  save: (settings: ReleaseRecordIssuePointSettings) => apiParsed(
+    "/api/certificates/settings/release-record-issue-point", releaseRecordIssuePointSettings, {
       method: "PUT",
       body: {
         defaultIssuePoint: settings.defaultIssuePoint,
@@ -31,10 +25,10 @@ export const certificateSettingsApi = {
         expectedVersion: settings.version,
       },
     }),
-  getDateFormats: (signal?: AbortSignal | undefined) => api<CertificateDateFormatSettings>(
-    "/api/certificates/settings/date-format", { signal }),
-  saveDateFormats: (settings: CertificateDateFormatSettings) => api<CertificateDateFormatSettings>(
-    "/api/certificates/settings/date-format", {
+  getDateFormats: (signal?: AbortSignal | undefined) => apiParsed(
+    "/api/certificates/settings/date-format", certificateDateFormatSettings, { signal }),
+  saveDateFormats: (settings: CertificateDateFormatSettings) => apiParsed(
+    "/api/certificates/settings/date-format", certificateDateFormatSettings, {
       method: "PUT",
       body: { languages: settings.languages, expectedVersion: settings.version },
     }),

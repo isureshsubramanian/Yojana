@@ -1,13 +1,12 @@
-import { api } from "../api/client";
+import * as z from "zod/mini";
+import { apiParsed } from "../api/client";
 
-export interface SettingsSummaryLine {
-  key: string;
-  counts: Record<string, number>;
-  attention: string | null;
-}
-
-export interface SettingsSummaryResponse { lines: SettingsSummaryLine[] }
+export const settingsSummaryLine = z.object({ key: z.string(), counts: z.record(z.string(), z.number()),
+  attention: z.nullable(z.string()) });
+export type SettingsSummaryLine = z.infer<typeof settingsSummaryLine>;
+export const settingsSummaryResponse = z.object({ lines: z.array(settingsSummaryLine) });
+export type SettingsSummaryResponse = z.infer<typeof settingsSummaryResponse>;
 
 export const settingsSummaryApi = {
-  get: (signal: AbortSignal) => api<SettingsSummaryResponse>("/api/settings/summary", { signal }),
+  get: (signal: AbortSignal) => apiParsed("/api/settings/summary", settingsSummaryResponse, { signal }),
 };
