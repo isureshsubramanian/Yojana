@@ -1,4 +1,6 @@
 // The one place the client talks HTTP. Same-origin cookies; JSON in and out; non-2xx becomes ApiError.
+import * as z from "zod/mini";
+
 export class ApiError extends Error {
   public readonly status: number;
   public readonly title: string | null;
@@ -62,6 +64,26 @@ export async function api<T>(path: string, init?: {
     return undefined as T;
   }
   return (await response.json()) as T;
+}
+
+/** Rule carried by the ApiError thrown when a 2xx response does not match its schema (ADR-0019 Q3). */
+export const unexpectedResponseRule = "unexpected_response";
+
+type ApiInit = Parameters<typeof api>[1];
+
+/**
+ * `api` with the response checked against a zod/mini schema (ADR-0019). The type comes from the schema, so the two
+ * cannot drift. Unknown fields are dropped, not refused, so the server can add a field without breaking a screen.
+ * A mismatch throws an ApiError; the console names where the response differed, never a value it held.
+ */
+export async function apiParsed<S extends z.ZodMiniType>(path: string, schema: S, init?: ApiInit): Promise<z.infer<S>> {
+  const value = await api<unknown>(path, init);
+  const result = z.safeParse(schema, value);
+  if (result.success) return result.data;
+  const where = result.error.issues.map(issue => `${issue.path.map(String).join(".") || "(root)"} ${issue.code}`).join("; ");
+  console.warn(`Unexpected response from ${path.split("?")[0]}: ${where}`);
+  throw new ApiError(200, "The server sent an unexpected response. Reload the page and try again.",
+    unexpectedResponseRule, null, unexpectedResponseRule);
 }
 
 async function describe(response: Response): Promise<{ message: string; title: string | null; detail: string | null; rule: string | null; unblockingStep: string | null; changedBy: string | null; changedAt: string | null; reasons: readonly { code: string; message: string }[]; openRules: readonly string[]; blockers: readonly { kind: string; recordId: string | null; reference: string; status: string; detail: string }[] }> {

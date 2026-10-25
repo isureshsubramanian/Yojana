@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { ApiError, unexpectedResponseRule } from "../src/api/client.ts";
 import { developerApi } from "../src/settings/developers/developerApi.ts";
 import { answer, clientSees, clientStatus, deliveryStatus, prettyJson, statusFilter } from "../src/settings/developers/developerModel.ts";
 
@@ -80,9 +81,10 @@ test("developer API decodes valid client pages and refuses invalid shapes at the
     assert.equal(page.summary.active, 1);
   } finally { globalThis.fetch = original; }
   globalThis.fetch = (async () => new Response(JSON.stringify({ items: "not-an-array", next: null, summary: {} }), { status: 200 })) as typeof fetch;
-  try { await assert.rejects(() => developerApi.clients(), /Invalid API client page\.items response/); }
+  try { await assert.rejects(() => developerApi.clients(), (reason: unknown) => reason instanceof ApiError && reason.rule === unexpectedResponseRule); }
   finally { globalThis.fetch = original; }
-  assert.match(api, /invalid server response is refused before it reaches a component/);
+  assert.match(api, /import \{ apiParsed \} from "\.\.\/\.\.\/api\/client\.ts"/);
+  assert.doesNotMatch(api, /[^d]api(<[^>]*>)?\(/, "every Developer call is schema-checked (ADR-0019)");
 });
 
 test("display models label access and delivery state without exposing raw people ids", () => {
