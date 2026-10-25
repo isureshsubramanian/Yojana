@@ -21,9 +21,8 @@ public sealed class BulkOperationUnitsQuery(DeveloperDbContext db, ITenantContex
         if (afterUnitId is { } after) query = query.Where(row => row.UnitId.CompareTo(after) > 0);
         var ids = await query.OrderBy(row => row.UnitId).Select(row => row.UnitId).Take(take + 1).ToListAsync(ct);
         var pageIds = ids.Take(take).ToList();
-        var rows = new List<BulkOperationUnitRow>(pageIds.Count);
-        foreach (var id in pageIds)
-            rows.Add(new(id, (await context.ForUnitAsync(id, ct))?.Serial));
+        var serials = await context.SerialsAsync(pageIds, ct);
+        var rows = pageIds.Select(id => new BulkOperationUnitRow(id, serials.GetValueOrDefault(id))).ToList();
         return new(rows, ids.Count > take && rows.Count > 0 ? rows[^1].UnitId.ToString("D") : null);
     }
 }

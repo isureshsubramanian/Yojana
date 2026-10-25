@@ -37,6 +37,7 @@ public sealed class DeveloperHostFixture : IAsyncLifetime
     public WebApplication Host { get; private set; } = null!;
     public IServiceProvider Services => Host.Services;
     public ConcurrentQueue<Guid> DeliveredWebhookEvents { get; } = new();
+    public ConcurrentQueue<CapturedWebhook> CapturedWebhooks { get; } = new();
     private int recoveringEndpointCalls;
 
     public async Task InitializeAsync()
@@ -86,6 +87,17 @@ public sealed class DeveloperHostFixture : IAsyncLifetime
             return document.RootElement.TryGetProperty("challenge", out var challenge)
                 ? Results.Ok(new { challenge = challenge.GetString() })
                 : Results.Ok(new { received = true });
+        }).AllowAnonymous();
+        app.MapPost("/test/webhook/capture", async (HttpRequest request) =>
+        {
+            using var reader = new StreamReader(request.Body);
+            var body = await reader.ReadToEndAsync();
+            using var document = System.Text.Json.JsonDocument.Parse(body);
+            if (document.RootElement.TryGetProperty("challenge", out var challenge))
+                return Results.Ok(new { challenge = challenge.GetString() });
+            CapturedWebhooks.Enqueue(new(request.Headers["Yojana-Event-Id"].ToString(),
+                request.Headers["Yojana-Signature"].ToString(), body));
+            return Results.Ok();
         }).AllowAnonymous();
         app.MapPost("/test/webhook/fail", () => Results.StatusCode(503)).AllowAnonymous();
         app.MapPost("/test/webhook/gone", () => Results.StatusCode(410)).AllowAnonymous();
@@ -179,6 +191,7 @@ public sealed class DeveloperHostFixture : IAsyncLifetime
     public void ResetWebhookProbe()
     {
         DeliveredWebhookEvents.Clear();
+        CapturedWebhooks.Clear();
         Interlocked.Exchange(ref recoveringEndpointCalls, 0);
     }
 
@@ -248,3 +261,5 @@ public sealed class DatabaseFactAttribute : FactAttribute
         if (DeveloperHostFixture.ConnectionString is null) Skip = "YOJANA_TEST_SQL is not set";
     }
 }
+
+public sealed record CapturedWebhook(string EventId, string Signature, string Body);

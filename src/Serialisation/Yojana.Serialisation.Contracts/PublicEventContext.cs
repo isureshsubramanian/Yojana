@@ -7,6 +7,10 @@ public interface IPublicEventContextPort
 {
     Task<PublicEventContext?> ForUnitAsync(Guid unitId, CancellationToken cancellationToken);
 
+    /// <summary>Returns the preferred current serial of each listed unit in one read; units without one are absent.</summary>
+    Task<IReadOnlyDictionary<Guid, string>> SerialsAsync(IReadOnlyCollection<Guid> unitIds,
+        CancellationToken cancellationToken);
+
     /// <summary>Returns a readable claim, RMA, replacement, certificate, campaign or import reference.</summary>
     Task<string?> ReferenceAsync(string kind, Guid recordId, CancellationToken cancellationToken);
 

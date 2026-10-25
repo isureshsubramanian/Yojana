@@ -1,3 +1,4 @@
+using System.Data.SqlTypes;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
@@ -22,6 +23,23 @@ public sealed class PublicEventContextPort(SerialisationDbContext db, ITenantCon
             .ThenBy(row => row.IdentifierId).Select(row => row.RawValue).FirstOrDefaultAsync(cancellationToken);
         var profile = await items.GetAsync(current.ItemId, cancellationToken);
         return new(profile?.ItemClass, current.OwnerPartyRef, serial);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, string>> SerialsAsync(IReadOnlyCollection<Guid> unitIds,
+        CancellationToken cancellationToken)
+    {
+        if (unitIds.Count == 0) return new Dictionary<Guid, string>();
+        var rows = await db.Identifiers.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && unitIds.Contains(row.UnitId) && row.ValidTo == null
+                && db.Current.Any(current => current.TenantId == row.TenantId && current.UnitId == row.UnitId))
+            .Select(row => new { row.UnitId, row.Type, row.IdentifierId, row.RawValue })
+            .ToListAsync(cancellationToken);
+        // Same preference as ForUnitAsync: internal serial, then manufacturer serial, then any other identifier; ties
+        // break in SQL Server uniqueidentifier order (SqlGuid), as that query's ORDER BY does.
+        return rows.GroupBy(row => row.UnitId).ToDictionary(group => group.Key, group => group
+            .OrderBy(row => row.Type == IdentifierType.InternalSerial ? 0
+                : row.Type == IdentifierType.ManufacturerSerial ? 1 : 2)
+            .ThenBy(row => new SqlGuid(row.IdentifierId)).First().RawValue);
     }
 
     public Task<string?> ReferenceAsync(string kind, Guid recordId, CancellationToken cancellationToken) => kind switch
