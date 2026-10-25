@@ -124,6 +124,9 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         db.ConnectionGatewaySettings.Add(new ConnectionGatewaySetting { TenantId = tenant, ConnectionId = id, LegalEntityId = legalEntity, OutboundMode = "reference_only", NativeWarrantyObjectMode = "frozen", OrderingWaitMinutes = 15 });
         foreach (var message in new[] { "ItemUpserted", "PartyUpserted", "GoodsReceiptPosted", "ProductionCompleted", "DeliveryPosted", "InvoicePosted", "ReturnReceived", "TransferPosted", "InventoryAdjusted", "WarrantyLineSold", "DocumentCancelled", "CreateReplacementDelivery", "CreateCreditMemo", "PostWarrantyExpense", "ChangeStockStatusOrLocation", "AttachDocument", "CreateServiceOrder" })
             db.ConnectionCapabilities.Add(new ConnectionCapability { TenantId = tenant, ConnectionId = id, CanonicalMessage = message, SupportLevel = CapabilitySupport.Native });
+        db.ConnectionCapabilities.Add(new ConnectionCapability { TenantId = tenant, ConnectionId = id,
+            CanonicalMessage = "BomUpserted", SupportLevel = connectorCode == "CX01"
+                ? CapabilitySupport.Native : CapabilitySupport.Unsupported });
         for (var rule = 1; rule <= 7; rule++)
             db.ConnectionDegradationSettings.Add(new ConnectionDegradationSetting { TenantId = tenant, ConnectionId = id, RuleNumber = rule, Enabled = true, SettingsJson = "{}", UpdatedAt = Clock.UtcNow });
         await db.SaveChangesAsync();

@@ -122,6 +122,11 @@ public static class SerialisationModule
         builder.Services.AddScoped<SerialAllocationReservationStore>();
         builder.Services.AddScoped<SerialRangeService>();
         builder.Services.AddScoped<AsBuiltCompleteness>();
+        builder.Services.TryAddScoped<Yojana.Integration.Contracts.IErpBomCapabilityPort,
+            Settings.UnavailableErpBomCapabilityPort>();
+        builder.Services.AddScoped(sp => new Settings.ErpBomCompletenessSettings(
+            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>(),
+            sp.GetRequiredService<Yojana.Integration.Contracts.IErpBomCapabilityPort>()));
         builder.Services.AddScoped<EpisodeService>();
         builder.Services.AddScoped<UnitResolver>();
         builder.Services.AddScoped<PostingPeriods>();
@@ -531,7 +536,8 @@ public static class SerialisationModule
         // Coupled to ReleaseRecordIssuePointSettings for the same two-DbContext Wolverine constraint documented on
         // that type: the factory keeps PlatformDbContext outside certificate trigger handler discovery.
         builder.Services.AddScoped(sp => new ReleaseRecordIssuePointSettings(
-            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>(),
+            sp.GetRequiredService<Yojana.Integration.Contracts.IErpBomCapabilityPort>()));
         builder.Services.AddScoped<CertificateTemplateService>();
         builder.Services.TryAddScoped<ICertificateLayoutLanguageSource, CertificateLayoutLanguageSource>();
         // Coupled to CertificateDateFormatSettings for the same two-DbContext Wolverine constraint documented on

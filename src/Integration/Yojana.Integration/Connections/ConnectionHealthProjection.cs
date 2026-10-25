@@ -21,7 +21,7 @@ public sealed class ConnectionHealthProjection(IntegrationDbContext db, ITenantC
 {
     private static readonly HashSet<string> InboundTypes =
     [
-        nameof(ItemUpserted), nameof(PartyUpserted), nameof(GoodsReceiptPosted), nameof(ProductionCompleted),
+        nameof(ItemUpserted), nameof(BomUpserted), nameof(PartyUpserted), nameof(GoodsReceiptPosted), nameof(ProductionCompleted),
         nameof(DeliveryPosted), nameof(InvoicePosted), nameof(ReturnReceived), nameof(TransferPosted),
         nameof(InventoryAdjusted), nameof(WarrantyLineSold), nameof(DocumentCancelled),
     ];
@@ -66,7 +66,7 @@ public sealed class ConnectionHealthProjection(IntegrationDbContext db, ITenantC
                 x.TenantId == tenant.TenantId && x.ConnectionId == connectionId)
             .Select(x => x.SyncStartMode != null).SingleAsync(ct);
         var syncStartMissing = !syncConfigured && polls.Any(x => string.IsNullOrWhiteSpace(x.Watermark)
-            && x.CanonicalMessage is not (nameof(ItemUpserted) or nameof(PartyUpserted)));
+            && x.CanonicalMessage is not (nameof(ItemUpserted) or nameof(BomUpserted) or nameof(PartyUpserted)));
         var sources = await db.ConnectionNotificationSources.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
             && x.ConnectionId == connectionId).ToListAsync(ct);
         var watchdog = await db.ConnectionNotificationWatchdogs.AsNoTracking().SingleOrDefaultAsync(x =>

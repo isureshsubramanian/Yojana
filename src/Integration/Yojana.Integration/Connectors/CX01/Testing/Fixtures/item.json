@@ -3,6 +3,7 @@
   "ItemName": "Fictional edge appliance",
   "ManageSerialNumbers": "tYES",
   "ManageBatchNumbers": "tNO",
+  "InventoryItem": "tYES",
   "InventoryUOM": "EA",
   "UpdateDate": "2026-09-01",
   "UpdateTime": "081500"

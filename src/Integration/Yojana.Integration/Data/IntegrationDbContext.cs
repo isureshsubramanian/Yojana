@@ -31,6 +31,8 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
     public DbSet<InboundMessage> InboundMessages => Set<InboundMessage>();
     public DbSet<IdempotencyClaim> IdempotencyIndex => Set<IdempotencyClaim>();
     public DbSet<ReferenceProjection> ReferenceProjections => Set<ReferenceProjection>();
+    public DbSet<BomProjection> BomProjections => Set<BomProjection>();
+    public DbSet<BomProjectionLine> BomProjectionLines => Set<BomProjectionLine>();
     public DbSet<ExternalIdMap> ExternalIdMaps => Set<ExternalIdMap>();
     public DbSet<ConnectorCatalogueEntry> ConnectorCatalogue => Set<ConnectorCatalogueEntry>();
     public DbSet<CanonicalDocument> CanonicalDocuments => Set<CanonicalDocument>();
@@ -455,6 +457,29 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.Uom).HasMaxLength(32);
             b.Property(x => x.AttributesJson).HasColumnType("nvarchar(max)").HasDefaultValue("{}");
             b.HasIndex(x => new { x.TenantId, x.EntityType, x.Code });
+        });
+        modelBuilder.Entity<BomProjection>(b =>
+        {
+            b.ToTable("bom_projection");
+            b.HasKey(x => new { x.TenantId, x.BomProjectionId });
+            b.Property(x => x.ParentItemExternalId).HasMaxLength(320);
+            b.Property(x => x.ContentHash).HasMaxLength(64).IsFixedLength().IsUnicode(false);
+            b.HasIndex(x => new { x.TenantId, x.ParentItemId }).IsUnique();
+            b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.ParentItemExternalId });
+        });
+        modelBuilder.Entity<BomProjectionLine>(b =>
+        {
+            b.ToTable("bom_projection_line", table => table.HasCheckConstraint(
+                "ck_bom_projection_line_kind", "kind IN ('item','resource','text','other')"));
+            b.HasKey(x => new { x.TenantId, x.BomProjectionId, x.LineNo });
+            b.Property(x => x.Kind).HasMaxLength(24).IsUnicode(false);
+            b.Property(x => x.ItemExternalId).HasMaxLength(320);
+            b.Property(x => x.Description).HasMaxLength(1000);
+            b.Property(x => x.Quantity).HasPrecision(28, 8);
+            b.Property(x => x.Uom).HasMaxLength(32);
+            b.HasIndex(x => new { x.TenantId, x.ItemId, x.BomProjectionId });
+            b.HasOne<BomProjection>().WithMany().HasForeignKey(x =>
+                new { x.TenantId, x.BomProjectionId }).OnDelete(DeleteBehavior.Cascade);
         });
         modelBuilder.Entity<ExternalIdMap>(b =>
         {

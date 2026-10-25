@@ -141,6 +141,7 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
         var result = secondary ? Done(row, 0, []) : row.MessageType switch
         {
             nameof(ItemUpserted) => await TranslateItemAsync(row, cancellationToken),
+            nameof(BomUpserted) => await TranslateBomAsync(row, cancellationToken),
             nameof(PartyUpserted) => await TranslatePartyAsync(row, cancellationToken),
             nameof(GoodsReceiptPosted) => await TranslateReceiptAsync(row, cancellationToken),
             nameof(ProductionCompleted) => await TranslateDocumentAsync<ProductionCompleted>(row, p => p.DocumentRef,
@@ -221,6 +222,15 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
     {
         var message = Message<ItemUpserted>(row);
         await references.UpsertItemAsync(row.ConnectionId, message.Payload, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+        return Done(row, 0, []);
+    }
+
+    private async Task<GatewayTranslationResult> TranslateBomAsync(InboundMessage row,
+        CancellationToken cancellationToken)
+    {
+        var message = Message<BomUpserted>(row);
+        _ = await references.UpsertBomAsync(row.ConnectionId, message.Payload, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         return Done(row, 0, []);
     }

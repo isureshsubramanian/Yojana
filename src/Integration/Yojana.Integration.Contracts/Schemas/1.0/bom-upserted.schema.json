@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sw.integration/1.0/bom-upserted",
+  "title": "BomUpserted",
+  "type": "object",
+  "required": ["envelope", "message_type", "payload"],
+  "properties": {
+    "envelope": { "$ref": "envelope.schema.json" },
+    "message_type": { "const": "BomUpserted" },
+    "payload": {
+      "type": "object",
+      "required": ["parent_item_external_id", "source_changed_at", "deleted", "lines"],
+      "properties": {
+        "parent_item_external_id": { "type": "string" },
+        "source_changed_at": { "type": "string" },
+        "deleted": { "type": "boolean" },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["line_no", "kind", "item_external_id", "description", "quantity", "uom"],
+            "properties": {
+              "line_no": { "type": "number" },
+              "kind": { "type": "string" },
+              "item_external_id": { "type": ["string", "null"] },
+              "description": { "type": "string" },
+              "quantity": { "type": "number" },
+              "uom": { "type": ["string", "null"] }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -104,9 +104,26 @@ public sealed record ExpectedComponent(string Slot, Guid ComponentItemId, string
 
 public sealed record ExpectedComponentQuery(Guid ItemId, DateOnly EffectiveAt);
 
+/// <summary>One source BOM line. Unknown item identities remain visible through their source item code.</summary>
+public sealed record BillOfMaterialsLine(
+    int LineNo,
+    string Kind,
+    Guid? ItemId,
+    string? ItemCode,
+    string Description,
+    decimal Quantity,
+    string? Uom,
+    bool Serialised,
+    bool? InventoryItem);
+
+/// <summary>The latest one-level BOM snapshot received from the source system.</summary>
+public sealed record BillOfMaterials(DateTimeOffset AsAt, IReadOnlyList<BillOfMaterialsLine> Lines);
+
 /// <summary>Expected serialised components of an item at a date (phantoms expanded).</summary>
 public interface IBomQueryPort
 {
+    Task<BillOfMaterials?> BillOfMaterialsAsync(Guid itemId, CancellationToken cancellationToken);
+
     Task<IReadOnlyList<ExpectedComponent>> ExpectedSerialisedComponentsAsync(Guid itemId, DateOnly effectiveAt, CancellationToken cancellationToken);
 
     /// <summary>Reads all distinct item/date BOMs for a selection in one port call.</summary>

@@ -1,0 +1,28 @@
+{
+  "envelope": {
+    "contract_version": "1.0",
+    "message_id": "0199f3d0-7d7f-7000-8000-000000000011",
+    "tenant_id": "0199f3d0-7d7f-7000-8000-000000000002",
+    "connection_id": "0199f3d0-7d7f-7000-8000-000000000003",
+    "connector_code": "CX01",
+    "erp_entity": "ProductTrees",
+    "erp_external_id": "FIC-SRV-TWIN",
+    "erp_change_marker": { "value": "2026-09-01T081500|FIC-SRV-TWIN", "marker_kind": "timestamp" },
+    "occurred_at": "2026-09-01T08:15:00+00:00",
+    "observed_at": "2026-09-01T08:16:00+00:00",
+    "capture_mode": "poll",
+    "attribution_completeness": "complete",
+    "payload_ref": "cx01/ProductTrees/FIC-SRV-TWIN/2026-09-01T081500",
+    "correlation_id": null
+  },
+  "message_type": "BomUpserted",
+  "payload": {
+    "parent_item_external_id": "FIC-SRV-TWIN",
+    "source_changed_at": "2026-09-01T08:15:00+00:00",
+    "deleted": false,
+    "lines": [
+      { "line_no": 0, "kind": "item", "item_external_id": "FIC-NODE-TWIN", "description": "Fictional twin compute node", "quantity": 2, "uom": "EA" },
+      { "line_no": 1, "kind": "text", "item_external_id": null, "description": "Fit the retention bracket", "quantity": 0, "uom": null }
+    ]
+  }
+}

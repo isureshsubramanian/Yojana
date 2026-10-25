@@ -65,6 +65,32 @@ public sealed class CertificateTests
     }
 
     [Fact]
+    public void Release_starters_conditionally_show_full_BOM_and_the_no_source_caption()
+    {
+        var starterType = typeof(CertificateHtmlComposer).Assembly.GetType(
+            "Yojana.Serialisation.Certificates.CertificateStarterLayouts", throwOnError: true)!;
+        var definitions = ((IEnumerable)starterType.GetField("All",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!)
+            .Cast<object>();
+        var releases = definitions.Where(definition => (string)definition.GetType().GetProperty("Kind")!
+            .GetValue(definition)! == CertificateDocumentKind.ReleaseRecord)
+            .Select(definition => (string)definition.GetType().GetProperty("Body")!.GetValue(definition)!).ToList();
+
+        Assert.All(releases, body =>
+        {
+            Assert.Contains("{{#if full_bom_requested}}", body, StringComparison.Ordinal);
+            Assert.Contains("Other parts (full bill of materials)", body, StringComparison.Ordinal);
+            Assert.Contains("Bill of materials as synced from the ERP on {{date bom_synced_at}}", body,
+                StringComparison.Ordinal);
+            Assert.Contains("Full bill of materials not available from the ERP at issue", body,
+                StringComparison.Ordinal);
+        });
+        var catalogue = FieldCatalogue.For<ReleaseRecordPayload>().Select(row => row.Path).ToList();
+        Assert.Contains("bom_lines.item_code", catalogue);
+        Assert.Contains("bom_synced_at", catalogue);
+    }
+
+    [Fact]
     public void Canonical_json_has_the_same_text_and_hash_for_different_property_order()
     {
         var first = CanonicalJson.Canonicalise("""{"z":3,"nested":{"b":2,"a":1},"a":"same"}""");

@@ -61,13 +61,27 @@ public static class ReleaseRecordIssuePoint
     public static readonly IReadOnlyList<string> All = [AtFirstShipment, AtBuildRelease, OnRequest];
 }
 
-public sealed record ReleaseRecordIssuePointOverride(string ItemClass, string IssuePoint);
+public static class ReleaseRecordBomContent
+{
+    public const string SerialisedOnly = "serialised_only";
+    public const string FullBom = "full_bom";
+    public static readonly IReadOnlyList<string> All = [SerialisedOnly, FullBom];
+}
+
+public sealed record ReleaseRecordIssuePointOverride(string ItemClass, string IssuePoint,
+    string BomContent = ReleaseRecordBomContent.SerialisedOnly);
 public sealed record ReleaseRecordIssuePointPolicy(string DefaultIssuePoint,
-    IReadOnlyList<ReleaseRecordIssuePointOverride> ItemClassOverrides);
+    IReadOnlyList<ReleaseRecordIssuePointOverride> ItemClassOverrides,
+    string DefaultBomContent = ReleaseRecordBomContent.SerialisedOnly);
 public sealed record ReleaseRecordIssuePointSettingsView(string DefaultIssuePoint,
-    IReadOnlyList<ReleaseRecordIssuePointOverride> ItemClassOverrides, string Version);
+    IReadOnlyList<ReleaseRecordIssuePointOverride> ItemClassOverrides, string Version,
+    string DefaultBomContent = ReleaseRecordBomContent.SerialisedOnly);
 public sealed record UpdateReleaseRecordIssuePointSettings(string DefaultIssuePoint,
-    IReadOnlyList<ReleaseRecordIssuePointOverride> ItemClassOverrides, string ExpectedVersion);
+    IReadOnlyList<ReleaseRecordIssuePointOverride> ItemClassOverrides, string ExpectedVersion,
+    string DefaultBomContent = ReleaseRecordBomContent.SerialisedOnly);
+
+public sealed record ErpBomCompletenessSettingsView(bool CheckAgainstErpBom, string Version);
+public sealed record UpdateErpBomCompletenessSettings(bool CheckAgainstErpBom, string ExpectedVersion);
 
 public static class CertificateDatePattern
 {
@@ -153,6 +167,13 @@ public sealed record RequiredSerializedComponentSnapshot(
     public const string UnexpectedItem = "UNEXPECTED_ITEM";
 }
 
+public sealed record ReleaseBomLineSnapshot(
+    int LineNo,
+    string ItemCode,
+    string? Description,
+    decimal Quantity,
+    string? Uom);
+
 public sealed record ReleaseTestSnapshot(string Kind, string Result, JsonElement Measurements, string Equipment, DateTime TestedAt);
 public sealed record ReleaseLifeEpisodeSnapshot(string Kind, DateTime StartedAt, DateTime? EndedAt, int? CycleNumber);
 public sealed record BatteryPassportSnapshot(
@@ -191,7 +212,10 @@ public sealed record ReleaseRecordPayload(
     CertificateBrandingSnapshot Branding,
     CertificatePresentationSnapshot Presentation,
     CertificateProvenanceSnapshot Provenance,
-    BatteryPassportSnapshot? Battery = null);
+    BatteryPassportSnapshot? Battery = null,
+    bool FullBomRequested = false,
+    DateTimeOffset? BomSyncedAt = null,
+    IReadOnlyList<ReleaseBomLineSnapshot>? BomLines = null);
 
 public sealed record WarrantyEntitlementSnapshot(
     Guid EntitlementId,

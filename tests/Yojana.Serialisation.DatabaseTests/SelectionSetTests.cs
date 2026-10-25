@@ -107,6 +107,7 @@ public sealed class SelectionSetTests(SerialisationHostFixture fixture)
         var item = Guid.NewGuid();
         var pcbItem = Guid.NewGuid();
         ports.RegisterBom(item, [new ExpectedComponent("A1", pcbItem, "PCB-07", 1)]);
+        await fixture.EnableErpBomCompletenessAsync(tenant);
         var order = new DocumentRef("production_order", Guid.NewGuid());
         var units = (await InvokeAsync<CommissionUnitsResult>(tenant, new CommissionUnits(Guid.NewGuid(), item, UnitOrigin.Manufactured, Enumerable.Range(1, 4).Select(n => new CommissionLine([new IdentifierInput(IdentifierType.InternalSerial, $"{p}-{n:D3}")])).ToList(), At, "t", Entity, Document: order))).Lines.Select(l => l.UnitId!.Value).ToList();
         // unit 1 and 2 complete; unit 3 incomplete (blocked); unit 4 already released (skipped)

@@ -82,6 +82,11 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     public HttpStatusCode? RejectNextRequestWith { get; set; }
     public TimeSpan DelayNextRequest { get; set; }
     public bool SameWarehouseReturnPosted { get; set; }
+    public bool ProductionTreePresent { get; set; } = true;
+    public bool AdditionalProductionTreePresent { get; set; }
+    public decimal ProductionTreeNodeQuantity { get; set; } = 2m;
+    public bool FailSecondProductTreePage { get; set; }
+    public List<string> ProductTreeQueries { get; } = [];
     public bool DeliveryCancelled { get; set; }
     public bool ReceiptCancelled { get; set; }
     public bool SubscriptionStopped { get; set; }
@@ -292,8 +297,8 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                 }
                 await TextAsync(response,
                     JournalReferenceLength is { } size
-                        ? $"<Schema><EntityType Name=\"JournalEntry\"><Property Name=\"Memo\" MaxLength=\"{size}\" /></EntityType><EntitySet Name=\"JournalEntries\" EntityType=\"F.JournalEntry\" /><EntitySet Name=\"EventSubscriptions\" /></Schema>"
-                        : "<edmx:Edmx><EntitySet Name=\"EventSubscriptions\"/><EntitySet Name=\"EventNotifications\"/></edmx:Edmx>",
+                        ? $"<Schema><EntityType Name=\"JournalEntry\"><Property Name=\"Memo\" MaxLength=\"{size}\" /></EntityType><EntitySet Name=\"JournalEntries\" EntityType=\"F.JournalEntry\" /><EntitySet Name=\"EventSubscriptions\" /><EntitySet Name=\"ProductTrees\" /></Schema>"
+                        : "<edmx:Edmx><EntitySet Name=\"EventSubscriptions\"/><EntitySet Name=\"EventNotifications\"/><EntitySet Name=\"ProductTrees\"/></edmx:Edmx>",
                     "application/xml");
                 return;
             }
@@ -330,6 +335,54 @@ internal sealed class Cx01Simulator : IAsyncDisposable
             if (path == Cx01Protocol.Root + "Items('HW-EDGE-100')")
             {
                 await RawJsonAsync(response, item);
+                return;
+            }
+            if (path == Cx01Protocol.Root + "ProductTrees('FIC-SRV-TWIN')")
+            {
+                if (!ProductionTreePresent) { await NotFoundAsync(response); return; }
+                await JsonAsync(response, ProductTree("FIC-SRV-TWIN", "iProductionTree"));
+                return;
+            }
+            if (path == Cx01Protocol.Root + "ProductTrees('FIC-SALES-KIT')")
+            {
+                await JsonAsync(response, ProductTree("FIC-SALES-KIT", "iSalesTree"));
+                return;
+            }
+            if (path == Cx01Protocol.Root + "ProductTrees")
+            {
+                ProductTreeQueries.Add(request.RawUrl ?? path);
+                if ((request.Url?.Query.Contains("$select", StringComparison.OrdinalIgnoreCase) == true
+                    || request.Url?.Query.Contains("$filter", StringComparison.OrdinalIgnoreCase) == true)
+                    && request.Url.Query.Contains("UpdateDate", StringComparison.OrdinalIgnoreCase))
+                {
+                    response.StatusCode = (int)HttpStatusCode.BadRequest;
+                    await ErrorAsync(response, "-1000", "Property 'UpdateDate' of 'ProductTree'is invalid");
+                    return;
+                }
+                var rows = new List<object>();
+                if (ProductionTreePresent) rows.Add(ProductTree("FIC-SRV-TWIN", "iProductionTree"));
+                if (AdditionalProductionTreePresent) rows.Add(ProductTree("FIC-SRV-SPARE", "iProductionTree"));
+                rows.Add(ProductTree("FIC-SALES-KIT", "iSalesTree"));
+                var skip = int.TryParse(Query(request.Url, "$skiptoken"), out var parsed) ? parsed : 0;
+                if (FailSecondProductTreePage && skip > 0)
+                {
+                    response.StatusCode = (int)HttpStatusCode.ServiceUnavailable;
+                    await ErrorAsync(response, "-5002", "Fictional product-tree page failure");
+                    return;
+                }
+                var eligible = rows.Where(row => !request.Url!.Query.Contains("TreeType", StringComparison.Ordinal)
+                    || JsonSerializer.SerializeToElement(row).GetProperty("TreeType").GetString() == "iProductionTree")
+                    .ToList();
+                var filtered = eligible.Skip(skip).Take(PageSize).ToList();
+                var next = skip + filtered.Count < eligible.Count && filtered.Count > 0
+                    ? "ProductTrees?$filter=TreeType%20eq%20'iProductionTree'&$top=" + PageSize
+                        + "&$skiptoken=" + (skip + filtered.Count)
+                    : null;
+                await JsonAsync(response, new Dictionary<string, object?>
+                {
+                    ["value"] = filtered,
+                    ["@odata.nextLink"] = next,
+                });
                 return;
             }
             if (path == Cx01Protocol.Root + "ItemWarehouseInfoCollection")
@@ -861,6 +914,32 @@ internal sealed class Cx01Simulator : IAsyncDisposable
             context.Response.Close();
         }
     }
+
+    private object ProductTree(string code, string treeType) => new
+    {
+        TreeCode = code,
+        TreeType = treeType,
+        Quantity = 1m,
+        Warehouse = "01",
+        ProductDescription = code == "FIC-SRV-TWIN" ? "Fictional twin-node server" : "Fictional sales kit",
+        ProductTreeLines = code == "FIC-SRV-TWIN"
+            ? new object[]
+            {
+                new { ChildNum = 0, VisualOrder = 0, ItemCode = "FIC-NODE-TWIN", ItemName = "Fictional twin compute node", LineText = (string?)null, ParentItem = code, Quantity = ProductionTreeNodeQuantity, ItemType = "pit_Item", InventoryUOM = "EA" },
+                new { ChildNum = 1, VisualOrder = 1, ItemCode = "FIC-NVME", ItemName = "Fictional 3.84 TB NVMe drive", LineText = (string?)null, ParentItem = code, Quantity = 4m, ItemType = "pit_Item", InventoryUOM = "EA" },
+                new { ChildNum = 2, VisualOrder = 2, ItemCode = "FIC-HDD", ItemName = "Fictional 16 TB hard drive", LineText = (string?)null, ParentItem = code, Quantity = 2m, ItemType = "pit_Item", InventoryUOM = "EA" },
+                new { ChildNum = 3, VisualOrder = 3, ItemCode = "FIC-PSU", ItemName = "Fictional hot-swap power supply", LineText = (string?)null, ParentItem = code, Quantity = 2m, ItemType = "pit_Item", InventoryUOM = "EA" },
+                new { ChildNum = 4, VisualOrder = 4, ItemCode = "FIC-RAIL", ItemName = "Rail kit, tool-less", LineText = (string?)null, ParentItem = code, Quantity = 1m, ItemType = "pit_Item", InventoryUOM = "EA" },
+                new { ChildNum = 5, VisualOrder = 5, ItemCode = "FIC-PWR-CBL", ItemName = "Power cable C13-C14, 2 m", LineText = (string?)null, ParentItem = code, Quantity = 2m, ItemType = "pit_Item", InventoryUOM = "EA" },
+                new { ChildNum = 6, VisualOrder = 6, ItemCode = (string?)null, ItemName = (string?)null, LineText = "Fit retention bracket before test", ParentItem = code, Quantity = 0m, ItemType = "pit_Text", InventoryUOM = (string?)null },
+                new { ChildNum = 7, VisualOrder = 7, ItemCode = "FIC-LABOUR", ItemName = "Assembly labour", LineText = (string?)null, ParentItem = code, Quantity = 4m, ItemType = "pit_Item", InventoryUOM = (string?)null },
+            }
+            : new object[]
+            {
+                new { ChildNum = 0, VisualOrder = 0, ItemCode = "FIC-SRV-TWIN", ItemName = "Fictional twin-node chassis", LineText = (string?)null, ParentItem = code, Quantity = 1m, ItemType = "pit_Item", InventoryUOM = "EA" },
+            },
+        ProductTreeStages = Array.Empty<object>(),
+    };
 
     private async Task<bool> HandleDocumentAsync(HttpListenerRequest request, HttpListenerResponse response, string path)
     {

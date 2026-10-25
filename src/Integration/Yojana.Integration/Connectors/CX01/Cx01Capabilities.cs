@@ -20,6 +20,7 @@ public static class Cx01Capabilities
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["ItemUpserted"] = CapabilitySupport.Native,
+            ["BomUpserted"] = CapabilitySupport.Native,
             ["PartyUpserted"] = CapabilitySupport.Native,
             ["GoodsReceiptPosted"] = CapabilitySupport.Native,
             ["ProductionCompleted"] = CapabilitySupport.Native,

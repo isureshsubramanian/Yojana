@@ -444,7 +444,8 @@ internal static class FieldCatalogue
         && typeof(System.Collections.IEnumerable).IsAssignableFrom(type) && type != typeof(string)
             ? type.GetGenericArguments()[0] : null;
     private static bool IsScalar(Type type) => type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(Guid)
-        || type == typeof(DateTime) || type == typeof(DateOnly) || type == typeof(decimal) || type == typeof(JsonElement);
+        || type == typeof(DateTime) || type == typeof(DateTimeOffset) || type == typeof(DateOnly)
+        || type == typeof(decimal) || type == typeof(JsonElement);
     private static string ScalarName(Type type)
     {
         type = Nullable.GetUnderlyingType(type) ?? type;

@@ -105,7 +105,11 @@ public sealed class ConnectionCommands(IntegrationDbContext db, ITenantContext t
             db.ConnectionPollWatermarks.AddRange(declaration.PollEntities.Select(entity => new ConnectionPollWatermark
             {
                 TenantId = tenant.TenantId, ConnectionId = id, EntityType = entity.Key, CanonicalMessage = entity.Value,
-                IntervalSeconds = adapter.PollIntervalSeconds, OverlapSeconds = adapter.PollOverlapSeconds,
+                IntervalSeconds = declaration.PollIntervalSecondsByEntity is not null
+                    && declaration.PollIntervalSecondsByEntity.TryGetValue(entity.Key, out var intervalSeconds)
+                        ? intervalSeconds
+                        : adapter.PollIntervalSeconds,
+                OverlapSeconds = adapter.PollOverlapSeconds,
                 NextPollAt = clock.UtcNow,
             }));
         if (!await db.ConnectionNotificationSources.AnyAsync(x => x.TenantId == tenant.TenantId && x.ConnectionId == id, ct))

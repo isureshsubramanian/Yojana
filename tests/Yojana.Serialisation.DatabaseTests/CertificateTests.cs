@@ -506,6 +506,79 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Full_BOM_is_snapshotted_at_issue_and_excludes_serial_resource_text_and_labour_lines()
+    {
+        var setup = await CommissionAsync("cert-full-bom", itemClass: "server");
+        var sourceAt = new DateTimeOffset(2026, 8, 31, 16, 30, 0, TimeSpan.Zero);
+        var ports = fixture.Services.GetRequiredService<InMemoryItemPorts>();
+        ports.RegisterBillOfMaterials(setup.ItemId, new(sourceAt,
+        [
+            new(0, "item", Guid.NewGuid(), "FIC-NVME", "Fictional NVMe drive", 4, "EA", true, true),
+            new(1, "item", Guid.NewGuid(), "FIC-RAIL", "Tool-less rail kit", 1, "EA", false, true),
+            new(2, "item", Guid.NewGuid(), "FIC-LABOUR", "Assembly labour", 4, "H", false, false),
+            new(3, "resource", null, "FIC-BENCH", "Assembly bench", 1, "H", false, null),
+            new(4, "text", null, null, "Fit retention bracket before test", 0, null, false, null),
+        ]));
+        using (var configure = fixture.ScopeFor(setup.Tenant))
+        {
+            var settings = configure.ServiceProvider.GetRequiredService<ReleaseRecordIssuePointSettings>();
+            var current = await settings.GetAsync(default);
+            await settings.SetAsync(new(current.DefaultIssuePoint, current.ItemClassOverrides, current.Version,
+                ReleaseRecordBomContent.FullBom), default);
+        }
+
+        await ReleaseAsync(setup);
+        await WaitForCountAsync(setup.Tenant, setup.UnitId, CertificateDocumentKind.ReleaseRecord, 1);
+        string payloadBefore;
+        using (var issued = fixture.ScopeFor(setup.Tenant))
+            payloadBefore = await issued.ServiceProvider.GetRequiredService<SerialisationDbContext>()
+                .CertificateInstances.AsNoTracking().Where(row => row.UnitId == setup.UnitId
+                    && row.DocumentKind == CertificateDocumentKind.ReleaseRecord)
+                .Select(row => row.Payload).SingleAsync();
+        var snapshot = JsonSerializer.Deserialize<ReleaseRecordPayload>(payloadBefore, CanonicalJson.Options)!;
+        Assert.True(snapshot.FullBomRequested);
+        Assert.Equal(sourceAt, snapshot.BomSyncedAt);
+        var otherPart = Assert.Single(snapshot.BomLines!);
+        Assert.Equal((1, "FIC-RAIL", 1m), (otherPart.LineNo, otherPart.ItemCode, otherPart.Quantity));
+
+        ports.RegisterBillOfMaterials(setup.ItemId, new(sourceAt.AddDays(1),
+            [new(9, "item", Guid.NewGuid(), "FIC-CHANGED", "Changed after issue", 1, "EA", false, true)]));
+        using var verify = fixture.ScopeFor(setup.Tenant);
+        var payloadAfter = await verify.ServiceProvider.GetRequiredService<SerialisationDbContext>()
+            .CertificateInstances.AsNoTracking().Where(row => row.UnitId == setup.UnitId
+                && row.DocumentKind == CertificateDocumentKind.ReleaseRecord)
+            .Select(row => row.Payload).SingleAsync();
+        Assert.Equal(payloadBefore, payloadAfter);
+        Assert.DoesNotContain("FIC-CHANGED", payloadAfter, StringComparison.Ordinal);
+    }
+
+    [DatabaseFact]
+    public async Task Full_BOM_mode_issues_when_no_BOM_was_synced()
+    {
+        var setup = await CommissionAsync("cert-no-bom", itemClass: "storage");
+        using (var configure = fixture.ScopeFor(setup.Tenant))
+        {
+            var settings = configure.ServiceProvider.GetRequiredService<ReleaseRecordIssuePointSettings>();
+            var current = await settings.GetAsync(default);
+            await settings.SetAsync(new(current.DefaultIssuePoint, current.ItemClassOverrides, current.Version,
+                ReleaseRecordBomContent.FullBom), default);
+        }
+
+        await ReleaseAsync(setup);
+        await WaitForCountAsync(setup.Tenant, setup.UnitId, CertificateDocumentKind.ReleaseRecord, 1);
+
+        using var scope = fixture.ScopeFor(setup.Tenant);
+        var payloadText = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>()
+            .CertificateInstances.AsNoTracking().Where(row => row.UnitId == setup.UnitId
+                && row.DocumentKind == CertificateDocumentKind.ReleaseRecord)
+            .Select(row => row.Payload).SingleAsync();
+        var payload = JsonSerializer.Deserialize<ReleaseRecordPayload>(payloadText, CanonicalJson.Options)!;
+        Assert.True(payload.FullBomRequested);
+        Assert.Null(payload.BomSyncedAt);
+        Assert.Empty(payload.BomLines!);
+    }
+
+    [DatabaseFact]
     public async Task Unreleased_units_and_incomplete_reconstruction_provenance_are_typed_refusals()
     {
         var setup = await CommissionAsync("cert-refuse");
@@ -1147,10 +1220,11 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
         var dbAfter = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
         var builtIn = await dbAfter.CertificateTemplateVersions.AsNoTracking().Where(row => row.TemplateId == builtInId)
             .OrderBy(row => row.Version).ToListAsync();
-        Assert.Equal([1, 4], builtIn.Select(row => row.Version));
+        Assert.Equal([1, 5], builtIn.Select(row => row.Version));
         Assert.Equal(CertificateTemplateStatus.Retired, builtIn[0].Status);
         Assert.Equal(CertificateTemplateStatus.Active, builtIn[1].Status);
-        Assert.Contains("As-built at release", builtIn[1].LayoutBody, StringComparison.Ordinal);
+        Assert.Contains("<h2>As-built</h2>", builtIn[1].LayoutBody, StringComparison.Ordinal);
+        Assert.Contains("<h3>Serialised components</h3>", builtIn[1].LayoutBody, StringComparison.Ordinal);
         var tenantCopy = await dbAfter.CertificateTemplateVersions.AsNoTracking().SingleAsync(row => row.TemplateId == copyId);
         Assert.Equal((1, CertificateTemplateStatus.Active, legacyLayout), (tenantCopy.Version, tenantCopy.Status, tenantCopy.LayoutBody));
     }
@@ -1238,7 +1312,10 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
         });
         fixture.Services.GetRequiredService<InMemoryItemNamePort>().Register(new ItemLabel(item, "YT-100", "Telemetry controller"));
         if (missingRequiredComponent)
+        {
             items.RegisterBom(item, [new ExpectedComponent("BAT", Guid.NewGuid(), "BAT-1", 1)]);
+            await fixture.EnableErpBomCompletenessAsync(tenant);
+        }
         var command = new CommissionUnits(Guid.NewGuid(), item, UnitOrigin.Manufactured,
             [new CommissionLine([new IdentifierInput(IdentifierType.InternalSerial, serial)])], At,
             "production.user", Entity, LocationId: location, LocationKind: LocationKind.Warehouse);

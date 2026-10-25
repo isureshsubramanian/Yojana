@@ -111,6 +111,7 @@ public sealed class BackOfficeReportTests(SerialisationHostFixture fixture)
         var secondOwner = Guid.NewGuid();
         fixture.Services.GetRequiredService<InMemoryItemPorts>().RegisterBom(rootItem,
             [new ExpectedComponent("BAREBONES", componentItem, "BB-24", 1)]);
+        await fixture.EnableErpBomCompletenessAsync(tenant);
         var complete = await UnitAsync(tenant, rootItem, "RPT240001");
         var missing = await UnitAsync(tenant, rootItem, "RPT240002");
         var component = await UnitAsync(tenant, componentItem, "RPT24BB01");

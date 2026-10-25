@@ -74,6 +74,7 @@ public sealed class OpenEnumJsonConverter : JsonConverter<OpenEnum>
         "webhook", "poll", "file", "edi", "backfill", "replay", "manual",
         "complete", "partial", "unknown",
         "none", "serial", "lot", "serial_and_lot",
+        "item", "resource", "text",
         "customer", "vendor", "both",
         "in", "out", "count", "status_change",
         "cancelled", "reversed", "deleted", "voided",
@@ -131,7 +132,12 @@ public sealed record Money(decimal Amount, string Currency);
 public sealed record UnitReference(Guid UnitId, string IdentifierValue);
 
 public sealed record ItemUpserted(string ItemExternalId, string Description, OpenEnum TrackingMode, string Uom,
-    bool IsWarrantyProduct, string? WarrantyTemplateRef = null, bool Deleted = false);
+    bool IsWarrantyProduct, string? WarrantyTemplateRef = null, bool Deleted = false,
+    bool IsInventoryItem = true);
+public sealed record BomUpsertedLine(int LineNo, OpenEnum Kind, string? ItemExternalId, string Description,
+    decimal Quantity, string? Uom);
+public sealed record BomUpserted(string ParentItemExternalId, DateTimeOffset SourceChangedAt, bool Deleted,
+    IReadOnlyList<BomUpsertedLine> Lines);
 public sealed record PartyUpserted(string PartyExternalId, OpenEnum PartyKind, string LegalName, string? TaxId,
     string Country, string? MergedFromExternalId = null, bool Deleted = false);
 public sealed record GoodsReceiptPosted(ExternalDocumentRef DocumentRef, string VendorPartyExternalId,

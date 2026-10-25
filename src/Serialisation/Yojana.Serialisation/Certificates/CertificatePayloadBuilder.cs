@@ -27,7 +27,8 @@ public sealed class CertificatePayloadBuilder(ICertificateUnitReadPort units, II
         var provenance = Provenance(command);
         if (command.DocumentKind == CertificateDocumentKind.ReleaseRecord)
         {
-            var payload = await releases.BuildAsync(unit, trigger, command.FormType, issuePresentation, provenance, cancellationToken);
+            var payload = await releases.BuildAsync(unit, trigger, command.FormType, issuePresentation, provenance,
+                cancellationToken, itemClass);
             return new PayloadBuildResult(CanonicalJson.Serialise(payload), unit.Build?.BuildRecordId, null, itemClass);
         }
         if (command.DocumentKind == CertificateDocumentKind.WarrantyCertificate)
@@ -58,13 +59,14 @@ public sealed class CertificatePayloadBuilder(ICertificateUnitReadPort units, II
             throw new ArgumentException("Only release records are built in batches.", nameof(inputs));
         var presentations = new Dictionary<(Guid, string, string, string, Guid), CertificatePresentation>();
         var builds = new List<ReleaseRecordBuildInput>(inputs.Count);
-        foreach (var (command, unit, templateVersionId, _) in inputs)
+        foreach (var (command, unit, templateVersionId, itemClass) in inputs)
         {
             var key = (command.IssuerEntityId, command.DocumentKind, command.FormType, command.Language, templateVersionId);
             if (!presentations.TryGetValue(key, out var issuePresentation))
                 presentations[key] = issuePresentation = await presentation.ResolveAsync(command.IssuerEntityId,
                     command.DocumentKind, command.FormType, command.Language, templateVersionId, cancellationToken);
-            builds.Add(new(unit, Trigger(command), command.FormType, issuePresentation, Provenance(command)));
+            builds.Add(new(unit, Trigger(command), command.FormType, issuePresentation, Provenance(command),
+                itemClass));
         }
         var payloads = await releases.BuildManyAsync(builds, cancellationToken);
         return inputs.Select((input, index) => new PayloadBuildResult(CanonicalJson.Serialise(payloads[index]),

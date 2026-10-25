@@ -8,6 +8,8 @@ using Wolverine;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Platform.Data.Platform;
+using Yojana.Platform.Security;
 using Yojana.Platform.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.CustomerMail;
@@ -1229,6 +1231,46 @@ public static class SerialisationEndpoints
             try { return Results.Ok(await settings.SetAsync(itemId, update, Actor(user), ct)); }
             catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
         }).RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        generalSettings.MapGet("/as-built-completeness", async (
+            ErpBomCompletenessSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        generalSettings.MapPut("/as-built-completeness", async (
+            UpdateErpBomCompletenessSettings update, ErpBomCompletenessSettings settings,
+            SecurityEventWriter events, PlatformDbContext platform, ITenantContext tenant,
+            HttpContext http, ClaimsPrincipal user, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(update.ExpectedVersion))
+                return Results.Problem(title: "document_version_required",
+                    detail: "ExpectedVersion is required for a settings edit.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            try
+            {
+                var before = await settings.GetAsync(ct);
+                var saved = await settings.SetAsync(update, ct);
+                if (before.CheckAgainstErpBom != saved.CheckAgainstErpBom)
+                {
+                    var actor = Guid.Parse(Actor(user));
+                    events.Add(SecurityEventKind.SettingsChanged, null, tenant.TenantId, actor,
+                        new SecurityRequestContext(http.Connection.RemoteIpAddress?.ToString(),
+                            http.Request.Headers.UserAgent.ToString()), "serialisation.erp_bom_completeness");
+                    await platform.SaveChangesAsync(ct);
+                }
+                return Results.Ok(saved);
+            }
+            catch (TenantSettingVersionConflictException ex)
+            {
+                return Results.Problem(title: "document_changed",
+                    detail: "As-built completeness settings changed after this screen was loaded; reload to see the current values.",
+                    statusCode: StatusCodes.Status409Conflict,
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["rule"] = "document_changed",
+                        ["expectedVersion"] = ex.ExpectedVersion,
+                        ["currentVersion"] = ex.CurrentVersion,
+                    });
+            }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
+        }).RequireAuthorization(YojanaPolicy.TenantAdministrator);
         generalSettings.MapGet("/time-zone", async (TenantTimeZoneSettings settings, CancellationToken ct) =>
             Results.Ok(await settings.GetAsync(ct)));
         generalSettings.MapPut("/time-zone", async (UpdateTenantTimeZoneSettings update,
@@ -1283,7 +1325,8 @@ public static class SerialisationEndpoints
             .RequireAuthorization(YojanaPolicy.TenantAdministrator);
         certificates.MapPut("/settings/release-record-issue-point", async (
             UpdateReleaseRecordIssuePointSettings update, ReleaseRecordIssuePointSettings settings,
-            CancellationToken ct) =>
+            SecurityEventWriter events, PlatformDbContext platform, ITenantContext tenant,
+            HttpContext http, ClaimsPrincipal user, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(update.ExpectedVersion))
                 return Results.Problem(title: "document_version_required",
@@ -1291,7 +1334,19 @@ public static class SerialisationEndpoints
                     statusCode: StatusCodes.Status400BadRequest);
             try
             {
-                return Results.Ok(await settings.SetAsync(update, ct));
+                var before = await settings.GetAsync(ct);
+                var saved = await settings.SetAsync(update, ct);
+                if (before.DefaultIssuePoint != saved.DefaultIssuePoint
+                    || before.DefaultBomContent != saved.DefaultBomContent
+                    || !before.ItemClassOverrides.SequenceEqual(saved.ItemClassOverrides))
+                {
+                    var actor = Guid.Parse(Actor(user));
+                    events.Add(SecurityEventKind.SettingsChanged, null, tenant.TenantId, actor,
+                        new SecurityRequestContext(http.Connection.RemoteIpAddress?.ToString(),
+                            http.Request.Headers.UserAgent.ToString()), "certificates.release_record");
+                    await platform.SaveChangesAsync(ct);
+                }
+                return Results.Ok(saved);
             }
             catch (TenantSettingVersionConflictException ex)
             {

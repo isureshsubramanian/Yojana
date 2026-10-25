@@ -14,6 +14,7 @@ public static class Cx04Capabilities
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["ItemUpserted"] = CapabilitySupport.Native,
+            ["BomUpserted"] = CapabilitySupport.Unsupported,
             ["PartyUpserted"] = CapabilitySupport.Native,
             ["GoodsReceiptPosted"] = CapabilitySupport.Native,
             ["ProductionCompleted"] = CapabilitySupport.Native,

@@ -8,7 +8,8 @@ public sealed class ContractCompatibilityTests
 {
     private static readonly Dictionary<string, Type> PayloadTypes = new(StringComparer.Ordinal)
     {
-        ["ItemUpserted"] = typeof(ItemUpserted), ["PartyUpserted"] = typeof(PartyUpserted),
+        ["ItemUpserted"] = typeof(ItemUpserted), ["BomUpserted"] = typeof(BomUpserted),
+        ["PartyUpserted"] = typeof(PartyUpserted),
         ["GoodsReceiptPosted"] = typeof(GoodsReceiptPosted), ["ProductionCompleted"] = typeof(ProductionCompleted),
         ["DeliveryPosted"] = typeof(DeliveryPosted), ["InvoicePosted"] = typeof(InvoicePosted),
         ["ReturnReceived"] = typeof(ReturnReceived), ["TransferPosted"] = typeof(TransferPosted),
@@ -25,7 +26,7 @@ public sealed class ContractCompatibilityTests
     {
         var examples = IntegrationSchemaCatalog.Resources.Where(name => name.Contains(".examples.", StringComparison.Ordinal)
             && name.EndsWith(".json", StringComparison.Ordinal)).ToList();
-        Assert.Equal(18, examples.Count);
+        Assert.Equal(19, examples.Count);
         foreach (var resource in examples)
         {
             var slug = resource[(resource.LastIndexOf(".examples.", StringComparison.Ordinal) + 10)..^5];
@@ -69,6 +70,19 @@ public sealed class ContractCompatibilityTests
         var parsed = JsonSerializer.Deserialize<CanonicalMessage<ItemUpserted>>(node.ToJsonString(), IntegrationContracts.Json)!;
         Assert.Equal(OpenEnum.Other, parsed.Payload.TrackingMode.Value);
         Assert.Equal("quantum_tracking", parsed.Payload.TrackingMode.RawValue);
+    }
+
+    [Fact]
+    public void Previous_item_payloads_without_inventory_flag_keep_the_inventory_default()
+    {
+        var node = System.Text.Json.Nodes.JsonNode.Parse(
+            IntegrationSchemaCatalog.Read("examples/item-upserted.json"))!.AsObject();
+        node["payload"]!.AsObject().Remove("is_inventory_item");
+
+        var parsed = JsonSerializer.Deserialize<CanonicalMessage<ItemUpserted>>(
+            node.ToJsonString(), IntegrationContracts.Json)!;
+
+        Assert.True(parsed.Payload.IsInventoryItem);
     }
 
     [Theory]

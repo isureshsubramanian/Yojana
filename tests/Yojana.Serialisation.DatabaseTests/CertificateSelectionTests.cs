@@ -292,7 +292,11 @@ public sealed class CertificateSelectionTests(SerialisationHostFixture fixture)
         });
         fixture.Services.GetRequiredService<InMemoryItemNamePort>().Register(new ItemLabel(itemId,
             $"FIC-{serial}", "Fictional control assembly"));
-        if (missingRequired) items.RegisterBom(itemId, [new ExpectedComponent("controller-b", Guid.NewGuid(), "FIC-CTRL-B", 1)]);
+        if (missingRequired)
+        {
+            items.RegisterBom(itemId, [new ExpectedComponent("controller-b", Guid.NewGuid(), "FIC-CTRL-B", 1)]);
+            await fixture.EnableErpBomCompletenessAsync(tenant);
+        }
         var commissioned = await InvokeAsync<CommissionUnitsResult>(tenant, new CommissionUnits(Guid.NewGuid(), itemId,
             UnitOrigin.Manufactured, [new CommissionLine([new IdentifierInput(IdentifierType.InternalSerial, serial)])],
             At, "production.user", Entity, LocationId: locationId, LocationKind: LocationKind.Warehouse));

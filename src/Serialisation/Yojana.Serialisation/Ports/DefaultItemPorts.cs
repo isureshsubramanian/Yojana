@@ -12,6 +12,7 @@ public sealed class InMemoryItemPorts : IItemQueryPort, IBomQueryPort
 {
     private readonly ConcurrentDictionary<Guid, ItemSerialisationProfile> items = new();
     private readonly ConcurrentDictionary<Guid, IReadOnlyList<ExpectedComponent>> boms = new();
+    private readonly ConcurrentDictionary<Guid, BillOfMaterials> fullBoms = new();
 
     /// <summary>Profile returned for an item nobody registered: serial-tracked, released at production, never re-used, complete, saleable and serviceable.</summary>
     public static ItemSerialisationProfile DefaultProfile(Guid itemId) => new(itemId, "ITEM-" + itemId.ToString("N")[..8].ToUpperInvariant(),
@@ -23,6 +24,9 @@ public sealed class InMemoryItemPorts : IItemQueryPort, IBomQueryPort
     public void Register(ItemSerialisationProfile profile) => items[profile.ItemId] = profile;
 
     public void RegisterBom(Guid itemId, IReadOnlyList<ExpectedComponent> components) => boms[itemId] = components;
+
+    public void RegisterBillOfMaterials(Guid itemId, BillOfMaterials billOfMaterials) =>
+        fullBoms[itemId] = billOfMaterials;
 
     public Task<ItemSerialisationProfile?> GetAsync(Guid itemId, CancellationToken cancellationToken) =>
         Task.FromResult(items.TryGetValue(itemId, out var p) ? p : UseDefaultForUnknownItems ? DefaultProfile(itemId) : null);
@@ -37,6 +41,9 @@ public sealed class InMemoryItemPorts : IItemQueryPort, IBomQueryPort
 
     public Task<IReadOnlyList<ExpectedComponent>> ExpectedSerialisedComponentsAsync(Guid itemId, DateOnly effectiveAt, CancellationToken cancellationToken) =>
         Task.FromResult(boms.TryGetValue(itemId, out var b) ? b : []);
+
+    public Task<BillOfMaterials?> BillOfMaterialsAsync(Guid itemId, CancellationToken cancellationToken) =>
+        Task.FromResult(fullBoms.TryGetValue(itemId, out var billOfMaterials) ? billOfMaterials : null);
 
     public Task<IReadOnlyDictionary<ExpectedComponentQuery, IReadOnlyList<ExpectedComponent>>> ExpectedSerialisedComponentsAsync(
         IReadOnlyCollection<ExpectedComponentQuery> queries, CancellationToken cancellationToken) =>

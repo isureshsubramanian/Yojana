@@ -71,9 +71,14 @@ public sealed record Cx04SignInHistoryPage(IReadOnlyList<Cx04SignInHistoryItem> 
 
 public sealed record ConnectionDeclaration(IReadOnlyDictionary<string, string> Capabilities,
     ConnectorThrottleDeclaration Throttle, IReadOnlyDictionary<string, string> PollEntities,
-    IReadOnlyList<string> NotificationSources);
+    IReadOnlyList<string> NotificationSources,
+    IReadOnlyDictionary<string, int>? PollIntervalSecondsByEntity = null);
 public sealed record ConnectionProbe(JsonElement? SurveySummary, bool? NotificationsSupported = null);
 
-public sealed record ConnectionRegistrationField(string Code, string Label, string Type, string? DefaultValue = null);
+public sealed record ConnectionRegistrationField(string Code, string Label, string Type, string? DefaultValue = null,
+    IReadOnlyList<ConnectionFieldOption>? Options = null);
+
+/// <summary>One choice of a "select" registration field: the stored value and the label shown.</summary>
+public sealed record ConnectionFieldOption(string Value, string Label);
 public sealed record ConnectionRegistrationForm(IReadOnlyList<ConnectionRegistrationField> Settings,
     string CredentialPurpose, IReadOnlyList<ConnectionRegistrationField> SecretFields);

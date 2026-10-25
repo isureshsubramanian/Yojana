@@ -7,6 +7,8 @@ import {
   certificateDateTimeExample,
   certificateTimePatterns,
 } from "../src/settings/certificateDateFormats.ts";
+import { releaseRecordIssuePointSettings } from "../src/settings/certificateSettingsApi.ts";
+import * as z from "zod/mini";
 
 test("certificate date setting offers every approved fixed pattern with a live example", () => {
   assert.deepEqual(certificateDatePatterns, ["d MMM yyyy", "dd/MM/yyyy", "MM/dd/yyyy", "yyyy-MM-dd"]);
@@ -33,4 +35,15 @@ test("certificate API schemas accept the DTO and refuse a missing required field
 test("certificate date samples use the tenant time zone", () => {
   const sample = certificateDateTimeExample("en", "d MMM yyyy", "HH:mm", "Asia/Kolkata");
   assert.equal(sample, "18 Oct 2026, 19:15 IST");
+});
+
+test("release settings validate BOM content for the default and each item-class override", () => {
+  const settings = { defaultIssuePoint: "at_build_release", defaultBomContent: "full_bom",
+    itemClassOverrides: [{ itemClass: "Compute", issuePoint: "on_request", bomContent: "serialised_only" }],
+    version: "AAAAAAAAB9E=" };
+  assert.equal(z.safeParse(releaseRecordIssuePointSettings, settings).success, true);
+  assert.equal(z.safeParse(releaseRecordIssuePointSettings, { ...settings, defaultBomContent: "everything" }).success, false);
+  const source = readFileSync(new URL("../src/settings/CertificateSettings.tsx", import.meta.url), "utf8");
+  assert.match(source, /only serialised components can be printed/);
+  assert.match(source, /BOM content/);
 });

@@ -23,6 +23,9 @@
     <Content Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Fixtures/**/*.json"
              Link="Connectors/CX01/Fixtures/%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Fixtures/tree-2u-real.json"
+             Link="Connectors/CX01/Fixtures/tree-2u-real.json"
+             CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../../src/Integration/Yojana.Integration/Connectors/CX02/Extension/Contract/v1.0/**/*"
              Link="Connectors/CX02/Contract/v1.0/%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" />

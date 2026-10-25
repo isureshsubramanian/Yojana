@@ -92,6 +92,7 @@ public sealed class P3ExitTicketTests(SerialisationHostFixture fixture)
         var componentItem = Guid.NewGuid();
         fixture.Services.GetRequiredService<InMemoryItemPorts>().RegisterBom(parentItem,
             [new ExpectedComponent("drive-1", componentItem, "DRIVE", 1)]);
+        await fixture.EnableErpBomCompletenessAsync(tenant);
         var parent = await Scenario.CommissionAsync(tenant, Marker("T15P"), item: parentItem);
         var child = await Scenario.CommissionAsync(tenant, Marker("T15C"), item: componentItem);
 

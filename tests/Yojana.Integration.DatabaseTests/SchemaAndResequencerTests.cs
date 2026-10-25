@@ -38,6 +38,16 @@ public sealed class SchemaAndResequencerTests(IntegrationHostFixture fixture)
             "erp_change_notice");
         AssertSuperset(tables, "connector_acceptance_run", "connector_acceptance_item",
             "connector_acceptance_import");
+        AssertSuperset(tables, "bom_projection", "bom_projection_line");
+        foreach (var table in new[] { "bom_projection", "bom_projection_line" })
+        {
+            var bomColumns = await db.Database.SqlQuery<string>($"""
+                SELECT COLUMN_NAME AS [Value] FROM INFORMATION_SCHEMA.COLUMNS
+                 WHERE TABLE_SCHEMA = 'integration' AND TABLE_NAME = {table} ORDER BY ORDINAL_POSITION
+                """).ToListAsync();
+            Assert.Equal("tenant_id", bomColumns[0]);
+            if (table == "bom_projection") Assert.Contains("content_hash", bomColumns);
+        }
         foreach (var table in new[] { "connector_acceptance_run", "connector_acceptance_item",
                      "connector_acceptance_import" })
         {

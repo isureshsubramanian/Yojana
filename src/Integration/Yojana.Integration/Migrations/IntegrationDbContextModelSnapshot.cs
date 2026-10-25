@@ -247,6 +247,121 @@ namespace Yojana.Integration.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.BomProjection", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("BomProjectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("bom_projection_id");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("connection_id");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("content_hash")
+                        .IsFixedLength();
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("bit")
+                        .HasColumnName("deleted");
+
+                    b.Property<string>("ParentItemExternalId")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("parent_item_external_id");
+
+                    b.Property<Guid>("ParentItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("parent_item_id");
+
+                    b.Property<DateTimeOffset>("SourceChangedAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("source_changed_at");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("TenantId", "BomProjectionId")
+                        .HasName("pk_bom_projection");
+
+                    b.HasIndex("TenantId", "ParentItemId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_bom_projection_tenant_id_parent_item_id");
+
+                    b.HasIndex("TenantId", "ConnectionId", "ParentItemExternalId")
+                        .HasDatabaseName("ix_bom_projection_tenant_id_connection_id_parent_item_external_id");
+
+                    b.ToTable("bom_projection", "integration");
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.BomProjectionLine", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("BomProjectionId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("bom_projection_id");
+
+                    b.Property<int>("LineNo")
+                        .HasColumnType("int")
+                        .HasColumnName("line_no");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("ItemExternalId")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
+                        .HasColumnName("item_external_id");
+
+                    b.Property<Guid?>("ItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("item_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(24)")
+                        .HasColumnName("kind");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(28, 8)
+                        .HasColumnType("decimal(28,8)")
+                        .HasColumnName("quantity");
+
+                    b.Property<string>("Uom")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("uom");
+
+                    b.HasKey("TenantId", "BomProjectionId", "LineNo")
+                        .HasName("pk_bom_projection_line");
+
+                    b.HasIndex("TenantId", "ItemId", "BomProjectionId")
+                        .HasDatabaseName("ix_bom_projection_line_tenant_id_item_id_bom_projection_id");
+
+                    b.ToTable("bom_projection_line", "integration", t =>
+                        {
+                            t.HasCheckConstraint("ck_bom_projection_line_kind", "kind IN ('item','resource','text','other')");
+                        });
+                });
+
             modelBuilder.Entity("Yojana.Integration.Data.Entities.CanonicalDocument", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -9215,6 +9330,16 @@ namespace Yojana.Integration.Migrations
                         {
                             t.HasCheckConstraint("ck_relay_status", "status IN ('active','revoked')");
                         });
+                });
+
+            modelBuilder.Entity("Yojana.Integration.Data.Entities.BomProjectionLine", b =>
+                {
+                    b.HasOne("Yojana.Integration.Data.Entities.BomProjection", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "BomProjectionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_bom_projection_line_tenant_id_bom_projection_id");
                 });
 
             modelBuilder.Entity("Yojana.Integration.Data.Entities.ConnectorAcceptanceImport", b =>

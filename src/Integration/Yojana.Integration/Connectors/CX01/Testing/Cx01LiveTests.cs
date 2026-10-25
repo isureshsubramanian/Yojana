@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Yojana.Integration.Contracts;
+using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Time;
 using Xunit;
 
@@ -21,6 +23,45 @@ internal sealed class Cx01LiveFactAttribute : FactAttribute
 
 public sealed class Cx01LiveTests
 {
+    [Cx01LiveFact]
+    [Trait("Category", "Cx01Live")]
+    public async Task Read_only_product_tree_maps_the_real_line_shape_and_non_inventory_labour()
+    {
+        using var session = await LiveClientAsync(CancellationToken.None);
+        using var treeResponse = await session.Client.GetAsync(
+            Cx01Protocol.Root + "ProductTrees('YD-SRV-2U')", CancellationToken.None);
+        treeResponse.EnsureSuccessStatusCode();
+        using var tree = JsonDocument.Parse(await treeResponse.Content.ReadAsStringAsync(CancellationToken.None));
+        var mapped = Cx01Mapper.Map(new TenantId(Guid.CreateVersion7()), Guid.CreateVersion7(),
+            Cx01Protocol.Entities["product_trees"], tree.RootElement,
+            new Dictionary<int, IReadOnlyList<CanonicalSerial>>(),
+            new Dictionary<int, IReadOnlyList<CanonicalSerial>>(), new HashSet<int>(), "poll",
+            new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc));
+        using var canonical = JsonDocument.Parse(mapped.Acceptance.CanonicalMessage);
+        var lines = canonical.RootElement.GetProperty("payload").GetProperty("lines").EnumerateArray().ToList();
+        Assert.Equal(14, lines.Count);
+        Assert.Equal(14, lines.Count(line => line.GetProperty("kind").GetString() == "item"));
+        Assert.Equal(14, lines.Select(line => line.GetProperty("line_no").GetInt32()).Distinct().Count());
+        var itemCodes = lines.Select(line => line.GetProperty("item_external_id").GetString())
+            .OfType<string>().ToList();
+        var inventory = 0;
+        var labourInventory = true;
+        foreach (var itemCode in itemCodes)
+        {
+            using var itemResponse = await session.Client.GetAsync(Cx01Protocol.Root + "Items("
+                + Cx01Protocol.KeyLiteral(itemCode) + ")", CancellationToken.None);
+            itemResponse.EnsureSuccessStatusCode();
+            using var item = JsonDocument.Parse(await itemResponse.Content.ReadAsStringAsync(CancellationToken.None));
+            var isInventory = item.RootElement.GetProperty("InventoryItem").GetString() == "tYES";
+            if (isInventory) inventory++;
+            if (itemCode == "L10001") labourInventory = isInventory;
+        }
+        Assert.Equal(13, inventory);
+        Assert.False(labourInventory);
+        Assert.Contains(lines, line => line.GetProperty("item_external_id").GetString() == "L10001"
+            && line.GetProperty("kind").GetString() == "item");
+    }
+
     [Cx01LiveFact("YOJANA_CX01_EQUIPMENT_CARD_KEY")]
     [Trait("Category", "Cx01Live")]
     public async Task Installed_base_status_update_path_accepts_an_unchanged_value()

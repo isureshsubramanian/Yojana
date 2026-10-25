@@ -20,6 +20,8 @@ public sealed record Cx01ConnectionSettings(
     IReadOnlyDictionary<string, string>? MandatoryUserFieldDefaults = null,
     string OwnReferencePrefix = "YOJANA:",
     int PollPageSize = 100,
+    string BomSyncSchedule = Cx01BomSyncSchedule.Daily,
+    string BomSyncDailyAt = "02:00",
     int KeepAliveMinutes = 20,
     IReadOnlyDictionary<string, bool>? TrackingTableDeclarations = null,
     IReadOnlyDictionary<string, Cx01FieldSource>? FieldMap = null,
@@ -46,6 +48,11 @@ public sealed record Cx01ConnectionSettings(
             throw new InvalidOperationException("The CX01 company database is required.");
         if (PollPageSize is < 1 or > 1_000)
             throw new InvalidOperationException("The CX01 poll page size must be between 1 and 1000.");
+        if (!Cx01BomSyncSchedule.All.Contains(BomSyncSchedule))
+            throw new InvalidOperationException("The CX01 bill-of-materials sync schedule must be hourly, every 6 hours, every 12 hours or daily.");
+        if (!TimeOnly.TryParseExact(BomSyncDailyAt, "HH:mm", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out _))
+            throw new InvalidOperationException("The CX01 bill-of-materials daily sync time must be HH:mm.");
         if (KeepAliveMinutes is < 1 or > 29)
             throw new InvalidOperationException("The CX01 keep-alive interval must be between 1 and 29 minutes.");
         if (SerialLinkViewEnabled && string.IsNullOrWhiteSpace(SerialLinkViewName))
