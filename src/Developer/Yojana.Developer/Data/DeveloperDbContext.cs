@@ -86,6 +86,7 @@ public sealed class DeveloperDbContext(DbContextOptions<DeveloperDbContext> opti
             b.Property(x => x.Type).HasMaxLength(64).IsUnicode(false);
             b.Property(x => x.Version).HasMaxLength(8).IsUnicode(false);
             b.Property(x => x.RecordKind).HasMaxLength(32).IsUnicode(false);
+            b.Property(x => x.ItemFamily).HasMaxLength(64).IsUnicode(false);
             b.HasIndex(x => new { x.TenantId, x.RecordedAt, x.EventId });
             b.HasIndex(x => new { x.TenantId, x.RecordKind, x.RecordId, x.Sequence });
         });
@@ -124,6 +125,9 @@ public sealed class DeveloperDbContext(DbContextOptions<DeveloperDbContext> opti
             b.HasKey(x => new { x.TenantId, x.OperationId, x.UnitId });
         });
         base.OnModelCreating(modelBuilder);
+        // P14-A: base naming conventions run last; pin the ADR-0018 idempotency index after them.
+        modelBuilder.Entity<WebhookDelivery>().HasIndex(x => new
+            { x.TenantId, x.SubscriptionId, x.EventId }).HasDatabaseName("ux_webhook_delivery_first");
     }
 }
 

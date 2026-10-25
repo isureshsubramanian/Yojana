@@ -91,6 +91,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<UnitCurrentStateProjector>();
         builder.Services.AddScoped<PublishedEventMapper>();
         builder.Services.AddScoped<LedgerPublication>();
+        builder.Services.AddScoped<BulkPublicationContext>();
         builder.Services.AddScoped<UnitEventIdempotencyReader>();
         builder.Services.AddScoped<IUnitEventWriter, UnitEventWriter>();
         builder.Services.AddScoped<IUnitEventAppendObserver, CustomerSaleCertificateObserver>();
@@ -448,6 +449,8 @@ public static class SerialisationModule
         // Unlike the in-memory registry, the fallback resolver is scoped because it reads this request's tenant-filtered
         // DbContext. A real document module may replace the narrow port registration before this module is added.
         builder.Services.TryAddScoped<IDocumentNumberPort, DefaultDocumentNumberPort>();
+        // P14-A: the Developer module reads only these thin filter/reference facts.
+        builder.Services.TryAddScoped<IPublicEventContextPort, PublicEventContextPort>();
         builder.Services.AddSingleton<InMemoryStockReclassificationPort>();
         builder.Services.TryAddSingleton<IStockReclassificationPort>(sp => sp.GetRequiredService<InMemoryStockReclassificationPort>());
         builder.Services.AddSingleton<InMemoryStockQuantityPort>();

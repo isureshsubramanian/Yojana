@@ -128,7 +128,10 @@ public static class SubmitClaimHandler
             {
                 UnitId = claim.UnitId, EventTime = command.EventTime, EventType = ClaimEventType.Submitted, PresetEventId = eventId,
                 LegalEntityId = claim.ServiceEntityId, ActorRef = command.ActorRef, IdempotencyKey = ClaimLedger.Key(command.CommandId, claim.UnitId, ClaimEventType.Submitted, command.EventTime),
-                Attributes = JsonObjectText.Of(new { claim_id = claimId, campaign_id = claim.CampaignId, claim_date = claim.ClaimDate, claimant_party_ref = claim.ClaimantPartyRef, settlement_party_ref = claim.SettlementPartyRef, line_ids = claimLines.Select(l => l.ClaimLineId), remedy = claim.Remedy }),
+                Attributes = JsonObjectText.Of(new { claim_id = claimId, claim_number = claim.ClaimNumber,
+                    status = claim.Status, campaign_id = claim.CampaignId, claim_date = claim.ClaimDate,
+                    claimant_party_ref = claim.ClaimantPartyRef, settlement_party_ref = claim.SettlementPartyRef,
+                    line_ids = claimLines.Select(l => l.ClaimLineId), remedy = claim.Remedy }),
             },
         ], cancellationToken);
         return new(claimId, claim.UnitId, claim.Status, claimLines.Select(l => l.ClaimLineId).ToList(), eventId, false);

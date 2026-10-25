@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"endpoint.verify","type":"object","additionalProperties":false,"required":["type","challenge"],"properties":{"type":{"const":"endpoint.verify"},"challenge":{"type":"string","minLength":32}}}

@@ -4,9 +4,15 @@ namespace Yojana.Serialisation.Contracts;
 // outbox after the unit of work that produced them commits. Each carries its schema name and version; the JSON schema of
 // every version lives beside the contracts under Schemas/<major>.<minor>/ and is embedded in this assembly. A new field is
 // a minor; a removed, renamed or retyped field is a major, and the previous major keeps being published for one release.
+//
+// COUPLING with Developer.PublicEventTranslator: internal event shapes are translated into a stable public catalogue.
+// The boundary is necessary because customer integrations must not observe internal renames. A breaking change here
+// without the matching translator change breaks the public-schema contract tests and would otherwise break customers.
 
 /// <summary>Common header of every published event.</summary>
-public sealed record PublishedEventHeader(string Schema, string Version, Guid EventId, Guid UnitId, DateTime EventTime, DateTime RecordedTime, long Seq, Guid LegalEntityId, string ActorRef, DocumentRef? Document);
+public sealed record PublishedEventHeader(string Schema, string Version, Guid EventId, Guid UnitId, DateTime EventTime,
+    DateTime RecordedTime, long Seq, Guid LegalEntityId, string ActorRef, DocumentRef? Document,
+    Guid? OperationId = null, int? OperationSize = null, string? OperationKind = null);
 
 public interface IPublishedUnitEvent
 {

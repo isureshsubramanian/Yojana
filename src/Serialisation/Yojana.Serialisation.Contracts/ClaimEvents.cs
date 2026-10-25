@@ -1,5 +1,17 @@
 namespace Yojana.Serialisation.Contracts;
 
+public sealed record ClaimSubmitted(
+    PublishedEventHeader Header,
+    Guid ClaimId,
+    string ClaimNumber,
+    string Status,
+    string Remedy,
+    IReadOnlyList<Guid> ClaimLineIds) : IPublishedUnitEvent
+{
+    public const string Schema = "Claim.Submitted";
+    public const string Version = "1.0";
+}
+
 public sealed record PublishedClaimLineAmount(Guid ClaimLineId, decimal RequestedAmount, decimal ApprovedAmount, decimal CoveragePct, string CoverageSource, Guid? EntitlementId);
 
 public sealed record ClaimAdjudicated(

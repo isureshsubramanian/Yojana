@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Wolverine;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
@@ -105,7 +106,8 @@ public sealed class ReleaseUnitsOperation(SerialisationDbContext db, IUnitEventW
 }
 
 /// <summary>Preview, execution and find-within over stored selection sets (MOD-11: one transaction, one source document, one approval; the report is the partial-failure report).</summary>
-public sealed class BulkExecutor(SerialisationDbContext db, IServiceProvider services, ITenantContext tenant, IClock clock)
+public sealed class BulkExecutor(SerialisationDbContext db, IServiceProvider services, ITenantContext tenant,
+    IClock clock, IMessageBus bus, BulkPublicationContext publication)
 {
     private IBulkOperation Operation(string name) =>
         services.GetServices<IBulkOperation>().FirstOrDefault(o => o.Name == name) ?? throw new CommandRefusedException("operation_unknown", $"Bulk operation '{name}' is not registered.");
@@ -165,14 +167,23 @@ public sealed class BulkExecutor(SerialisationDbContext db, IServiceProvider ser
 
         var operation = Operation(command.Operation);
         var executionArguments = BulkApprovalArguments.With(command.Arguments, command.Approval);
+        // TIGHT COUPLING with PublishedEventMapper: this scoped marker brackets only the real apply loop so its
+        // published unit facts carry operation identity without widening every established command. Removing either
+        // side makes an above-threshold operation emit per-unit customer events as well as its summary.
         var owned = db.Database.CurrentTransaction is null;
         var transaction = owned ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
         try
         {
-            var done = 0;
+            var planned = new List<(SelectionSetMember Member, UnitOutcome Outcome)>(members.Count);
             foreach (var member in members)
+                planned.Add((member, await operation.CheckBeforeApplyAsync(member.UnitId, member.Serial,
+                    executionArguments, cancellationToken)));
+            publication.OperationId = command.CommandId;
+            publication.OperationSize = planned.Count(item => item.Outcome.Outcome == UnitOutcome.Outcomes.Change);
+            publication.OperationKind = operation.Name;
+            var done = 0;
+            foreach (var (member, outcome) in planned)
             {
-                var outcome = await operation.CheckBeforeApplyAsync(member.UnitId, member.Serial, executionArguments, cancellationToken);
                 if (outcome.Outcome == UnitOutcome.Outcomes.Change)
                 {
                     await operation.ApplyAsync(member.UnitId, command.CommandId, executionArguments, cancellationToken);
@@ -195,6 +206,16 @@ public sealed class BulkExecutor(SerialisationDbContext db, IServiceProvider ser
             selection.SourceDocumentType = command.Arguments.SourceDocument.Type;
             selection.SourceDocumentId = command.Arguments.SourceDocument.Id;
             selection.ApproverRef = command.Approval.ApproverRef;
+            var completedUnits = members.Where(member => member.Outcome == UnitOutcome.Outcomes.Done)
+                .Select(member => member.UnitId).ToList();
+            if (completedUnits.Count > 0)
+                await bus.PublishAsync(new BulkOperationCompleted(
+                        new(BulkOperationCompleted.Schema, BulkOperationCompleted.Version,
+                            TimeOrderedId.New(command.Arguments.EventTime), command.Arguments.EventTime,
+                            clock.UtcNow, command.Arguments.LegalEntityId, command.Arguments.ActorRef,
+                            command.Arguments.SourceDocument),
+                        command.CommandId, operation.Name, completedUnits.Count, completedUnits),
+                    new DeliveryOptions { TenantId = tenant.TenantId.ToString() });
             await db.SaveChangesAsync(cancellationToken);
             if (transaction is not null) await transaction.CommitAsync(cancellationToken);
             return new BulkExecutionResult(command.CommandId, selection.SelectionId, operation.Name, members.Count, done, members.Count(m => m.Outcome == UnitOutcome.Outcomes.Skip), members.Count(m => m.Outcome == UnitOutcome.Outcomes.Block), selection.SelectionId, false);
@@ -206,6 +227,7 @@ public sealed class BulkExecutor(SerialisationDbContext db, IServiceProvider ser
         }
         finally
         {
+            publication.Clear();
             if (transaction is not null) await transaction.DisposeAsync();
         }
     }

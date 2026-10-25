@@ -307,9 +307,11 @@ namespace Yojana.Developer.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("customer_party_ref");
 
-                    b.Property<Guid?>("ItemFamilyId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("item_family_id");
+                    b.Property<string>("ItemFamily")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .HasColumnName("item_family");
 
                     b.Property<Guid?>("LegalEntityId")
                         .HasColumnType("uniqueidentifier")
@@ -414,6 +416,10 @@ namespace Yojana.Developer.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("replay_of");
 
+                    b.Property<DateTime?>("RetryWindowStartedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("retry_window_started_at");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -441,7 +447,7 @@ namespace Yojana.Developer.Migrations
 
                     b.HasIndex("TenantId", "SubscriptionId", "EventId")
                         .IsUnique()
-                        .HasDatabaseName("ux_webhook_delivery_tenant_id_subscription_id_event_id")
+                        .HasDatabaseName("ux_webhook_delivery_first")
                         .HasFilter("[replay_of] IS NULL");
 
                     b.HasIndex("TenantId", "SubscriptionId", "CreatedAt", "DeliveryId")

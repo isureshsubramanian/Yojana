@@ -86,7 +86,8 @@ public sealed record UpdateCampaign(
     decimal PartsPct = 100m,
     decimal LabourPct = 100m,
     decimal TravelPct = 100m,
-    string? ExpectedVersion = null) : IExpectedDocumentVersion;
+    string? ExpectedVersion = null,
+    Guid LegalEntityId = default) : IExpectedDocumentVersion;
 
 public sealed record PreviewCampaign(Guid CampaignId, int Skip = 0, int Take = 50);
 
