@@ -1,61 +1,335 @@
-import type { DocumentRef, SelectionSource, UnitDetail } from "../api/units";
+import * as z from "zod/mini";
+import {
+  commandRefusal,
+  correctionAllocationPreview,
+  correctionAsBuiltRequirementPreview,
+  correctionCertificatePreview,
+  correctionCommissionPreview,
+  correctionEntitlementPreview,
+  correctionEventPreview,
+  correctionExemptionPreview,
+  correctionPreview,
+  correctionPrintJobPreview,
+  documentRef,
+  documentRefInput,
+  documentRefRequest,
+  selectionSourceInput,
+  selectionSourceRequest,
+  unitDetail,
+  unitOutcome,
+} from "./schemas.ts";
 
-export interface CommandRefusal { rule: string; message: string; unblockingStep: string | null }
-export interface UnitOutcome { unitId: string; serial: string | null; outcome: string; reason: string | null; detail: string | null; unblockingStep: string | null }
-export interface CorrectionEventPreview { unitId: string; eventType: string; effectiveAt: string; summary: string | null }
-export interface CorrectionEntitlementPreview { unitId: string; change: string; entitlementId: string | null; summary: string | null }
-export interface CorrectionCertificatePreview { unitId: string; certificateType: string; action: string; reason: string }
-export interface CorrectionPrintJobPreview { unitId: string; jobType: string; reason: string }
-export interface CorrectionAllocationPreview {
-  pair: number; fromSerial: string; exchangeSerial: string | null; fromSerialRangeId: string; exchangeSerialRangeId: string | null;
-  fromProductionOrder: DocumentRef; toProductionOrder: DocumentRef; outcome: string; rule: string | null; detail: string | null; unblockingStep: string | null;
-}
-export interface CorrectionPreview {
-  selectionId: string | null; command: string; unitCount: number; change: number; skip: number; block: number;
-  units: UnitOutcome[]; unitEvents: CorrectionEventPreview[]; entitlementChanges: CorrectionEntitlementPreview[];
-  certificateVersions: CorrectionCertificatePreview[]; printJobs: CorrectionPrintJobPreview[]; refusal: CommandRefusal | null;
-  allocationReassignments: CorrectionAllocationPreview[] | null;
-}
+const text = z.string();
+const number = z.number();
+const nullableText = z.nullable(text);
 
-export interface CorrectionKpiTarget { rootCauseCategory: number; maximumPerThousand: number }
-export interface CorrectionKpiTargetPolicy { rootCauses: CorrectionKpiTarget[] }
-export interface CorrectionKpiBaseline { status: string; historyDays: number; daysRemaining: number; startedOn: string | null; targetsEffectiveOn: string | null }
-export interface CorrectionKpiRow { bucket: string; dimension: string; corrections: number; unitsCorrected: number; unitsShipped: number; perThousand: number | null; reversedLater: number; targetPerThousand: number | null }
-export interface UnclassifiedRequestRate { bucket: string; ratePercent: number; unclassifiedRequests: number; corrections: number; alert: boolean }
-export interface UnclassifiedRequestAlert { thresholdPercent: number; ratePercent: number; unclassifiedRequests: number; corrections: number; alert: boolean; months: UnclassifiedRequestRate[] | null }
-export interface CorrectionKpiReport { from: string; to: string; breakdown: string; itemId: string | null; baseline: CorrectionKpiBaseline; rows: CorrectionKpiRow[]; unclassifiedAlert: UnclassifiedRequestAlert | null }
+// Common correction preview contracts are shared with workbenchApi through one explicit schema boundary.
+export {
+  commandRefusal,
+  correctionAllocationPreview,
+  correctionAsBuiltRequirementPreview,
+  correctionCertificatePreview,
+  correctionCommissionPreview,
+  correctionEntitlementPreview,
+  correctionEventPreview,
+  correctionExemptionPreview,
+  correctionPreview,
+  correctionPrintJobPreview,
+  unitOutcome,
+};
+export type CommandRefusal = z.infer<typeof commandRefusal>;
+export type UnitOutcome = z.infer<typeof unitOutcome>;
+export type CorrectionEventPreview = z.infer<typeof correctionEventPreview>;
+export type CorrectionEntitlementPreview = z.infer<typeof correctionEntitlementPreview>;
+export type CorrectionCertificatePreview = z.infer<typeof correctionCertificatePreview>;
+export type CorrectionPrintJobPreview = z.infer<typeof correctionPrintJobPreview>;
+export type CorrectionAllocationPreview = z.infer<typeof correctionAllocationPreview>;
+export type CorrectionPreview = z.infer<typeof correctionPreview>;
 
-export interface ReassignAllocation {
-  commandId: string; fromProductionOrder: DocumentRef; toProductionOrder: DocumentRef; mode: string; fromSerials: SelectionSource;
-  toSerials: SelectionSource | null; reason: string; eventTime: string; actorRef: string; legalEntityId?: string; note: string | null;
-}
-export interface ReassignAllocationResult { correctionId: string; eventId: string | null; preview: CorrectionPreview; replayed: boolean }
+export const correctionKpiTarget = z.object({ rootCauseCategory: number, maximumPerThousand: number });
+export const correctionKpiTargetPolicy = z.object({ rootCauses: z.array(correctionKpiTarget) });
+export const correctionKpiTargetPolicyRequest = z.looseObject({
+  rootCauses: z.array(z.looseObject({ rootCauseCategory: number, maximumPerThousand: number })),
+});
+export const correctionKpiBaseline = z.object({
+  status: text, historyDays: number, daysRemaining: number, startedOn: nullableText, targetsEffectiveOn: nullableText,
+});
+export const correctionKpiRow = z.object({
+  bucket: text,
+  dimension: text,
+  corrections: number,
+  unitsCorrected: number,
+  unitsShipped: number,
+  perThousand: z.nullable(number),
+  reversedLater: number,
+  targetPerThousand: z.nullable(number),
+});
+export const unclassifiedRequestRate = z.object({
+  bucket: text, ratePercent: number, unclassifiedRequests: number, corrections: number, alert: z.boolean(),
+});
+export const unclassifiedRequestAlert = z.object({
+  thresholdPercent: number,
+  ratePercent: number,
+  unclassifiedRequests: number,
+  corrections: number,
+  alert: z.boolean(),
+  months: z.nullable(z.array(unclassifiedRequestRate)),
+});
+export const correctionKpiReport = z.object({
+  from: text,
+  to: text,
+  breakdown: text,
+  itemId: nullableText,
+  baseline: correctionKpiBaseline,
+  rows: z.array(correctionKpiRow),
+  unclassifiedAlert: z.nullable(unclassifiedRequestAlert),
+});
+export type CorrectionKpiTarget = z.infer<typeof correctionKpiTarget>;
+export type CorrectionKpiTargetPolicy = z.infer<typeof correctionKpiTargetPolicy>;
+export type CorrectionKpiBaseline = z.infer<typeof correctionKpiBaseline>;
+export type CorrectionKpiRow = z.infer<typeof correctionKpiRow>;
+export type UnclassifiedRequestRate = z.infer<typeof unclassifiedRequestRate>;
+export type UnclassifiedRequestAlert = z.infer<typeof unclassifiedRequestAlert>;
+export type CorrectionKpiReport = z.infer<typeof correctionKpiReport>;
 
-export interface CorrectionApprovalDecision { status: string; commitRoles: string[]; approverRoles: string[]; reviewTasks: string[]; refusal: CommandRefusal | null }
-export interface MergeUnitsAlternative { resolution: string; available: boolean; summary: string; refusal: CommandRefusal | null }
-export interface PreviewMergeUnits { firstUnitId: string; secondUnitId: string; eventTime: string; survivorUnitId: string | null }
-export interface MergeUnitsPreviewResult { recommendedSurvivorUnitId: string; survivorUnitId: string; absorbedUnitId: string; preview: CorrectionPreview; approval: CorrectionApprovalDecision; alternatives: MergeUnitsAlternative[] }
-export interface MergeUnits { commandId: string; survivorUnitId: string; absorbedUnitId: string; reason: string; eventTime: string; actorRef: string; legalEntityId?: string; resolution: string; vendorSerialValue: string | null; note: string | null }
-export interface MergeUnitsResult { survivorUnitId: string; absorbedUnitId: string; resolution: string; correctionId: string; rowsRepointed: number; reversed: boolean; replayed: boolean }
+export const reassignAllocation = z.object({
+  commandId: text,
+  fromProductionOrder: documentRefInput,
+  toProductionOrder: documentRefInput,
+  mode: text,
+  fromSerials: selectionSourceInput,
+  toSerials: z.nullable(selectionSourceInput),
+  reason: text,
+  eventTime: text,
+  actorRef: text,
+  legalEntityId: z.optional(text),
+  note: nullableText,
+});
+export const reassignAllocationRequest = z.looseObject({
+  commandId: text,
+  fromProductionOrder: documentRefRequest,
+  toProductionOrder: documentRefRequest,
+  mode: text,
+  fromSerials: selectionSourceRequest,
+  toSerials: z.nullable(selectionSourceRequest),
+  reason: text,
+  eventTime: text,
+  actorRef: text,
+  legalEntityId: z.optional(text),
+  note: nullableText,
+});
+export const reassignAllocationResult = z.object({
+  correctionId: text, eventId: nullableText, preview: correctionPreview, replayed: z.boolean(),
+});
+export type ReassignAllocation = z.infer<typeof reassignAllocation>;
+export type ReassignAllocationResult = z.infer<typeof reassignAllocationResult>;
 
-export interface IdentifierAssignmentInput { value: string; unitId?: string | null }
-export interface AssignIdentifiers { commandId: string; productionOrder: DocumentRef; mode: string; lines: IdentifierAssignmentInput[]; reason: string; eventTime: string; actorRef: string; legalEntityId?: string; issuerPartyRef: string | null; qualifier: string | null; note: string | null }
-export interface IdentifierAssignmentLineResult { index: number; requestedUnitId: string | null; unitId: string | null; rawValue: string; normalisedValue: string | null; outcome: string; reason: string | null; conflictingUnitId: string | null; identifierId: string | null; warnings: string[] | null }
-export interface AssignIdentifiersPreview { preview: CorrectionPreview; lines: IdentifierAssignmentLineResult[]; remainingCount: number; awaitingVendorSerialUnitIds: string[]; reversal: boolean }
-export interface AssignIdentifiersResult { correctionId: string; assigned: number; lines: IdentifierAssignmentLineResult[]; remainingCount: number; awaitingVendorSerialUnitIds: string[]; replayed: boolean; reversal: boolean }
-export interface AwaitingVendorSerialUnit { unitId: string; itemId: string; provisionalIdentifier: string; allocatedAt: string }
-export interface AwaitingVendorSerialReport { productionOrder: DocumentRef; count: number; units: AwaitingVendorSerialUnit[] }
+export const correctionApprovalDecision = z.object({
+  status: text,
+  commitRoles: z.array(text),
+  approverRoles: z.array(text),
+  reviewTasks: z.array(text),
+  refusal: z.nullable(commandRefusal),
+});
+export const mergeUnitsAlternative = z.object({
+  resolution: text, available: z.boolean(), summary: text, refusal: z.nullable(commandRefusal),
+});
+export const previewMergeUnits = z.object({
+  firstUnitId: text, secondUnitId: text, eventTime: text, survivorUnitId: nullableText,
+});
+export const previewMergeUnitsRequest = z.looseObject({
+  firstUnitId: text, secondUnitId: text, eventTime: text, survivorUnitId: nullableText,
+});
+export const mergeUnitsPreviewResult = z.object({
+  recommendedSurvivorUnitId: text,
+  survivorUnitId: text,
+  absorbedUnitId: text,
+  preview: correctionPreview,
+  approval: correctionApprovalDecision,
+  alternatives: z.array(mergeUnitsAlternative),
+});
+export const mergeUnits = z.object({
+  commandId: text,
+  survivorUnitId: text,
+  absorbedUnitId: text,
+  reason: text,
+  eventTime: text,
+  actorRef: text,
+  legalEntityId: z.optional(text),
+  resolution: text,
+  vendorSerialValue: nullableText,
+  note: nullableText,
+});
+export const mergeUnitsRequest = z.looseObject({
+  commandId: text,
+  survivorUnitId: text,
+  absorbedUnitId: text,
+  reason: text,
+  eventTime: text,
+  actorRef: text,
+  legalEntityId: z.optional(text),
+  resolution: text,
+  vendorSerialValue: nullableText,
+  note: nullableText,
+});
+export const mergeUnitsResult = z.object({
+  survivorUnitId: text,
+  absorbedUnitId: text,
+  resolution: text,
+  correctionId: text,
+  rowsRepointed: number,
+  reversed: z.boolean(),
+  replayed: z.boolean(),
+});
+export type CorrectionApprovalDecision = z.infer<typeof correctionApprovalDecision>;
+export type MergeUnitsAlternative = z.infer<typeof mergeUnitsAlternative>;
+export type PreviewMergeUnits = z.infer<typeof previewMergeUnits>;
+export type MergeUnitsPreviewResult = z.infer<typeof mergeUnitsPreviewResult>;
+export type MergeUnits = z.infer<typeof mergeUnits>;
+export type MergeUnitsResult = z.infer<typeof mergeUnitsResult>;
 
-export interface WorkbenchChoiceOption { value: string; label: string; command: string; defaultReason: string; rootCause: number }
-export interface WorkbenchNarrowingQuestion { key: string; prompt: string; options: WorkbenchChoiceOption[] }
-export interface WorkbenchChoice {
-  choice: string; label: string; area: string; helpText: string; commands: string[]; questions: WorkbenchNarrowingQuestion[];
-  defaultReason: string; rootCause: number; searchWords: string[] | null; order: number; initiateRoles: string[] | null;
-  commitRoles: string[] | null; status: string; standard: boolean; fallback: boolean;
-}
-export interface WorkbenchChoiceConfiguration { version: number; choices: WorkbenchChoice[]; unclassifiedAlertPercent: number; updatedBy: string; updatedAt: string }
-export interface WorkbenchChoiceConfigurationVersion { configuration: WorkbenchChoiceConfiguration; validFrom: string; validTo: string }
-export interface WorkbenchChoiceSettingsView { current: WorkbenchChoiceConfiguration; history: WorkbenchChoiceConfigurationVersion[] }
-export interface UpdateWorkbenchChoices { choices: WorkbenchChoice[]; unclassifiedAlertPercent: number }
+export const identifierAssignmentInput = z.object({ value: text, unitId: z.optional(nullableText) });
+const identifierAssignmentInputRequest = z.looseObject({ value: text, unitId: z.optional(nullableText) });
+export const assignIdentifiers = z.object({
+  commandId: text,
+  productionOrder: documentRefInput,
+  mode: text,
+  lines: z.array(identifierAssignmentInput),
+  reason: text,
+  eventTime: text,
+  actorRef: text,
+  legalEntityId: z.optional(text),
+  issuerPartyRef: nullableText,
+  qualifier: nullableText,
+  note: nullableText,
+});
+export const assignIdentifiersRequest = z.looseObject({
+  commandId: text,
+  productionOrder: documentRefRequest,
+  mode: text,
+  lines: z.array(identifierAssignmentInputRequest),
+  reason: text,
+  eventTime: text,
+  actorRef: text,
+  legalEntityId: z.optional(text),
+  issuerPartyRef: nullableText,
+  qualifier: nullableText,
+  note: nullableText,
+});
+export const identifierAssignmentLineResult = z.object({
+  index: number,
+  requestedUnitId: nullableText,
+  unitId: nullableText,
+  rawValue: text,
+  normalisedValue: nullableText,
+  outcome: text,
+  reason: nullableText,
+  conflictingUnitId: nullableText,
+  identifierId: nullableText,
+  warnings: z.nullable(z.array(text)),
+});
+export const assignIdentifiersPreview = z.object({
+  preview: correctionPreview,
+  lines: z.array(identifierAssignmentLineResult),
+  remainingCount: number,
+  awaitingVendorSerialUnitIds: z.array(text),
+  reversal: z.boolean(),
+});
+export const assignIdentifiersResult = z.object({
+  correctionId: text,
+  assigned: number,
+  lines: z.array(identifierAssignmentLineResult),
+  remainingCount: number,
+  awaitingVendorSerialUnitIds: z.array(text),
+  replayed: z.boolean(),
+  reversal: z.boolean(),
+});
+export const awaitingVendorSerialUnit = z.object({
+  unitId: text, itemId: text, provisionalIdentifier: text, allocatedAt: text,
+});
+export const awaitingVendorSerialReport = z.object({
+  productionOrder: documentRef, count: number, units: z.array(awaitingVendorSerialUnit),
+});
+export type IdentifierAssignmentInput = z.infer<typeof identifierAssignmentInput>;
+export type AssignIdentifiers = z.infer<typeof assignIdentifiers>;
+export type IdentifierAssignmentLineResult = z.infer<typeof identifierAssignmentLineResult>;
+export type AssignIdentifiersPreview = z.infer<typeof assignIdentifiersPreview>;
+export type AssignIdentifiersResult = z.infer<typeof assignIdentifiersResult>;
+export type AwaitingVendorSerialUnit = z.infer<typeof awaitingVendorSerialUnit>;
+export type AwaitingVendorSerialReport = z.infer<typeof awaitingVendorSerialReport>;
 
-export interface MergeRecordView { first: UnitDetail; second: UnitDetail }
+export const workbenchChoiceOption = z.object({
+  value: text, label: text, command: text, defaultReason: text, rootCause: number,
+});
+export const workbenchNarrowingQuestion = z.object({
+  key: text, prompt: text, options: z.array(workbenchChoiceOption),
+});
+export const workbenchChoice = z.object({
+  choice: text,
+  label: text,
+  area: text,
+  helpText: text,
+  commands: z.array(text),
+  questions: z.array(workbenchNarrowingQuestion),
+  defaultReason: text,
+  rootCause: number,
+  searchWords: z.nullable(z.array(text)),
+  order: number,
+  initiateRoles: z.nullable(z.array(text)),
+  commitRoles: z.nullable(z.array(text)),
+  status: text,
+  standard: z.boolean(),
+  fallback: z.boolean(),
+});
+const workbenchChoiceOptionRequest = z.looseObject({
+  value: text, label: text, command: text, defaultReason: text, rootCause: number,
+});
+const workbenchNarrowingQuestionRequest = z.looseObject({
+  key: text, prompt: text, options: z.array(workbenchChoiceOptionRequest),
+});
+const workbenchChoiceRequest = z.looseObject({
+  choice: text,
+  label: text,
+  area: text,
+  helpText: text,
+  commands: z.array(text),
+  questions: z.array(workbenchNarrowingQuestionRequest),
+  defaultReason: text,
+  rootCause: number,
+  searchWords: z.nullable(z.array(text)),
+  order: number,
+  initiateRoles: z.nullable(z.array(text)),
+  commitRoles: z.nullable(z.array(text)),
+  status: text,
+  standard: z.boolean(),
+  fallback: z.boolean(),
+});
+export const workbenchChoiceConfiguration = z.object({
+  version: number,
+  choices: z.array(workbenchChoice),
+  unclassifiedAlertPercent: number,
+  updatedBy: text,
+  updatedAt: text,
+});
+export const workbenchChoiceConfigurationVersion = z.object({
+  configuration: workbenchChoiceConfiguration, validFrom: text, validTo: text,
+});
+export const workbenchChoiceSettingsView = z.object({
+  current: workbenchChoiceConfiguration, history: z.array(workbenchChoiceConfigurationVersion),
+});
+export const updateWorkbenchChoices = z.object({
+  choices: z.array(workbenchChoice), unclassifiedAlertPercent: number,
+});
+export const updateWorkbenchChoicesRequest = z.looseObject({
+  choices: z.array(workbenchChoiceRequest), unclassifiedAlertPercent: number,
+});
+export type WorkbenchChoiceOption = z.infer<typeof workbenchChoiceOption>;
+export type WorkbenchNarrowingQuestion = z.infer<typeof workbenchNarrowingQuestion>;
+export type WorkbenchChoice = z.infer<typeof workbenchChoice>;
+export type WorkbenchChoiceConfiguration = z.infer<typeof workbenchChoiceConfiguration>;
+export type WorkbenchChoiceConfigurationVersion = z.infer<typeof workbenchChoiceConfigurationVersion>;
+export type WorkbenchChoiceSettingsView = z.infer<typeof workbenchChoiceSettingsView>;
+export type UpdateWorkbenchChoices = z.infer<typeof updateWorkbenchChoices>;
+
+export const mergeRecordView = z.object({ first: unitDetail, second: unitDetail });
+export type MergeRecordView = z.infer<typeof mergeRecordView>;

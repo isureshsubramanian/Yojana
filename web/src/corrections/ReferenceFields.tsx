@@ -1,17 +1,27 @@
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
-import { api } from "../api/client";
+import * as z from "zod/mini";
+import { apiParsed } from "../api/client.ts";
 import { units, type UnitDetail } from "../api/units";
 import { useSession } from "../session/session";
 import {
   createReferenceStore, documentLabelText, itemLabelText, locationLabelText, lotLabelText, partyLabelText,
-  type DocumentReferenceLabel, type ItemReferenceLabel, type LocationReferenceLabel, type PartyReferenceLabel, type ReferenceStore,
+  type ReferenceStore,
 } from "./referenceStore";
+import {
+  itemFamilyOptions,
+  referenceNamesRequest,
+  referenceNamesResponse,
+  referenceSearchResponse,
+  type DocumentValue,
+  type ItemFamilyOption,
+  type SearchResult,
+} from "./referenceSchemas.ts";
 
 // Reference fields: how a screen asks for, and shows, an item, business partner, location or document. Screens use
 // these instead of raw id inputs so the user works with codes, names and document numbers; the values crossing the
 // component boundary remain stable ids and DocumentRefs.
 
-export type DocumentValue = { type: string; id: string };
+export type { DocumentValue, ItemFamilyOption } from "./referenceSchemas.ts";
 
 // Contract example types plus document references recorded by Serialisation. Keeping this boundary narrow makes a
 // picker alias fail type-checking instead of silently selecting no units.
@@ -20,27 +30,13 @@ export const DOCUMENT_PICKER_TYPES = [
 ] as const;
 export type DocumentPickerType = (typeof DOCUMENT_PICKER_TYPES)[number];
 
-type ReferenceNamesResponse = {
-  items: Record<string, ItemReferenceLabel>;
-  parties: Record<string, PartyReferenceLabel>;
-  documents: Record<string, DocumentReferenceLabel>;
-  locations: Record<string, LocationReferenceLabel>;
-};
-
-type SearchResult = {
-  kind: "item" | "party" | "location" | "document" | "unit"; id: string; type: string | null; code: string | null; name: string | null;
-  partyType: string | null; number: string | null; status: string | null; itemId: string | null;
-};
-
-export type ItemFamilyOption = { code: string; name: string };
-
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const stores = new Map<string, ReferenceStore>();
 
 function storeFor(tenant: string): ReferenceStore {
   let store = stores.get(tenant);
   if (!store) {
-    store = createReferenceStore((body) => api<ReferenceNamesResponse>("/api/serialisation/reference-names", { method: "POST", body }));
+    store = createReferenceStore((body) => apiParsed("/api/serialisation/reference-names", referenceNamesResponse, { method: "POST", body: z.parse(referenceNamesRequest, body) }));
     stores.set(tenant, store);
   }
   return store;
@@ -90,7 +86,7 @@ export function useItemFamilies(): { options: ItemFamilyOption[]; name: (code: s
   const [options, setOptions] = useState<ItemFamilyOption[]>([]);
   useEffect(() => {
     const controller = new AbortController();
-    api<ItemFamilyOption[]>("/api/serialisation/item-families", { signal: controller.signal }).then(setOptions)
+    apiParsed("/api/serialisation/item-families", itemFamilyOptions, { signal: controller.signal }).then(setOptions)
       .catch((reason) => { if (!aborted(reason)) setOptions([]); });
     return () => controller.abort();
   }, []);
@@ -218,7 +214,7 @@ function ReferencePicker({ id, label, value, selectedLabel, onChange, optional, 
     const params = new URLSearchParams({ kind, q: text, take: partyTypes ? "25" : "10" });
     if (documentType) params.set("type", documentType);
     if (locationKind) params.set("locationKind", locationKind);
-    const results = (await api<{ results: SearchResult[] }>(`/api/serialisation/reference-search?${params}`, { signal })).results;
+    const results = (await apiParsed(`/api/serialisation/reference-search?${params}`, referenceSearchResponse, { signal })).results;
     return partyTypes ? results.filter((result) => result.partyType !== null && partyTypes.includes(result.partyType)) : results;
   }, [kind, documentType, locationKind, partyTypes]);
 

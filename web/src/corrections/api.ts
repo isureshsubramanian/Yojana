@@ -1,5 +1,24 @@
-import { api } from "../api/client";
-import type { AssignIdentifiers, AssignIdentifiersPreview, AssignIdentifiersResult, AwaitingVendorSerialReport, CorrectionKpiReport, CorrectionKpiTargetPolicy, MergeUnits, MergeUnitsPreviewResult, MergeUnitsResult, PreviewMergeUnits, ReassignAllocation, ReassignAllocationResult, UpdateWorkbenchChoices, WorkbenchChoiceConfiguration, WorkbenchChoiceSettingsView } from "./types";
+import * as z from "zod/mini";
+import { apiParsed } from "../api/client.ts";
+import {
+  assignIdentifiersRequest,
+  assignIdentifiersPreview,
+  assignIdentifiersResult,
+  awaitingVendorSerialReport,
+  correctionKpiReport,
+  correctionKpiTargetPolicy,
+  correctionKpiTargetPolicyRequest,
+  mergeUnitsRequest,
+  mergeUnitsPreviewResult,
+  mergeUnitsResult,
+  previewMergeUnitsRequest,
+  reassignAllocationRequest,
+  reassignAllocationResult,
+  updateWorkbenchChoicesRequest,
+  workbenchChoiceConfiguration,
+  workbenchChoiceSettingsView,
+} from "./types.ts";
+import type { AssignIdentifiers, AssignIdentifiersPreview, AssignIdentifiersResult, AwaitingVendorSerialReport, CorrectionKpiReport, CorrectionKpiTargetPolicy, MergeUnits, MergeUnitsPreviewResult, MergeUnitsResult, PreviewMergeUnits, ReassignAllocation, ReassignAllocationResult, UpdateWorkbenchChoices, WorkbenchChoiceConfiguration, WorkbenchChoiceSettingsView } from "./types.ts";
 
 function query(values: Record<string, string | number | undefined | null>): string {
   const params = new URLSearchParams();
@@ -9,17 +28,17 @@ function query(values: Record<string, string | number | undefined | null>): stri
 }
 
 export const correctionsApi = {
-  kpi: (from: string, to: string, breakdown: string, item?: string | null, signal?: AbortSignal) => api<CorrectionKpiReport>(`/api/corrections/kpi${query({ from, to, breakdown, item })}`, { signal }),
+  kpi: (from: string, to: string, breakdown: string, item?: string | null, signal?: AbortSignal): Promise<CorrectionKpiReport> => apiParsed(`/api/corrections/kpi${query({ from, to, breakdown, item })}`, correctionKpiReport, { signal }),
   kpiExportUrl: (from: string, to: string, breakdown: string, item?: string | null) => `/api/corrections/kpi/export${query({ from, to, breakdown, item })}`,
-  kpiTargets: (signal?: AbortSignal) => api<CorrectionKpiTargetPolicy>("/api/corrections/kpi/targets", { signal }),
-  saveKpiTargets: (body: CorrectionKpiTargetPolicy) => api<CorrectionKpiTargetPolicy>("/api/corrections/kpi/targets", { method: "PUT", body }),
-  previewReassignment: (body: ReassignAllocation, signal?: AbortSignal) => api<ReassignAllocationResult>("/api/corrections/reassign-allocation/preview", { method: "POST", body, signal }),
-  reassignAllocation: (body: ReassignAllocation) => api<ReassignAllocationResult>("/api/corrections/reassign-allocation", { method: "POST", body }),
-  previewMerge: (body: PreviewMergeUnits, signal?: AbortSignal) => api<MergeUnitsPreviewResult>("/api/units/merge/preview", { method: "POST", body, signal }),
-  merge: (body: MergeUnits) => api<MergeUnitsResult>("/api/units/merge", { method: "POST", body }),
-  previewIdentifiers: (body: AssignIdentifiers, signal?: AbortSignal) => api<AssignIdentifiersPreview>("/api/corrections/assign-identifiers/preview", { method: "POST", body, signal }),
-  assignIdentifiers: (body: AssignIdentifiers) => api<AssignIdentifiersResult>("/api/corrections/assign-identifiers", { method: "POST", body }),
-  awaitingVendorSerial: (productionOrderId: string, signal?: AbortSignal) => api<AwaitingVendorSerialReport>(`/api/corrections/production-orders/${productionOrderId}/awaiting-vendor-serial`, { signal }),
-  workbenchChoices: (signal?: AbortSignal) => api<WorkbenchChoiceSettingsView>("/api/correction-reference/workbench-choices", { signal }),
-  saveWorkbenchChoices: (body: UpdateWorkbenchChoices) => api<WorkbenchChoiceConfiguration>("/api/correction-reference/workbench-choices", { method: "PUT", body }),
+  kpiTargets: (signal?: AbortSignal): Promise<CorrectionKpiTargetPolicy> => apiParsed("/api/corrections/kpi/targets", correctionKpiTargetPolicy, { signal }),
+  saveKpiTargets: (body: CorrectionKpiTargetPolicy): Promise<CorrectionKpiTargetPolicy> => apiParsed("/api/corrections/kpi/targets", correctionKpiTargetPolicy, { method: "PUT", body: z.parse(correctionKpiTargetPolicyRequest, body) }),
+  previewReassignment: (body: ReassignAllocation, signal?: AbortSignal): Promise<ReassignAllocationResult> => apiParsed("/api/corrections/reassign-allocation/preview", reassignAllocationResult, { method: "POST", body: z.parse(reassignAllocationRequest, body), signal }),
+  reassignAllocation: (body: ReassignAllocation): Promise<ReassignAllocationResult> => apiParsed("/api/corrections/reassign-allocation", reassignAllocationResult, { method: "POST", body: z.parse(reassignAllocationRequest, body) }),
+  previewMerge: (body: PreviewMergeUnits, signal?: AbortSignal): Promise<MergeUnitsPreviewResult> => apiParsed("/api/units/merge/preview", mergeUnitsPreviewResult, { method: "POST", body: z.parse(previewMergeUnitsRequest, body), signal }),
+  merge: (body: MergeUnits): Promise<MergeUnitsResult> => apiParsed("/api/units/merge", mergeUnitsResult, { method: "POST", body: z.parse(mergeUnitsRequest, body) }),
+  previewIdentifiers: (body: AssignIdentifiers, signal?: AbortSignal): Promise<AssignIdentifiersPreview> => apiParsed("/api/corrections/assign-identifiers/preview", assignIdentifiersPreview, { method: "POST", body: z.parse(assignIdentifiersRequest, body), signal }),
+  assignIdentifiers: (body: AssignIdentifiers): Promise<AssignIdentifiersResult> => apiParsed("/api/corrections/assign-identifiers", assignIdentifiersResult, { method: "POST", body: z.parse(assignIdentifiersRequest, body) }),
+  awaitingVendorSerial: (productionOrderId: string, signal?: AbortSignal): Promise<AwaitingVendorSerialReport> => apiParsed(`/api/corrections/production-orders/${productionOrderId}/awaiting-vendor-serial`, awaitingVendorSerialReport, { signal }),
+  workbenchChoices: (signal?: AbortSignal): Promise<WorkbenchChoiceSettingsView> => apiParsed("/api/correction-reference/workbench-choices", workbenchChoiceSettingsView, { signal }),
+  saveWorkbenchChoices: (body: UpdateWorkbenchChoices): Promise<WorkbenchChoiceConfiguration> => apiParsed("/api/correction-reference/workbench-choices", workbenchChoiceConfiguration, { method: "PUT", body: z.parse(updateWorkbenchChoicesRequest, body) }),
 };

@@ -1,79 +1,294 @@
 // The correction workbench's contract with /api/workbench (P3-T16, T16b). Shapes mirror Contracts/Workbench.cs and
 // SelectionSets.cs; the server owns every rule, so the screen only shows what these calls return.
-import { api } from "../api/client";
-import type { DocumentRef, EpisodeRow, HistoryRow, IdentifierRow, UnitDetail } from "../api/units";
+import * as z from "zod/mini";
+import { apiParsed } from "../api/client.ts";
+import {
+  commandRefusal,
+  correctionCertificatePreview,
+  correctionEntitlementPreview,
+  correctionEventPreview,
+  correctionPreview,
+  correctionPrintJobPreview,
+  documentRef,
+  documentRefInput,
+  documentRefRequest,
+  episodeRow,
+  historyRow,
+  identifierRow,
+  unitDetail,
+  unitOutcome,
+} from "./schemas.ts";
+import { workbenchChoice as settingsWorkbenchChoice } from "./types.ts";
 
-export interface WorkbenchEntry { kind: string; value?: string | null; identifierType?: string | null; unitId?: string | null; document?: DocumentRef | null; selectionId?: string | null }
-export interface WorkbenchCandidate { unitId: string; resolvedUnitId: string; mergedAlias: boolean; lifecycleStatus: string; itemId: string | null; displayIdentifier: string | null; matchKind: string | null }
-export interface WorkbenchResolution { entry: WorkbenchEntry; candidates: WorkbenchCandidate[]; selectionId: string | null; resolution: string | null }
+const text = z.string();
+const number = z.number();
+const nullableText = z.nullable(text);
 
-export interface WorkbenchChoiceOption { value: string; label: string; command: string; defaultReason: string; rootCause: number }
-export interface WorkbenchNarrowingQuestion { key: string; prompt: string; options: WorkbenchChoiceOption[] }
-export interface WorkbenchChoice { choice: string; label: string; area: string; helpText: string; commands: string[]; questions: WorkbenchNarrowingQuestion[]; defaultReason: string; rootCause: number; searchWords: string[] | null; order: number; initiateRoles: string[] | null; commitRoles: string[] | null; status: string; standard: boolean; fallback: boolean }
-export interface WorkbenchChoiceSuggestion { choice: string; rule: string; label: string }
-export interface WorkbenchChoiceGroup { area: string; choices: WorkbenchChoice[] }
-export interface WorkbenchPicker { search: string | null; suggestions: WorkbenchChoiceSuggestion[]; groups: WorkbenchChoiceGroup[]; fallback: WorkbenchChoice }
+const workbenchEntryResponse = z.object({
+  kind: text,
+  value: nullableText,
+  identifierType: nullableText,
+  unitId: nullableText,
+  document: z.nullable(documentRef),
+  selectionId: nullableText,
+});
+export const workbenchEntry = z.object({
+  kind: text,
+  value: z.optional(nullableText),
+  identifierType: z.optional(nullableText),
+  unitId: z.optional(nullableText),
+  document: z.optional(z.nullable(documentRefInput)),
+  selectionId: z.optional(nullableText),
+});
+const workbenchEntryRequest = z.looseObject({
+  kind: text,
+  value: z.optional(nullableText),
+  identifierType: z.optional(nullableText),
+  unitId: z.optional(nullableText),
+  document: z.optional(z.nullable(documentRefRequest)),
+  selectionId: z.optional(nullableText),
+});
+export const workbenchCandidate = z.object({
+  unitId: text,
+  resolvedUnitId: text,
+  mergedAlias: z.boolean(),
+  lifecycleStatus: text,
+  itemId: nullableText,
+  displayIdentifier: nullableText,
+  matchKind: nullableText,
+});
+export const workbenchResolution = z.object({
+  entry: workbenchEntryResponse,
+  candidates: z.array(workbenchCandidate),
+  selectionId: nullableText,
+  resolution: nullableText,
+});
+export type WorkbenchEntry = z.infer<typeof workbenchEntry>;
+export type WorkbenchCandidate = z.infer<typeof workbenchCandidate>;
+export type WorkbenchResolution = z.infer<typeof workbenchResolution>;
 
-export interface WorkbenchAnswers { command: string; arguments: unknown; narrowing?: Record<string, string> | null }
-export interface WorkbenchEvidenceRef { kind: string; ref: string; note?: string | null }
-export interface WorkbenchTarget { kind: string; unitId?: string | null; document?: DocumentRef | null; selectionId?: string | null }
-export interface WorkbenchPreviewRequest { commandId: string; choice: string; answers: WorkbenchAnswers; target: WorkbenchTarget; reason: string; note?: string | null; evidence?: WorkbenchEvidenceRef[] | null }
+export const workbenchChoice = settingsWorkbenchChoice;
+export const workbenchChoiceSuggestion = z.object({ choice: text, rule: text, label: text });
+export const workbenchChoiceGroup = z.object({ area: text, choices: z.array(workbenchChoice) });
+export const workbenchPicker = z.object({
+  search: nullableText,
+  suggestions: z.array(workbenchChoiceSuggestion),
+  groups: z.array(workbenchChoiceGroup),
+  fallback: workbenchChoice,
+});
+export type WorkbenchChoiceOption = z.infer<typeof workbenchChoice>["questions"][number]["options"][number];
+export type WorkbenchNarrowingQuestion = z.infer<typeof workbenchChoice>["questions"][number];
+export type WorkbenchChoice = z.infer<typeof workbenchChoice>;
+export type WorkbenchChoiceSuggestion = z.infer<typeof workbenchChoiceSuggestion>;
+export type WorkbenchChoiceGroup = z.infer<typeof workbenchChoiceGroup>;
+export type WorkbenchPicker = z.infer<typeof workbenchPicker>;
 
-export interface UnitOutcome { unitId: string; serial: string | null; outcome: string; reason: string | null; detail: string | null; unblockingStep: string | null }
-export interface CommandRefusal { rule: string; message: string; unblockingStep: string | null }
-export interface CorrectionEventPreview { unitId: string; eventType: string; effectiveAt: string; summary: string | null }
-export interface CorrectionEntitlementPreview { unitId: string; change: string; entitlementId: string | null; summary: string | null }
-export interface CorrectionCertificatePreview { unitId: string; certificateType: string; action: string; reason: string }
-export interface CorrectionPrintJobPreview { unitId: string; jobType: string; reason: string }
-export interface CorrectionPreview {
-  selectionId: string | null; command: string; unitCount: number; change: number; skip: number; block: number;
-  units: UnitOutcome[]; unitEvents: CorrectionEventPreview[]; entitlementChanges: CorrectionEntitlementPreview[];
-  certificateVersions: CorrectionCertificatePreview[]; printJobs: CorrectionPrintJobPreview[]; refusal: CommandRefusal | null;
-}
-export interface WorkbenchPreviewResult { choice: string; command: string; preview: CorrectionPreview; previewHash: string }
+const workbenchAnswersResponse = z.object({
+  command: text, arguments: z.unknown(), narrowing: z.nullable(z.record(text, text)),
+});
+export const workbenchAnswers = z.object({
+  command: text, arguments: z.unknown(), narrowing: z.optional(z.nullable(z.record(text, text))),
+});
+const workbenchAnswersRequest = z.looseObject({
+  command: text, arguments: z.unknown(), narrowing: z.optional(z.nullable(z.record(text, text))),
+});
+const workbenchEvidenceRefResponse = z.object({ kind: text, ref: text, note: nullableText });
+export const workbenchEvidenceRef = z.object({ kind: text, ref: text, note: z.optional(nullableText) });
+const workbenchEvidenceRefRequest = z.looseObject({ kind: text, ref: text, note: z.optional(nullableText) });
+const workbenchTargetResponse = z.object({
+  kind: text, unitId: nullableText, document: z.nullable(documentRef), selectionId: nullableText,
+});
+export const workbenchTarget = z.object({
+  kind: text,
+  unitId: z.optional(nullableText),
+  document: z.optional(z.nullable(documentRefInput)),
+  selectionId: z.optional(nullableText),
+});
+const workbenchTargetRequest = z.looseObject({
+  kind: text,
+  unitId: z.optional(nullableText),
+  document: z.optional(z.nullable(documentRefRequest)),
+  selectionId: z.optional(nullableText),
+});
+export const workbenchPreviewRequest = z.object({
+  commandId: text,
+  choice: text,
+  answers: workbenchAnswers,
+  target: workbenchTarget,
+  reason: text,
+  note: z.optional(nullableText),
+  evidence: z.optional(z.nullable(z.array(workbenchEvidenceRef))),
+});
+const workbenchPreviewRequestBody = z.looseObject({
+  commandId: text,
+  choice: text,
+  answers: workbenchAnswersRequest,
+  target: workbenchTargetRequest,
+  reason: text,
+  note: z.optional(nullableText),
+  evidence: z.optional(z.nullable(z.array(workbenchEvidenceRefRequest))),
+});
+export type WorkbenchAnswers = z.infer<typeof workbenchAnswers>;
+export type WorkbenchEvidenceRef = z.infer<typeof workbenchEvidenceRef>;
+export type WorkbenchTarget = z.infer<typeof workbenchTarget>;
+export type WorkbenchPreviewRequest = z.infer<typeof workbenchPreviewRequest>;
 
-export interface WorkbenchApproval { userRef: string; roles: string[]; approvedAt: string; note: string | null }
-export interface WorkbenchRequestRow {
-  requestId: string; commandId: string; choice: string; command: string; target: WorkbenchTarget; answers: WorkbenchAnswers; reason: string; note: string | null;
-  evidence: WorkbenchEvidenceRef[]; preview: CorrectionPreview; previewHash: string; status: string; initiatedBy: string; initiatorRoles: string[]; initiatedAt: string;
-  requiredApproverRoles: string[]; approvals: WorkbenchApproval[]; rejectedBy: string | null; rejectedAt: string | null; decisionNote: string | null;
-  committedBy: string | null; committedAt: string | null; result: unknown; unclassifiedDescription: string | null;
-  classifiedBy: string | null; classifiedAt: string | null; escalatedBy: string | null; escalatedAt: string | null;
-}
-export interface WorkbenchRequestPage { items: WorkbenchRequestRow[]; total: number; skip: number; take: number }
+export {
+  commandRefusal,
+  correctionCertificatePreview,
+  correctionEntitlementPreview,
+  correctionEventPreview,
+  correctionPreview,
+  correctionPrintJobPreview,
+  unitOutcome,
+};
+export type UnitOutcome = z.infer<typeof unitOutcome>;
+export type CommandRefusal = z.infer<typeof commandRefusal>;
+export type CorrectionEventPreview = z.infer<typeof correctionEventPreview>;
+export type CorrectionEntitlementPreview = z.infer<typeof correctionEntitlementPreview>;
+export type CorrectionCertificatePreview = z.infer<typeof correctionCertificatePreview>;
+export type CorrectionPrintJobPreview = z.infer<typeof correctionPrintJobPreview>;
+export type CorrectionPreview = z.infer<typeof correctionPreview>;
+export const workbenchPreviewResult = z.object({
+  choice: text, command: text, preview: correctionPreview, previewHash: text,
+});
+export type WorkbenchPreviewResult = z.infer<typeof workbenchPreviewResult>;
 
-export interface WorkbenchItemAssignment { assignmentId: string; itemId: string; modelVersionId: string | null; validFrom: string; validTo: string | null; reason: string }
-export interface WorkbenchEntitlement { entitlementId: string; coverageFamily: string; type: string; direction: string; status: string; startDate: string | null; endDate: string | null; supersedesEntitlementId: string | null; parentEntitlementId: string | null; coverageFamilyName: string | null }
-export interface WorkbenchAssemblyLink { linkId: string; parentUnitId: string; childUnitId: string | null; childItemId: string | null; relation: string; slot: string | null; installedAt: string; removedAt: string | null; perspective: string }
-export interface WorkbenchCorrectionHistory { correctionId: string; command: string; reasonCode: string; initiatedVia: string; initiatingRole: string; actorRef: string; eventTime: string; recordedTime: string; correctsCorrectionId: string | null; note: string | null }
-export interface WorkbenchUnitLineage {
-  unitId: string; state: UnitDetail; identifiers: IdentifierRow[]; itemAssignments: WorkbenchItemAssignment[]; episodes: EpisodeRow[];
-  entitlements: WorkbenchEntitlement[]; assembly: WorkbenchAssemblyLink[]; corrections: WorkbenchCorrectionHistory[]; lastEvents: HistoryRow[];
-}
+export const workbenchApproval = z.object({
+  userRef: text, roles: z.array(text), approvedAt: text, note: nullableText,
+});
+export const workbenchRequestRow = z.object({
+  requestId: text,
+  commandId: text,
+  choice: text,
+  command: text,
+  target: workbenchTargetResponse,
+  answers: workbenchAnswersResponse,
+  reason: text,
+  note: nullableText,
+  evidence: z.array(workbenchEvidenceRefResponse),
+  preview: correctionPreview,
+  previewHash: text,
+  status: text,
+  initiatedBy: text,
+  initiatorRoles: z.array(text),
+  initiatedAt: text,
+  requiredApproverRoles: z.array(text),
+  approvals: z.array(workbenchApproval),
+  rejectedBy: nullableText,
+  rejectedAt: nullableText,
+  decisionNote: nullableText,
+  committedBy: nullableText,
+  committedAt: nullableText,
+  result: z.nullable(z.unknown()),
+  unclassifiedDescription: nullableText,
+  classifiedBy: nullableText,
+  classifiedAt: nullableText,
+  escalatedBy: nullableText,
+  escalatedAt: nullableText,
+});
+export const workbenchRequestPage = z.object({
+  items: z.array(workbenchRequestRow), total: number, skip: number, take: number,
+});
+export type WorkbenchApproval = z.infer<typeof workbenchApproval>;
+export type WorkbenchRequestRow = z.infer<typeof workbenchRequestRow>;
+export type WorkbenchRequestPage = z.infer<typeof workbenchRequestPage>;
+
+export const workbenchItemAssignment = z.object({
+  assignmentId: text, itemId: text, modelVersionId: nullableText, validFrom: text, validTo: nullableText, reason: text,
+});
+export const workbenchEntitlement = z.object({
+  entitlementId: text,
+  coverageFamily: text,
+  type: text,
+  direction: text,
+  status: text,
+  startDate: nullableText,
+  endDate: nullableText,
+  supersedesEntitlementId: nullableText,
+  parentEntitlementId: nullableText,
+  coverageFamilyName: nullableText,
+});
+export const workbenchAssemblyLink = z.object({
+  linkId: text,
+  parentUnitId: text,
+  childUnitId: nullableText,
+  childItemId: nullableText,
+  relation: text,
+  slot: nullableText,
+  installedAt: text,
+  removedAt: nullableText,
+  perspective: text,
+});
+export const workbenchMergeHistory = z.object({
+  correctionId: text,
+  survivorUnitId: text,
+  absorbedUnitId: text,
+  mergedAt: text,
+  reversedByCorrectionId: nullableText,
+  reversedAt: nullableText,
+});
+export const workbenchCorrectionHistory = z.object({
+  correctionId: text,
+  command: text,
+  reasonCode: text,
+  initiatedVia: text,
+  initiatingRole: text,
+  actorRef: text,
+  eventTime: text,
+  recordedTime: text,
+  correctsCorrectionId: nullableText,
+  note: nullableText,
+});
+export const workbenchUnitLineage = z.object({
+  unitId: text,
+  state: unitDetail,
+  identifiers: z.array(identifierRow),
+  itemAssignments: z.array(workbenchItemAssignment),
+  episodes: z.array(episodeRow),
+  entitlements: z.array(workbenchEntitlement),
+  assembly: z.array(workbenchAssemblyLink),
+  merges: z.array(workbenchMergeHistory),
+  corrections: z.array(workbenchCorrectionHistory),
+  lastEvents: z.array(historyRow),
+});
+export type WorkbenchItemAssignment = z.infer<typeof workbenchItemAssignment>;
+export type WorkbenchEntitlement = z.infer<typeof workbenchEntitlement>;
+export type WorkbenchAssemblyLink = z.infer<typeof workbenchAssemblyLink>;
+export type WorkbenchMergeHistory = z.infer<typeof workbenchMergeHistory>;
+export type WorkbenchCorrectionHistory = z.infer<typeof workbenchCorrectionHistory>;
+export type WorkbenchUnitLineage = z.infer<typeof workbenchUnitLineage>;
+
+const resolveWorkbenchEntry = z.looseObject({ resolutionId: text, entry: workbenchEntryRequest, actorRef: text });
+const fileUnclassifiedWorkbenchRequest = z.looseObject({
+  target: workbenchTargetRequest, description: text, evidence: z.array(workbenchEvidenceRefRequest),
+});
+const approveWorkbenchRequest = z.looseObject({ note: nullableText });
+const rejectWorkbenchRequest = z.looseObject({ note: text });
 
 /** Request states the approver can still act on. */
 export const OPEN_STATUSES = ["awaiting_approval", "approved"];
 
 export const workbenchApi = {
-  resolve: (entry: WorkbenchEntry, signal?: AbortSignal) => api<WorkbenchResolution>("/api/workbench/resolve", { method: "POST", body: { resolutionId: crypto.randomUUID(), entry, actorRef: "" }, signal }),
-  lineage: (unitId: string, signal?: AbortSignal) => api<WorkbenchUnitLineage>(`/api/workbench/units/${unitId}/lineage`, { signal }),
+  resolve: (entry: WorkbenchEntry, signal?: AbortSignal): Promise<WorkbenchResolution> => apiParsed("/api/workbench/resolve", workbenchResolution, { method: "POST", body: z.parse(resolveWorkbenchEntry, { resolutionId: crypto.randomUUID(), entry, actorRef: "" }), signal }),
+  lineage: (unitId: string, signal?: AbortSignal): Promise<WorkbenchUnitLineage> => apiParsed(`/api/workbench/units/${unitId}/lineage`, workbenchUnitLineage, { signal }),
   picker: (unitId: string | null, q: string, signal?: AbortSignal) => {
     const query = new URLSearchParams();
     if (unitId) query.set("unitId", unitId);
     if (q.trim()) query.set("q", q.trim());
-    return api<WorkbenchPicker>(`/api/workbench/picker?${query}`, { signal });
+    return apiParsed(`/api/workbench/picker?${query}`, workbenchPicker, { signal });
   },
-  choices: (signal?: AbortSignal) => api<WorkbenchChoice[]>("/api/workbench/choices", { signal }),
-  reasons: (command: string, signal?: AbortSignal) => api<string[]>(`/api/workbench/routes/${encodeURIComponent(command)}/reasons`, { signal }),
-  preview: (request: WorkbenchPreviewRequest, signal?: AbortSignal) => api<WorkbenchPreviewResult>("/api/workbench/preview", { method: "POST", body: request, signal }),
-  initiate: (requestId: string, request: WorkbenchPreviewRequest) => api<WorkbenchRequestRow>(`/api/workbench/requests/${requestId}`, { method: "POST", body: request }),
+  choices: (signal?: AbortSignal): Promise<WorkbenchChoice[]> => apiParsed("/api/workbench/choices", z.array(workbenchChoice), { signal }),
+  reasons: (command: string, signal?: AbortSignal): Promise<string[]> => apiParsed(`/api/workbench/routes/${encodeURIComponent(command)}/reasons`, z.array(text), { signal }),
+  preview: (request: WorkbenchPreviewRequest, signal?: AbortSignal): Promise<WorkbenchPreviewResult> => apiParsed("/api/workbench/preview", workbenchPreviewResult, { method: "POST", body: z.parse(workbenchPreviewRequestBody, request), signal }),
+  initiate: (requestId: string, request: WorkbenchPreviewRequest): Promise<WorkbenchRequestRow> => apiParsed(`/api/workbench/requests/${requestId}`, workbenchRequestRow, { method: "POST", body: z.parse(workbenchPreviewRequestBody, request) }),
   fileUnclassified: (requestId: string, target: WorkbenchTarget, description: string, evidence: WorkbenchEvidenceRef[]) =>
-    api<WorkbenchRequestRow>(`/api/workbench/requests/${requestId}/unclassified`, { method: "POST", body: { target, description, evidence } }),
-  request: (requestId: string, signal?: AbortSignal) => api<WorkbenchRequestRow>(`/api/workbench/requests/${requestId}`, { signal }),
-  inbox: (skip: number, take: number, signal?: AbortSignal) => api<WorkbenchRequestPage>(`/api/workbench/inbox?skip=${skip}&take=${take}`, { signal }),
-  approve: (requestId: string, note: string | null) => api<WorkbenchRequestRow>(`/api/workbench/requests/${requestId}/approve`, { method: "POST", body: { note } }),
-  reject: (requestId: string, note: string) => api<WorkbenchRequestRow>(`/api/workbench/requests/${requestId}/reject`, { method: "POST", body: { note } }),
-  commit: (requestId: string) => api<WorkbenchRequestRow>(`/api/workbench/requests/${requestId}/commit`, { method: "POST" }),
+    apiParsed(`/api/workbench/requests/${requestId}/unclassified`, workbenchRequestRow, { method: "POST", body: z.parse(fileUnclassifiedWorkbenchRequest, { target, description, evidence }) }),
+  request: (requestId: string, signal?: AbortSignal): Promise<WorkbenchRequestRow> => apiParsed(`/api/workbench/requests/${requestId}`, workbenchRequestRow, { signal }),
+  inbox: (skip: number, take: number, signal?: AbortSignal): Promise<WorkbenchRequestPage> => apiParsed(`/api/workbench/inbox?skip=${skip}&take=${take}`, workbenchRequestPage, { signal }),
+  approve: (requestId: string, note: string | null): Promise<WorkbenchRequestRow> => apiParsed(`/api/workbench/requests/${requestId}/approve`, workbenchRequestRow, { method: "POST", body: z.parse(approveWorkbenchRequest, { note }) }),
+  reject: (requestId: string, note: string): Promise<WorkbenchRequestRow> => apiParsed(`/api/workbench/requests/${requestId}/reject`, workbenchRequestRow, { method: "POST", body: z.parse(rejectWorkbenchRequest, { note }) }),
+  commit: (requestId: string): Promise<WorkbenchRequestRow> => apiParsed(`/api/workbench/requests/${requestId}/commit`, workbenchRequestRow, { method: "POST" }),
 };
 
 /** "unit.identifiers_swapped" rows grouped by event type, the "Will be recorded" table of both screens. */
