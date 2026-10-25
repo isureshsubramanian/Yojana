@@ -1,11 +1,6 @@
-import { api } from "../api/client.ts";
-import type {
-  ConnectionAuthorisationView, ConsentResult, ConsentStart, CutoverChecklistView, DisableResult, ErpChangeCleanPeriodView,
-  ErpChangeDailyCheckView, ErpChangeDivergencePage, ErpChangeDivergenceRow, ErpChangeRunbookView, ErpChangeRunHistoryPage, MasterDataExceptionPage,
-  MasterDataExceptionRow, ReconcileStockResult, ReminderSettingsView, ResolveStockDifferenceRequest, StockDifferencePage,
-  StockDifferenceRow, StockResidualSignoffView,
-  ErpChangeMyWorkView, ErpChangeNotificationSettingsView, ParkedOutboundPage, UnitHistoryChangeKind, UnitHistoryChangePage,
-} from "./erpChangeTypes";
+import * as z from "zod/mini";
+import { apiParsed } from "../api/client.ts";
+import { connectionAuthorisationView, consentResult, consentStart, cutoverChecklistView, disableResult, erpChangeCleanPeriodView, erpChangeDailyCheckView, erpChangeDivergencePage, erpChangeDivergenceRow, erpChangeMyWorkView, erpChangeNotificationSettingsView, erpChangeRunHistoryPage, erpChangeRunbookView, masterDataExceptionPage, masterDataExceptionRow, parkedOutboundPage, reconcileStockResult, reminderSettingsView, stockDifferencePage, stockDifferenceRow, stockResidualSignoffView, unitHistoryChangePage, type ResolveStockDifferenceRequest, type ErpChangeNotificationSettingsView, type UnitHistoryChangeKind } from "./erpChangeTypes.ts";
 
 const root = "/api/integration/erp-change";
 const run = (runId: string) => `${root}/runs/${runId}`;
@@ -21,49 +16,49 @@ export interface ListFilter { kind?: string | undefined; status?: string | undef
 export interface StockFilter { reason?: string | undefined; liveCover?: boolean | undefined; status?: string | undefined; query?: string | undefined }
 
 export const erpChangeApi = {
-  active: (signal?: AbortSignal) => api<ErpChangeRunbookView>(`${root}/runs/active`, { signal }),
-  history: (cursor?: string, signal?: AbortSignal) => api<ErpChangeRunHistoryPage>(`${root}/runs${query({ cursor, take: 12 })}`, { signal }),
-  detail: (runId: string, signal?: AbortSignal) => api<ErpChangeRunbookView>(run(runId), { signal }),
+  active: (signal?: AbortSignal) => apiParsed(`${root}/runs/active`, erpChangeRunbookView, { signal }),
+  history: (cursor?: string, signal?: AbortSignal) => apiParsed(`${root}/runs${query({ cursor, take: 12 })}`, erpChangeRunHistoryPage, { signal }),
+  detail: (runId: string, signal?: AbortSignal) => apiParsed(run(runId), erpChangeRunbookView, { signal }),
   unitHistoryChanges: (runId: string, kind: UnitHistoryChangeKind, cursor?: string, signal?: AbortSignal) =>
-    api<UnitHistoryChangePage>(`${run(runId)}/unit-history-changes${query({ kind, cursor, take: 12 })}`, { signal }),
+    apiParsed(`${run(runId)}/unit-history-changes${query({ kind, cursor, take: 12 })}`, unitHistoryChangePage, { signal }),
   start: (sourceConnectionId: string, newConnection: unknown) =>
-    api<ErpChangeRunbookView>(`${root}/runs`, { method: "POST", body: { sourceConnectionId, newConnection } }),
-  check: (runId: string) => api<ErpChangeRunbookView>(`${run(runId)}/check`, { method: "POST" }),
-  advance: (runId: string) => api<ErpChangeRunbookView>(`${run(runId)}/advance`, { method: "POST" }),
-  cancel: (runId: string, reason: string) => api<ErpChangeRunbookView>(`${run(runId)}/cancel`, { method: "POST", body: { reason } }),
-  reverse: (runId: string, newConnection?: unknown) => api<ErpChangeRunbookView>(`${run(runId)}/reverse`, { method: "POST", body: newConnection === undefined ? {} : { newConnection } }),
+    apiParsed(`${root}/runs`, erpChangeRunbookView, { method: "POST", body: { sourceConnectionId, newConnection } }),
+  check: (runId: string) => apiParsed(`${run(runId)}/check`, erpChangeRunbookView, { method: "POST" }),
+  advance: (runId: string) => apiParsed(`${run(runId)}/advance`, erpChangeRunbookView, { method: "POST" }),
+  cancel: (runId: string, reason: string) => apiParsed(`${run(runId)}/cancel`, erpChangeRunbookView, { method: "POST", body: { reason } }),
+  reverse: (runId: string, newConnection?: unknown) => apiParsed(`${run(runId)}/reverse`, erpChangeRunbookView, { method: "POST", body: newConnection === undefined ? {} : { newConnection } }),
 
   masterData: (runId: string, filter: ListFilter, cursor?: string, signal?: AbortSignal) =>
-    api<MasterDataExceptionPage>(`${run(runId)}/master-data/exceptions${query({ ...filter, cursor, take: 12 })}`, { signal }),
-  remap: (runId: string) => api<unknown>(`${run(runId)}/master-data/remap`, { method: "POST" }),
+    apiParsed(`${run(runId)}/master-data/exceptions${query({ ...filter, cursor, take: 12 })}`, masterDataExceptionPage, { signal }),
+  remap: (runId: string) => apiParsed(`${run(runId)}/master-data/remap`, z.unknown(), { method: "POST" }),
   chooseCandidate: (runId: string, exceptionId: string, moduleId: string, note?: string) =>
-    api<MasterDataExceptionRow>(`${run(runId)}/master-data/exceptions/${exceptionId}/choose-candidate`, { method: "POST", body: { moduleId, note } }),
+    apiParsed(`${run(runId)}/master-data/exceptions/${exceptionId}/choose-candidate`, masterDataExceptionRow, { method: "POST", body: { moduleId, note } }),
   mapByHand: (runId: string, exceptionId: string, moduleId: string, note?: string) =>
-    api<MasterDataExceptionRow>(`${run(runId)}/master-data/exceptions/${exceptionId}/map`, { method: "POST", body: { moduleId, note } }),
+    apiParsed(`${run(runId)}/master-data/exceptions/${exceptionId}/map`, masterDataExceptionRow, { method: "POST", body: { moduleId, note } }),
   notNeeded: (runId: string, exceptionId: string, note: string) =>
-    api<MasterDataExceptionRow>(`${run(runId)}/master-data/exceptions/${exceptionId}/not-needed`, { method: "POST", body: { note } }),
+    apiParsed(`${run(runId)}/master-data/exceptions/${exceptionId}/not-needed`, masterDataExceptionRow, { method: "POST", body: { note } }),
 
   stock: (runId: string, filter: StockFilter, cursor?: string, signal?: AbortSignal) =>
-    api<StockDifferencePage>(`${run(runId)}/stock/differences${query({ ...filter, cursor, take: 12 })}`, { signal }),
-  reconcileStock: (runId: string) => api<ReconcileStockResult>(`${run(runId)}/stock/reconcile`, { method: "POST" }),
+    apiParsed(`${run(runId)}/stock/differences${query({ ...filter, cursor, take: 12 })}`, stockDifferencePage, { signal }),
+  reconcileStock: (runId: string) => apiParsed(`${run(runId)}/stock/reconcile`, reconcileStockResult, { method: "POST" }),
   resolveStock: (runId: string, differenceId: string, body: ResolveStockDifferenceRequest) =>
-    api<StockDifferenceRow>(`${run(runId)}/stock/differences/${differenceId}/resolve`, { method: "POST", body }),
-  signOffStock: (runId: string, note: string) => api<StockResidualSignoffView>(`${run(runId)}/stock/sign-off`, { method: "POST", body: { note } }),
+    apiParsed(`${run(runId)}/stock/differences/${differenceId}/resolve`, stockDifferenceRow, { method: "POST", body }),
+  signOffStock: (runId: string, note: string) => apiParsed(`${run(runId)}/stock/sign-off`, stockResidualSignoffView, { method: "POST", body: { note } }),
 
   divergences: (runId: string, filter: ListFilter, cursor?: string, signal?: AbortSignal) =>
-    api<ErpChangeDivergencePage>(`${run(runId)}/dual-run/divergences${query({ ...filter, cursor, take: 12 })}`, { signal }),
-  startDualRun: (runId: string) => api<unknown>(`${run(runId)}/dual-run/start`, { method: "POST" }),
-  dailyCheck: (runId: string) => api<ErpChangeDailyCheckView>(`${run(runId)}/dual-run/check`, { method: "POST" }),
+    apiParsed(`${run(runId)}/dual-run/divergences${query({ ...filter, cursor, take: 12 })}`, erpChangeDivergencePage, { signal }),
+  startDualRun: (runId: string) => apiParsed(`${run(runId)}/dual-run/start`, z.unknown(), { method: "POST" }),
+  dailyCheck: (runId: string) => apiParsed(`${run(runId)}/dual-run/check`, erpChangeDailyCheckView, { method: "POST" }),
   acceptSource: (runId: string, kind: string, divergenceId: string) =>
-    api<ErpChangeDivergenceRow>(`${run(runId)}/dual-run/${kind}-divergences/${divergenceId}/accept-source`, { method: "POST", body: { commandId: crypto.randomUUID() } }),
+    apiParsed(`${run(runId)}/dual-run/${kind}-divergences/${divergenceId}/accept-source`, erpChangeDivergenceRow, { method: "POST", body: { commandId: crypto.randomUUID() } }),
   explain: (runId: string, kind: string, divergenceId: string, note: string) =>
-    api<ErpChangeDivergenceRow>(`${run(runId)}/dual-run/${kind}-divergences/${divergenceId}/explain`, { method: "POST", body: { note } }),
-  cleanPeriod: (signal?: AbortSignal) => api<ErpChangeCleanPeriodView>(`${root}/settings/clean-period`, { signal }),
+    apiParsed(`${run(runId)}/dual-run/${kind}-divergences/${divergenceId}/explain`, erpChangeDivergenceRow, { method: "POST", body: { note } }),
+  cleanPeriod: (signal?: AbortSignal) => apiParsed(`${root}/settings/clean-period`, erpChangeCleanPeriodView, { signal }),
   saveCleanPeriod: (runId: string, days: number, expectedVersion: string) =>
-    api<ErpChangeCleanPeriodView>(`${run(runId)}/settings/clean-period`, { method: "PUT", body: { days, expectedVersion } }),
-  myWork: (signal?: AbortSignal) => api<ErpChangeMyWorkView>(`${root}/my-work`, { signal }),
-  notificationSettings: (signal?: AbortSignal) => api<ErpChangeNotificationSettingsView>(`${root}/settings/notifications`, { signal }),
-  saveNotificationSettings: (value: ErpChangeNotificationSettingsView) => api<ErpChangeNotificationSettingsView>(`${root}/settings/notifications`, {
+    apiParsed(`${run(runId)}/settings/clean-period`, erpChangeCleanPeriodView, { method: "PUT", body: { days, expectedVersion } }),
+  myWork: (signal?: AbortSignal) => apiParsed(`${root}/my-work`, erpChangeMyWorkView, { signal }),
+  notificationSettings: (signal?: AbortSignal) => apiParsed(`${root}/settings/notifications`, erpChangeNotificationSettingsView, { signal }),
+  saveNotificationSettings: (value: ErpChangeNotificationSettingsView) => apiParsed(`${root}/settings/notifications`, erpChangeNotificationSettingsView, {
     method: "PUT", body: {
       digestEnabled: value.digestEnabled, digestHour: value.digestHour,
       masterDataRecipientRoles: value.masterDataRecipientRoles, stockRecipientRoles: value.stockRecipientRoles,
@@ -71,35 +66,35 @@ export const erpChangeApi = {
     },
   }),
 
-  cutover: (runId: string, signal?: AbortSignal) => api<CutoverChecklistView>(`${run(runId)}/cutover`, { signal }),
+  cutover: (runId: string, signal?: AbortSignal) => apiParsed(`${run(runId)}/cutover`, cutoverChecklistView, { signal }),
   parked: (runId: string, cursor?: string, signal?: AbortSignal) =>
-    api<ParkedOutboundPage>(`${run(runId)}/cutover/parked${query({ cursor, take: 12 })}`, { signal }),
+    apiParsed(`${run(runId)}/cutover/parked${query({ cursor, take: 12 })}`, parkedOutboundPage, { signal }),
   beginCutover: (runId: string, targetOutboundMode: "reference_only" | "documents") =>
-    api<CutoverChecklistView>(`${run(runId)}/cutover/start`, { method: "POST", body: { targetOutboundMode } }),
+    apiParsed(`${run(runId)}/cutover/start`, cutoverChecklistView, { method: "POST", body: { targetOutboundMode } }),
   recordValidation: (runId: string, commandType: string, method: "test_company" | "manual", evidence: string) =>
-    api<CutoverChecklistView>(`${run(runId)}/cutover/validations`, { method: "POST", body: { commandType, method, evidence, passed: true } }),
-  drain: (runId: string) => api<CutoverChecklistView>(`${run(runId)}/cutover/drain`, { method: "POST" }),
+    apiParsed(`${run(runId)}/cutover/validations`, cutoverChecklistView, { method: "POST", body: { commandType, method, evidence, passed: true } }),
+  drain: (runId: string) => apiParsed(`${run(runId)}/cutover/drain`, cutoverChecklistView, { method: "POST" }),
   convertParked: (runId: string, outboundCommandId: string, reason: string) =>
-    api<CutoverChecklistView>(`${run(runId)}/cutover/parked-to-manual`, { method: "POST", body: { outboundCommandId, reason } }),
-  enableTarget: (runId: string) => api<CutoverChecklistView>(`${run(runId)}/cutover/enable-target`, { method: "POST" }),
+    apiParsed(`${run(runId)}/cutover/parked-to-manual`, cutoverChecklistView, { method: "POST", body: { outboundCommandId, reason } }),
+  enableTarget: (runId: string) => apiParsed(`${run(runId)}/cutover/enable-target`, cutoverChecklistView, { method: "POST" }),
   confirmFirstOutbound: (runId: string, commandType: string, externalDocumentRef: string, evidence: string) =>
-    api<CutoverChecklistView>(`${run(runId)}/cutover/confirm-first-outbound`, { method: "POST", body: { commandType, externalDocumentRef, evidence } }),
-  reconcileAfterCutover: (runId: string) => api<CutoverChecklistView>(`${run(runId)}/cutover/reconcile`, { method: "POST" }),
+    apiParsed(`${run(runId)}/cutover/confirm-first-outbound`, cutoverChecklistView, { method: "POST", body: { commandType, externalDocumentRef, evidence } }),
+  reconcileAfterCutover: (runId: string) => apiParsed(`${run(runId)}/cutover/reconcile`, cutoverChecklistView, { method: "POST" }),
   pendingActionsCsvUrl: (runId: string) => `${run(runId)}/cutover/pending-actions.csv`,
-  archive: (runId: string) => api<unknown>(`${run(runId)}/archive`, { method: "POST" }),
+  archive: (runId: string) => apiParsed(`${run(runId)}/archive`, z.unknown(), { method: "POST" }),
 };
 
 const signIn = (connectionId: string) => `/api/integration/connections/${connectionId}/cx04`;
 
 export const signInApi = {
   read: (connectionId: string, cursor?: string, signal?: AbortSignal) =>
-    api<ConnectionAuthorisationView>(`${signIn(connectionId)}/authorisation${query({ cursor, take: 12 })}`, { signal }),
-  begin: (connectionId: string) => api<ConsentStart>(`${signIn(connectionId)}/consent`, { method: "POST" }),
+    apiParsed(`${signIn(connectionId)}/authorisation${query({ cursor, take: 12 })}`, connectionAuthorisationView, { signal }),
+  begin: (connectionId: string) => apiParsed(`${signIn(connectionId)}/consent`, consentStart, { method: "POST" }),
   complete: (connectionId: string, code: string, state: string) =>
-    api<ConsentResult>(`${signIn(connectionId)}/callback`, { method: "POST", body: { code, state } }),
+    apiParsed(`${signIn(connectionId)}/callback`, consentResult, { method: "POST", body: { code, state } }),
   disable: (connectionId: string, reason: string) =>
-    api<DisableResult>(`${signIn(connectionId)}/disable`, { method: "POST", body: { reason, confirm: true } }),
-  reminders: (connectionId: string, signal?: AbortSignal) => api<ReminderSettingsView>(`${signIn(connectionId)}/reminder-settings`, { signal }),
+    apiParsed(`${signIn(connectionId)}/disable`, disableResult, { method: "POST", body: { reason, confirm: true } }),
+  reminders: (connectionId: string, signal?: AbortSignal) => apiParsed(`${signIn(connectionId)}/reminder-settings`, reminderSettingsView, { signal }),
   saveReminders: (connectionId: string, daysBeforeExpiry: number[], recipientRoles: string[], expectedVersion: string) =>
-    api<ReminderSettingsView>(`${signIn(connectionId)}/reminder-settings`, { method: "PUT", body: { daysBeforeExpiry, recipientRoles, expectedVersion } }),
+    apiParsed(`${signIn(connectionId)}/reminder-settings`, reminderSettingsView, { method: "PUT", body: { daysBeforeExpiry, recipientRoles, expectedVersion } }),
 };

@@ -219,7 +219,7 @@ function LoadPhaseCard({ batchId, load }: { batchId: string; load: MigrationAppl
     ? <Link className="migration-phase-link" to={`/integration/migration/loads/${load.loadId}/${kind === "delta" ? "delta" : "refusals"}`}>View {load.refused.toLocaleString()} refusals</Link>
     : load?.coverGaps !== null && load?.coverGaps !== undefined
       ? <Link className="migration-phase-link" to="/entitlements/gaps?channels=migration">{load.coverGaps.toLocaleString()} sold units with no base cover</Link>
-      : load?.gapsByKind[0] ? <Link className="migration-phase-link"
+      : load?.gapsByKind?.[0] ? <Link className="migration-phase-link"
         to={`/integration/migration/validation?batchId=${encodeURIComponent(batchId)}&gapKind=${encodeURIComponent(load.gapsByKind[0].kind)}#migration-plan-gaps`}>
         {load.gapsByKind[0].label} {load.gapsByKind[0].count.toLocaleString()}</Link> : null;
   return <div className="migration-phase migration-load-phase"><div className="l">6 · Load{kind ? ` · ${kind}` : ""}</div><div className="n">{load ? `${load.applied.toLocaleString()} applied` : "—"}</div><div className="s">{load ? <>{load.refused.toLocaleString()} refused · {load.eventsWritten.toLocaleString()} facts<br />{load.entitlementsWritten.toLocaleString()} cover · {load.replacementLinksWritten.toLocaleString()} links · {load.certificatesRecorded.toLocaleString()} certificates</> : "No load run yet"}</div><StatusBadge tone={load ? loadStatusTone(load.status) : "neutral"}>{load ? loadStatusLabel(load.status) : "Not run"}</StatusBadge>
@@ -248,7 +248,7 @@ function LoadActions({ batchId, batchDisplayNumber, load, readiness, latestLoadR
     finally { setBusy(false); }
   };
   if (!admin) return latestLoadRequestedBy ? <div className="migration-load-action-row"><p className="muted">Latest load requested by {latestLoadRequestedBy}.</p></div> : null;
-  const undoLoad = load ? { loadId: load.loadId, label: load.label, kind: migrationApplyKind(load), undo: load.undo } : null;
+  const undoLoad = load?.undo ? { loadId: load.loadId, label: load.label ?? "", kind: migrationApplyKind(load), undo: load.undo } : null;
   return <div className="migration-load-action-row" aria-label="Load actions"><div className="migration-load-actions">
     <LoadAction label="Load as rehearsal" state={rehearsalState} onClick={() => void start(true)} />
     <LoadAction label="Final load" state={finalState} onClick={() => setConfirmFinal(true)} />

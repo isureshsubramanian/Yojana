@@ -141,8 +141,8 @@ function MigrationSettings() {
 }
 
 function CoverCard({ value, setValue, readOnly, serverRule }: { value: MappingSettingsView; setValue: (value: MappingSettingsView) => void; readOnly: boolean; serverRule: string | null }) {
-  const base = value.approvedPublishedPolicies.filter(policy => policy.familyCode === "base_warranty");
-  const supplier = value.approvedPublishedPolicies.filter(policy => policy.familyCode === "supplier_warranty");
+  const base = (value.approvedPublishedPolicies ?? []).filter(policy => policy.familyCode === "base_warranty");
+  const supplier = (value.approvedPublishedPolicies ?? []).filter(policy => policy.familyCode === "supplier_warranty");
   return <section className="card" aria-labelledby="migration-cover-title"><div className="card-header"><h2 id="migration-cover-title">Cover with no contract</h2><span className="meta">Only approved and published policies are offered</span></div><div className="card-body migration-settings-form">
     <p className="muted">Some serials have warranty dates on the equipment card or serial master but no warranty contract. The dates stay exactly as the source application holds them; the policy supplies the terms.</p>
     <PolicyField label="Dates from the equipment card only · our warranty to the customer" value={value.cardCoverPolicyId} policies={base} readOnly={readOnly} unset="Not set: Equipment-card cover policy not set" help="Base warranty family" onChange={cardCoverPolicyId => setValue({ ...value, cardCoverPolicyId })} />
@@ -192,7 +192,7 @@ function UploadErrors({ result, fileName }: { result: LinkOverrideUploadResponse
   return <section className="card" aria-labelledby="migration-upload-errors"><div className="card-header"><h2 id="migration-upload-errors">Upload refused <span className="meta">nothing was stored</span></h2></div><table className="table"><thead><tr><th className="num">Row</th><th>Column</th><th>Problem</th></tr></thead><tbody>{result.errors.map((error, index) => <tr key={`${error.row}-${error.column}-${index}`}><td className="num">{error.row.toLocaleString()}</td><td>{overrideColumnLabel(error.column)}</td><td className="wrap">{overrideProblemLabel(error.reason)}</td></tr>)}</tbody></table><div className="card-footer"><span className="muted">{fileName} · {result.errors.length.toLocaleString()} of {result.errorTotal.toLocaleString()} problems shown · fix the file and upload again</span></div></section>;
 }
 
-function copy(value: MappingSettingsView): MappingSettingsView { return { ...value, conditionMap: value.conditionMap.map(rule => ({ ...rule })), linkDefaults: { ...value.linkDefaults }, approvedPublishedPolicies: [...value.approvedPublishedPolicies] }; }
+function copy(value: MappingSettingsView): MappingSettingsView { return { ...value, conditionMap: value.conditionMap.map(rule => ({ ...rule })), linkDefaults: { ...value.linkDefaults }, approvedPublishedPolicies: [...(value.approvedPublishedPolicies ?? [])] }; }
 function editable(value: MappingSettingsView) { return { allowWaitingReviews: value.allowWaitingReviews, cutoverDate: value.cutoverDate, conditionMap: value.conditionMap, linkDefaults: value.linkDefaults, cardCoverPolicyId: value.cardCoverPolicyId, serialMasterCoverPolicyId: value.serialMasterCoverPolicyId }; }
 function validateLinks(value: ReplacementLinkValues): Record<string, string> {
   const errors: Record<string, string> = {};

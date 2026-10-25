@@ -176,6 +176,10 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
                     ? "System" : "Unknown user"), EventSummary(x.EventType))).ToList(), rows.Count > take ? rows[take - 1].SequenceNo.ToString(CultureInfo.InvariantCulture) : null);
     }
 
+    // Hidden coupling: the web client's connection schemas (web/src/integration/adminTypes.ts) treat Sync as always
+    // present, because every list, status and detail view is built from this method, which returns an entry for each
+    // connection. The contracts declare Sync nullable only for other constructors; a view sent with Sync null would
+    // show "unexpected response" on the Integration screens.
     private async Task<IReadOnlyDictionary<Guid, ConnectionSyncState>> SyncStatesAsync(
         List<Connection> connections, IReadOnlyDictionary<Guid, int> waiting, CancellationToken ct)
     {

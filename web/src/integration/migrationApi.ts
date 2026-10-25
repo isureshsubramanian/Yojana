@@ -1,18 +1,7 @@
-import { api, ApiError } from "../api/client";
-import { deltaExportUrl } from "./migrationModel";
-import type {
-  CanonicalFamilyCatalogue, CanonicalisationRun, MigrationBatch, MigrationBatchPage, MigrationOutcomeChoice, MigrationOutcomeSettings,
-  MigrationProfile, MigrationProfileSamples, MigrationReviewDecision, MigrationReviewDecisionResponse,
-  MigrationApply, MigrationApplyRefusalPage, MigrationMap, MigrationPlanGapPage, MigrationReconstruction, RollBackMigrationLoadResponse,
-  MigrationReviewDetail, MigrationReviewKind, MigrationReviewPage, MigrationReviewStatus, MigrationSource,
-  MigrationSourcePage, MigrationSourceTestResult, PolicyCatalogue, StartMigrationBatchResponse,
-  TemplateKeywordRule, TemplateKeywordRules, TemplateMappingDetail, TemplateMappingState,
-  TemplateMappingSummaryView, TemplatePatternPage, MigrationValidation, SignoffRecord, TouchedMigrationLoadUnitPage,
-  StartMigrationApplyResponse, StartValidationResponse, ValidationCheck, ValidationCheckDetail, ValidationDifferencePage,
-  ValidationSample, ValidationSampleOutcome, ValidationSamplePage, ValidationSettings, ValidationSignatureRole,
-  CurrencyInfo, LinkOverridePage, LinkOverrideUploadResponse, MappingSettings,
-  MigrationDeltaFindingPage, MigrationLoadDetail, MigrationLoadPage, MigrationLoadReadiness, MigrationSyncControlResult,
-} from "./migrationTypes";
+import * as z from "zod/mini";
+import { apiParsed, ApiError } from "../api/client.ts";
+import { deltaExportUrl } from "./migrationModel.ts";
+import { canonicalFamilyCatalogue, canonicalisationRun, currencyInfo, linkOverridePage, mappingSettings, migrationApply, migrationApplyRefusalPage, migrationBatch, migrationBatchPage, migrationDeltaFindingPage, migrationLoadDetail, migrationLoadPage, migrationLoadReadiness, migrationMap, migrationOutcomeSettings, migrationPlanGapPage, migrationProfile, migrationProfileSamples, migrationReconstruction, migrationReviewDecisionResponse, migrationReviewDetail, migrationReviewPage, migrationSource, migrationSourcePage, migrationSourceTestResult, migrationSyncControlResult, migrationValidation, policyCatalogue, rollBackMigrationLoadResponse, signoffRecord, startMigrationApplyResponse, startMigrationBatchResponse, startValidationResponse, templateKeywordRules, templateMappingDetail, templateMappingSummaryView, templatePatternPage, touchedMigrationLoadUnitPage, validationCheck, validationCheckDetail, validationDifferencePage, validationSample, validationSamplePage, validationSettings, type MigrationOutcomeChoice, type MigrationReviewDecision, type MigrationReviewKind, type MigrationReviewStatus, type TemplateKeywordRule, type TemplateMappingState, type ValidationSampleOutcome, type ValidationSignatureRole, type LinkOverrideUploadResponse, type MappingSettings } from "./migrationTypes.ts";
 
 const root = "/api/migration";
 function query(values: Record<string, string | number | boolean | undefined>) {
@@ -34,88 +23,88 @@ async function uploadCsv(path: string, file: File): Promise<LinkOverrideUploadRe
 }
 
 export const migrationApi = {
-  sources: (cursor?: string, signal?: AbortSignal) => api<MigrationSourcePage>(`${root}/sources${query({ cursor, take: 50 })}`, { signal }),
+  sources: (cursor?: string, signal?: AbortSignal) => apiParsed(`${root}/sources${query({ cursor, take: 50 })}`, migrationSourcePage, { signal }),
   licence: (sourceId: string, confirmed: boolean, contractReference: string | null, note: string | null) =>
-    api<MigrationSource>(`${root}/sources/${sourceId}/licence`, { method: "POST", body: { confirmed, contractReference, note } }),
-  testSource: (sourceId: string) => api<MigrationSourceTestResult>(`${root}/sources/${sourceId}/test`, { method: "POST" }),
-  batches: (cursor?: string, signal?: AbortSignal) => api<MigrationBatchPage>(`${root}/batches${query({ cursor, take: 12 })}`, { signal }),
-  batch: (batchId: string, signal?: AbortSignal) => api<MigrationBatch>(`${root}/batches/${batchId}`, { signal }),
-  startBatch: (sourceId: string) => api<StartMigrationBatchResponse>(`${root}/batches`, { method: "POST", body: { sourceId } }),
-  profile: (batchId: string, signal?: AbortSignal) => api<MigrationProfile>(`${root}/batches/${batchId}/profile`, { signal }),
-  samples: (batchId: string, classCode: string, signal?: AbortSignal) => api<MigrationProfileSamples>(`${root}/batches/${batchId}/profile/${encodeURIComponent(classCode)}/samples`, { signal }),
-  rerunProfile: (batchId: string) => api<{ runId: string; batchId: string; status: string }>(`${root}/batches/${batchId}/profile`, { method: "POST" }),
-  outcomes: (signal?: AbortSignal) => api<MigrationOutcomeSettings>(`${root}/profiling/outcomes`, { signal }),
-  saveOutcomes: (classes: MigrationOutcomeChoice[], expectedVersion: string) => api<MigrationOutcomeSettings>(`${root}/profiling/outcomes`, { method: "PUT", body: { classes, expectedVersion } }),
-  canonicalisation: (batchId: string, signal?: AbortSignal) => api<CanonicalisationRun>(`${root}/batches/${batchId}/canonicalisation`, { signal }),
-  runCanonicalisation: (batchId: string) => api<{ runId: string; batchId: string; status: string }>(`${root}/batches/${batchId}/canonicalise`, { method: "POST" }),
-  reconstruction: (batchId: string, signal?: AbortSignal) => api<MigrationReconstruction>(`${root}/batches/${batchId}/reconstruction`, { signal }),
-  map: (batchId: string, signal?: AbortSignal) => api<MigrationMap>(`${root}/batches/${batchId}/map`, { signal }),
+    apiParsed(`${root}/sources/${sourceId}/licence`, migrationSource, { method: "POST", body: { confirmed, contractReference, note } }),
+  testSource: (sourceId: string) => apiParsed(`${root}/sources/${sourceId}/test`, migrationSourceTestResult, { method: "POST" }),
+  batches: (cursor?: string, signal?: AbortSignal) => apiParsed(`${root}/batches${query({ cursor, take: 12 })}`, migrationBatchPage, { signal }),
+  batch: (batchId: string, signal?: AbortSignal) => apiParsed(`${root}/batches/${batchId}`, migrationBatch, { signal }),
+  startBatch: (sourceId: string) => apiParsed(`${root}/batches`, startMigrationBatchResponse, { method: "POST", body: { sourceId } }),
+  profile: (batchId: string, signal?: AbortSignal) => apiParsed(`${root}/batches/${batchId}/profile`, migrationProfile, { signal }),
+  samples: (batchId: string, classCode: string, signal?: AbortSignal) => apiParsed(`${root}/batches/${batchId}/profile/${encodeURIComponent(classCode)}/samples`, migrationProfileSamples, { signal }),
+  rerunProfile: (batchId: string) => apiParsed(`${root}/batches/${batchId}/profile`, z.object({ runId: z.string(), batchId: z.string(), status: z.string() }), { method: "POST" }),
+  outcomes: (signal?: AbortSignal) => apiParsed(`${root}/profiling/outcomes`, migrationOutcomeSettings, { signal }),
+  saveOutcomes: (classes: MigrationOutcomeChoice[], expectedVersion: string) => apiParsed(`${root}/profiling/outcomes`, migrationOutcomeSettings, { method: "PUT", body: { classes, expectedVersion } }),
+  canonicalisation: (batchId: string, signal?: AbortSignal) => apiParsed(`${root}/batches/${batchId}/canonicalisation`, canonicalisationRun, { signal }),
+  runCanonicalisation: (batchId: string) => apiParsed(`${root}/batches/${batchId}/canonicalise`, z.object({ runId: z.string(), batchId: z.string(), status: z.string() }), { method: "POST" }),
+  reconstruction: (batchId: string, signal?: AbortSignal) => apiParsed(`${root}/batches/${batchId}/reconstruction`, migrationReconstruction, { signal }),
+  map: (batchId: string, signal?: AbortSignal) => apiParsed(`${root}/batches/${batchId}/map`, migrationMap, { signal }),
   mapGaps: (batchId: string, kind?: string, cursor?: string, signal?: AbortSignal) =>
-    api<MigrationPlanGapPage>(`${root}/batches/${batchId}/map/gaps${query({ kind, cursor, take: 25 })}`, { signal }),
-  apply: (batchId: string, rehearsal: boolean) => api<StartMigrationApplyResponse>(`${root}/batches/${batchId}/apply`, { method: "POST", body: { rehearsal } }),
-  load: (batchId: string, signal?: AbortSignal) => api<MigrationApply>(`${root}/batches/${batchId}/apply`, { signal }),
-  loadReadiness: (batchId: string, signal?: AbortSignal) => api<MigrationLoadReadiness>(`${root}/batches/${batchId}/load-readiness`, { signal }),
-  startDelta: (batchId: string) => api<StartMigrationApplyResponse>(`${root}/batches/${batchId}/delta`, { method: "POST" }),
+    apiParsed(`${root}/batches/${batchId}/map/gaps${query({ kind, cursor, take: 25 })}`, migrationPlanGapPage, { signal }),
+  apply: (batchId: string, rehearsal: boolean) => apiParsed(`${root}/batches/${batchId}/apply`, startMigrationApplyResponse, { method: "POST", body: { rehearsal } }),
+  load: (batchId: string, signal?: AbortSignal) => apiParsed(`${root}/batches/${batchId}/apply`, migrationApply, { signal }),
+  loadReadiness: (batchId: string, signal?: AbortSignal) => apiParsed(`${root}/batches/${batchId}/load-readiness`, migrationLoadReadiness, { signal }),
+  startDelta: (batchId: string) => apiParsed(`${root}/batches/${batchId}/delta`, startMigrationApplyResponse, { method: "POST" }),
   loads: (sourceId: string, cursor?: string, signal?: AbortSignal) =>
-    api<MigrationLoadPage>(`${root}/loads${query({ sourceId, cursor, take: 12 })}`, { signal }),
-  loadSummary: (loadId: string, signal?: AbortSignal) => api<MigrationLoadDetail>(`${root}/loads/${loadId}`, { signal }),
+    apiParsed(`${root}/loads${query({ sourceId, cursor, take: 12 })}`, migrationLoadPage, { signal }),
+  loadSummary: (loadId: string, signal?: AbortSignal) => apiParsed(`${root}/loads/${loadId}`, migrationLoadDetail, { signal }),
   deltaFindings: (loadId: string, filters: { kind?: string | undefined; itemCode?: string | undefined; serial?: string | undefined; cursor?: string | undefined } = {}, signal?: AbortSignal) =>
-    api<MigrationDeltaFindingPage>(`${root}/loads/${loadId}/delta${query({ ...filters, take: 100 })}`, { signal }),
+    apiParsed(`${root}/loads/${loadId}/delta${query({ ...filters, take: 100 })}`, migrationDeltaFindingPage, { signal }),
   deltaExportUrl: (loadId: string, format: "csv" | "xlsx", filters: { kind?: string; itemCode?: string; serial?: string }) =>
     deltaExportUrl(loadId, format, filters),
   loadRefusals: (loadId: string, filters: { reason?: string | undefined; itemCode?: string | undefined; serial?: string | undefined; cursor?: string | undefined } = {}, signal?: AbortSignal) =>
-    api<MigrationApplyRefusalPage>(`${root}/loads/${loadId}/refusals${query({ ...filters, take: 50 })}`, { signal }),
+    apiParsed(`${root}/loads/${loadId}/refusals${query({ ...filters, take: 50 })}`, migrationApplyRefusalPage, { signal }),
   loadRefusalsExportUrl: (loadId: string, filters: { reason?: string; itemCode?: string; serial?: string }) =>
     `${root}/loads/${loadId}/refusals/export.csv${query(filters)}`,
   touchedLoadUnits: (loadId: string, cursor?: string, signal?: AbortSignal) =>
-    api<TouchedMigrationLoadUnitPage>(`${root}/loads/${loadId}/rollback/touched-units${query({ cursor, take: 50 })}`, { signal }),
-  rollbackLoad: (loadId: string) => api<RollBackMigrationLoadResponse>(`${root}/loads/${loadId}/rollback`, { method: "POST" }),
-  resumeSync: (connectionId: string) => api<MigrationSyncControlResult>(`/api/integration/connections/${connectionId}/resume-sync`, { method: "POST", body: { note: "Resumed after the final migration load" } }),
+    apiParsed(`${root}/loads/${loadId}/rollback/touched-units${query({ cursor, take: 50 })}`, touchedMigrationLoadUnitPage, { signal }),
+  rollbackLoad: (loadId: string) => apiParsed(`${root}/loads/${loadId}/rollback`, rollBackMigrationLoadResponse, { method: "POST" }),
+  resumeSync: (connectionId: string) => apiParsed(`/api/integration/connections/${connectionId}/resume-sync`, migrationSyncControlResult, { method: "POST", body: { note: "Resumed after the final migration load" } }),
   review: (filters: { batchId: string; kind?: MigrationReviewKind | ""; family?: string; status?: MigrationReviewStatus | ""; find?: string; cursor?: string | undefined; take?: number }, signal?: AbortSignal) =>
-    api<MigrationReviewPage>(`${root}/review${query({ ...filters, take: filters.take ?? 25 })}`, { signal }),
+    apiParsed(`${root}/review${query({ ...filters, take: filters.take ?? 25 })}`, migrationReviewPage, { signal }),
   reviewExportUrl: (filters: { batchId: string; kind?: MigrationReviewKind | ""; family?: string; status?: MigrationReviewStatus | ""; find?: string }) =>
     `${root}/review/export.csv${query(filters)}`,
-  reviewDetail: (itemId: string, signal?: AbortSignal) => api<MigrationReviewDetail>(`${root}/review/${itemId}`, { signal }),
+  reviewDetail: (itemId: string, signal?: AbortSignal) => apiParsed(`${root}/review/${itemId}`, migrationReviewDetail, { signal }),
   decideReview: (itemId: string, decision: MigrationReviewDecision, keepSourceKey: string | null, reason: string, note?: string) =>
-    api<MigrationReviewDecisionResponse>(`${root}/review/${itemId}/decision`, { method: "POST", body: { decision, keepSourceKey, reason, note: note?.trim() || null } }),
-  canonicalFamilyCatalogue: (signal?: AbortSignal) => api<CanonicalFamilyCatalogue>(`${root}/canonicalisation/families/catalogue`, { signal }),
-  templateSummary: (signal?: AbortSignal) => api<TemplateMappingSummaryView>(`${root}/templates/summary`, { signal }),
+    apiParsed(`${root}/review/${itemId}/decision`, migrationReviewDecisionResponse, { method: "POST", body: { decision, keepSourceKey, reason, note: note?.trim() || null } }),
+  canonicalFamilyCatalogue: (signal?: AbortSignal) => apiParsed(`${root}/canonicalisation/families/catalogue`, canonicalFamilyCatalogue, { signal }),
+  templateSummary: (signal?: AbortSignal) => apiParsed(`${root}/templates/summary`, templateMappingSummaryView, { signal }),
   templatePatterns: (filters: { state?: TemplateMappingState | ""; deletedInSource?: boolean; cursor?: string; take?: number }, signal?: AbortSignal) =>
-    api<TemplatePatternPage>(`${root}/templates${query({ ...filters, take: filters.take ?? 25 })}`, { signal }),
+    apiParsed(`${root}/templates${query({ ...filters, take: filters.take ?? 25 })}`, templatePatternPage, { signal }),
   templateDetail: (templateKey: string, signal?: AbortSignal) =>
-    api<TemplateMappingDetail>(`${root}/templates/${encodeURIComponent(templateKey)}`, { signal }),
-  templateCatalogue: (signal?: AbortSignal) => api<PolicyCatalogue>(`${root}/templates/catalogue`, { signal }),
-  proposeTemplates: (templateKeys?: string[]) => api<{ requested: number; proposed: number; unchanged: number; superseded: number }>(`${root}/templates/propose`, { method: "POST", body: { templateKeys: templateKeys ?? null } }),
+    apiParsed(`${root}/templates/${encodeURIComponent(templateKey)}`, templateMappingDetail, { signal }),
+  templateCatalogue: (signal?: AbortSignal) => apiParsed(`${root}/templates/catalogue`, policyCatalogue, { signal }),
+  proposeTemplates: (templateKeys?: string[]) => apiParsed(`${root}/templates/propose`, z.object({ requested: z.number(), proposed: z.number(), unchanged: z.number(), superseded: z.number() }), { method: "POST", body: { templateKeys: templateKeys ?? null } }),
   updateTemplate: (templateKey: string, blocks: { familyCode: string; policyId: string | null }[], expectedVersion: string) =>
-    api<TemplateMappingDetail>(`${root}/templates/${encodeURIComponent(templateKey)}`, { method: "PUT", body: { blocks, expectedVersion } }),
-  approveTemplate: (templateKey: string) => api<TemplateMappingDetail>(`${root}/templates/${encodeURIComponent(templateKey)}/approve`, { method: "POST" }),
-  approveTemplatePattern: (patternKey: string) => api<{ patternKey: string; approved: number }>(`${root}/templates/approve-pattern`, { method: "POST", body: { patternKey } }),
-  templateKeywordRules: (signal?: AbortSignal) => api<TemplateKeywordRules>(`${root}/templates/keyword-rules`, { signal }),
-  saveTemplateKeywordRules: (rules: TemplateKeywordRule[], expectedVersion: string) => api<TemplateKeywordRules>(`${root}/templates/keyword-rules`, { method: "PUT", body: { rules, expectedVersion } }),
-  mappingSettings: (signal?: AbortSignal) => api<MappingSettings>(`${root}/mapping/settings`, { signal }),
-  saveMappingSettings: (settings: MappingSettings) => api<MappingSettings>(`${root}/mapping/settings`, { method: "PUT", body: {
+    apiParsed(`${root}/templates/${encodeURIComponent(templateKey)}`, templateMappingDetail, { method: "PUT", body: { blocks, expectedVersion } }),
+  approveTemplate: (templateKey: string) => apiParsed(`${root}/templates/${encodeURIComponent(templateKey)}/approve`, templateMappingDetail, { method: "POST" }),
+  approveTemplatePattern: (patternKey: string) => apiParsed(`${root}/templates/approve-pattern`, z.object({ patternKey: z.string(), approved: z.number() }), { method: "POST", body: { patternKey } }),
+  templateKeywordRules: (signal?: AbortSignal) => apiParsed(`${root}/templates/keyword-rules`, templateKeywordRules, { signal }),
+  saveTemplateKeywordRules: (rules: TemplateKeywordRule[], expectedVersion: string) => apiParsed(`${root}/templates/keyword-rules`, templateKeywordRules, { method: "PUT", body: { rules, expectedVersion } }),
+  mappingSettings: (signal?: AbortSignal) => apiParsed(`${root}/mapping/settings`, mappingSettings, { signal }),
+  saveMappingSettings: (settings: MappingSettings) => apiParsed(`${root}/mapping/settings`, mappingSettings, { method: "PUT", body: {
     allowWaitingReviews: settings.allowWaitingReviews, cutoverDate: settings.cutoverDate,
     conditionMap: settings.conditionMap, linkDefaults: settings.linkDefaults,
     cardCoverPolicyId: settings.cardCoverPolicyId, serialMasterCoverPolicyId: settings.serialMasterCoverPolicyId,
     expectedVersion: settings.version,
   } }),
-  currencyCatalogue: (signal?: AbortSignal) => api<CurrencyInfo[]>("/api/tenant/currency/catalogue", { signal }),
+  currencyCatalogue: (signal?: AbortSignal) => apiParsed("/api/tenant/currency/catalogue", z.array(currencyInfo), { signal }),
   linkOverrides: (batchId: string | undefined, unused: boolean | undefined, cursor?: string, signal?: AbortSignal) =>
-    api<LinkOverridePage>(`${root}/link-overrides${query({ batchId, unused: unused || undefined, cursor, take: 12 })}`, { signal }),
+    apiParsed(`${root}/link-overrides${query({ batchId, unused: unused || undefined, cursor, take: 12 })}`, linkOverridePage, { signal }),
   linkExportUrl: (batchId: string) => `${root}/batches/${batchId}/links/export.csv`,
   uploadLinkOverrides: (file: File) => uploadCsv(`${root}/link-overrides/upload`, file),
-  removeLinkOverrides: () => api<{ removed: number }>(`${root}/link-overrides`, { method: "DELETE", body: { confirm: true } }),
-  validation: (batchId: string, signal?: AbortSignal) => api<MigrationValidation>(`${root}/batches/${batchId}/validation`, { signal }),
+  removeLinkOverrides: () => apiParsed(`${root}/link-overrides`, z.object({ removed: z.number() }), { method: "DELETE", body: { confirm: true } }),
+  validation: (batchId: string, signal?: AbortSignal) => apiParsed(`${root}/batches/${batchId}/validation`, migrationValidation, { signal }),
   validationExportUrl: (batchId: string, format: "csv" | "xlsx") => `${root}/batches/${batchId}/validation/export.${format}`,
-  runValidation: (batchId: string, rehearsal: boolean) => api<StartValidationResponse>(`${root}/batches/${batchId}/validate`, { method: "POST", body: { rehearsal } }),
-  validationCheck: (checkId: string, signal?: AbortSignal) => api<ValidationCheckDetail>(`${root}/validation/checks/${checkId}`, { signal }),
-  validationDifferences: (checkId: string, cursor?: string, signal?: AbortSignal) => api<ValidationDifferencePage>(`${root}/validation/checks/${checkId}/differences${query({ cursor, take: 25 })}`, { signal }),
-  explainValidationCheck: (checkId: string, explanation: string) => api<ValidationCheck>(`${root}/validation/checks/${checkId}/explain`, { method: "POST", body: { explanation } }),
-  signValidationCheck: (checkId: string, role: ValidationSignatureRole) => api<ValidationCheck>(`${root}/validation/checks/${checkId}/sign`, { method: "POST", body: { role } }),
-  validationSample: (runId: string, cursor?: string, signal?: AbortSignal) => api<ValidationSamplePage>(`${root}/validation/runs/${runId}/sample${query({ cursor, take: 10 })}`, { signal }),
-  traceValidationSample: (sampleId: string, outcome: ValidationSampleOutcome, note: string | null) => api<ValidationSample>(`${root}/validation/sample/${sampleId}/trace`, { method: "POST", body: { outcome, note } }),
-  validationSettings: (signal?: AbortSignal) => api<ValidationSettings>(`${root}/validation/settings`, { signal }),
-  saveValidationSettings: (historicalTolerancePercent: number, sampleSize: number, ageBandYears: number[], expectedVersion: string) => api<ValidationSettings>(`${root}/validation/settings`, { method: "PUT", body: { historicalTolerancePercent, sampleSize, ageBandYears, expectedVersion } }),
-  createSignoff: (runId: string) => api<SignoffRecord>(`${root}/validation/runs/${runId}/signoff-record`, { method: "POST" }),
+  runValidation: (batchId: string, rehearsal: boolean) => apiParsed(`${root}/batches/${batchId}/validate`, startValidationResponse, { method: "POST", body: { rehearsal } }),
+  validationCheck: (checkId: string, signal?: AbortSignal) => apiParsed(`${root}/validation/checks/${checkId}`, validationCheckDetail, { signal }),
+  validationDifferences: (checkId: string, cursor?: string, signal?: AbortSignal) => apiParsed(`${root}/validation/checks/${checkId}/differences${query({ cursor, take: 25 })}`, validationDifferencePage, { signal }),
+  explainValidationCheck: (checkId: string, explanation: string) => apiParsed(`${root}/validation/checks/${checkId}/explain`, validationCheck, { method: "POST", body: { explanation } }),
+  signValidationCheck: (checkId: string, role: ValidationSignatureRole) => apiParsed(`${root}/validation/checks/${checkId}/sign`, validationCheck, { method: "POST", body: { role } }),
+  validationSample: (runId: string, cursor?: string, signal?: AbortSignal) => apiParsed(`${root}/validation/runs/${runId}/sample${query({ cursor, take: 10 })}`, validationSamplePage, { signal }),
+  traceValidationSample: (sampleId: string, outcome: ValidationSampleOutcome, note: string | null) => apiParsed(`${root}/validation/sample/${sampleId}/trace`, validationSample, { method: "POST", body: { outcome, note } }),
+  validationSettings: (signal?: AbortSignal) => apiParsed(`${root}/validation/settings`, validationSettings, { signal }),
+  saveValidationSettings: (historicalTolerancePercent: number, sampleSize: number, ageBandYears: number[], expectedVersion: string) => apiParsed(`${root}/validation/settings`, validationSettings, { method: "PUT", body: { historicalTolerancePercent, sampleSize, ageBandYears, expectedVersion } }),
+  createSignoff: (runId: string) => apiParsed(`${root}/validation/runs/${runId}/signoff-record`, signoffRecord, { method: "POST" }),
   signoffExportUrl: (recordId: string) => `${root}/signoff-records/${recordId}/export.csv`,
 };

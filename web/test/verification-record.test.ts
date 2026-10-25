@@ -13,7 +13,7 @@ test("verification record is routed from a connection and uses the approved tabs
   assert.match(routes, /integration\/connections\/:connectionId\/verification/);
   assert.match(connections, />Verification record</);
   for (const tab of ["Health", "Sign-in", "Extension", "Verification record", "Settings"]) assert.match(tabs, new RegExp(`>${tab}<`));
-  assert.match(tabs, /features\.tenantSideExtension/);
+  assert.match(tabs, /features\??\.tenantSideExtension/);
 });
 
 test("verification record shows manifest figures, client-paged facts and the fact drawer", () => {

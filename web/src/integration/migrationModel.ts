@@ -291,7 +291,7 @@ export function loadStatusLabel(value: string): string { return loadStatusLabels
 export function loadStatusTone(value: string): Tone { return value === "completed" ? "ok" : value === "failed" ? "bad" : /^(queued|running)$/.test(value) ? "info" : "neutral"; }
 export function loadKindLabel(value: MigrationLoadKind): string { return value === "rehearsal" ? "Rehearsal" : value === "final" ? "Final" : "Delta"; }
 export function loadKindTone(value: MigrationLoadKind): Tone { return value === "final" ? "ok" : value === "delta" ? "info" : "neutral"; }
-export function migrationApplyKind(load: Pick<MigrationApply, "label" | "rehearsal">): MigrationLoadKind { return load.label.startsWith("D") ? "delta" : load.rehearsal ? "rehearsal" : "final"; }
+export function migrationApplyKind(load: Pick<MigrationApply, "label" | "rehearsal">): MigrationLoadKind { return (load.label ?? "").startsWith("D") ? "delta" : load.rehearsal ? "rehearsal" : "final"; }
 export function deltaKindTone(value: string): Tone {
   return value === "new_unit" ? "ok" : value === "cover_replaced" ? "info"
     : value === "cover_refused" || value === "owner_differs" ? "warn" : "neutral";

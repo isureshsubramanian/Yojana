@@ -12,8 +12,8 @@ const connections = read("integration/Connections.tsx");
 
 test("extension screen is routed and capability-gated without a connector-id check", () => {
   assert.match(routes, /integration\/connections\/:connectionId\/extension/);
-  assert.match(tabs, /features\.tenantSideExtension/);
-  assert.match(connections, /detail\.features\.tenantSideExtension/);
+  assert.match(tabs, /features\??\.tenantSideExtension/);
+  assert.match(connections, /detail\.features\??\.tenantSideExtension/);
   assert.doesNotMatch(screen, /CX02|connectorCode\s*===/);
   assert.doesNotMatch(tabs, /CX02|connectorCode\s*===/);
 });

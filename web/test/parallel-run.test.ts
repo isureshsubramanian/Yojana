@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { ApiError, unexpectedResponseRule } from "../src/api/client.ts";
 import type { ParallelRunDashboard } from "../src/integration/adminTypes.ts";
 import { parallelRunApi } from "../src/integration/parallelRunApi.ts";
 import { goLiveStatus, handoverState, lag, parallelEyebrow, parallelKpis } from "../src/integration/parallelRunModel.ts";
@@ -72,6 +73,12 @@ test("all write drawers enforce evidence limits and submit through typed client 
   assert.match(screen, /migration_owner_differs|server refusal message|ErrorNote/);
 });
 
+// These two tests check the requests only; the fake server answers every call with the dashboard body, so a call whose
+// reply has another shape is refused at the schema boundary. Reply shapes are covered by integration-schemas.test.ts.
+const requestOnly = (call: Promise<unknown>) => call.catch((reason: unknown) => {
+  if (!(reason instanceof ApiError && reason.rule === unexpectedResponseRule)) throw reason;
+});
+
 test("typed parallel-run client sends the exact contracted paths, verbs and bodies", async () => {
   const original = globalThis.fetch; const calls: { path: string; method: string; body: unknown }[] = [];
   globalThis.fetch = async (input, init) => {
@@ -79,14 +86,14 @@ test("typed parallel-run client sends the exact contracted paths, verbs and bodi
     return new Response(JSON.stringify(dashboard), { status: 200, headers: { "content-type": "application/json" } });
   };
   try {
-    await parallelRunApi.start("connection-internal", 30, "2026-09-01");
-    await parallelRunApi.setMonthEndClose("connection-internal", "2026-09-30");
-    await parallelRunApi.planHandover("connection-internal", "returns", "2026-09-20");
-    await parallelRunApi.confirmHandover("connection-internal", "returns", "Permissions checked");
-    await parallelRunApi.confirmGoLiveItem("connection-internal", "users_trained", "14 of 14 trained");
-    await parallelRunApi.issueGoLiveRecord("connection-internal");
-    await parallelRunApi.resolveConflict("conflict-internal", "accept_remote", "Customer confirmed the transfer");
-    await parallelRunApi.explainReconciliation("run-internal", "Late source message arrived next day");
+    await requestOnly(parallelRunApi.start("connection-internal", 30, "2026-09-01"));
+    await requestOnly(parallelRunApi.setMonthEndClose("connection-internal", "2026-09-30"));
+    await requestOnly(parallelRunApi.planHandover("connection-internal", "returns", "2026-09-20"));
+    await requestOnly(parallelRunApi.confirmHandover("connection-internal", "returns", "Permissions checked"));
+    await requestOnly(parallelRunApi.confirmGoLiveItem("connection-internal", "users_trained", "14 of 14 trained"));
+    await requestOnly(parallelRunApi.issueGoLiveRecord("connection-internal"));
+    await requestOnly(parallelRunApi.resolveConflict("conflict-internal", "accept_remote", "Customer confirmed the transfer"));
+    await requestOnly(parallelRunApi.explainReconciliation("run-internal", "Late source message arrived next day"));
   } finally { globalThis.fetch = original; }
   assert.deepEqual(calls, [
     { path: "/api/integration/connections/connection-internal/parallel-run", method: "POST", body: { days: 30, startDate: "2026-09-01" } },
@@ -105,9 +112,9 @@ test("dashboard, conflict and issued-record reads use contracted filters and dow
   const original = globalThis.fetch; const calls: string[] = [];
   globalThis.fetch = async input => { calls.push(String(input)); return new Response(JSON.stringify(dashboard), { status: 200, headers: { "content-type": "application/json" } }); };
   try {
-    await parallelRunApi.dashboard("connection-internal");
-    await parallelRunApi.conflicts("connection-internal");
-    await parallelRunApi.goLiveRecord("record-internal");
+    await requestOnly(parallelRunApi.dashboard("connection-internal"));
+    await requestOnly(parallelRunApi.conflicts("connection-internal"));
+    await requestOnly(parallelRunApi.goLiveRecord("record-internal"));
   } finally { globalThis.fetch = original; }
   assert.deepEqual(calls, [
     "/api/integration/connections/connection-internal/parallel-run/dashboard",

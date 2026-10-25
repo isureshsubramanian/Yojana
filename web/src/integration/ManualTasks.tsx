@@ -53,8 +53,9 @@ export function Component() {
     } finally { setBusy(false); }
   };
   const cancel = async () => {
-    if (!selected || !cancelReason.trim()) return; setBusy(true); setError(null);
-    try { await integrationApi.discard(selected.deadLetterItemId, cancelReason.trim()); setSelected(null); await load(1); }
+    const deadLetterItemId = selected?.deadLetterItemId;
+    if (!deadLetterItemId || !cancelReason.trim()) return; setBusy(true); setError(null);
+    try { await integrationApi.discard(deadLetterItemId, cancelReason.trim()); setSelected(null); await load(1); }
     catch (reason) { setError(reason); } finally { setBusy(false); }
   };
   useModEnter(() => complete(false), !selected || busy || !erpNumber.trim());
@@ -94,7 +95,7 @@ function DraftDetail({ task, erpNumber, setErpNumber, unverified, complete, busy
     {draft.total !== undefined && <div className="card-footer"><span className="muted">Tax and accounts are set by the ERP as usual</span><span className="grow" /><strong>Total {draft.currency ?? ""} {Number(draft.total).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>}
     <div className="integration-enter-id"><label className="field"><span className="lbl">ERP document number, once posted</span><input className="input mono" value={erpNumber} onChange={(event) => setErpNumber(event.target.value)} placeholder="for example 30552" required /><span className="help">We look for the pasted reference first, so the same document is never recorded twice.</span></label><button type="button" className="btn primary" disabled={busy || !erpNumber.trim()} onClick={() => void complete(false)}>Record ERP number</button></div>
     {unverified && <div className="integration-warning" role="alert"><div className="note warn"><strong>We could not verify that ERP number.</strong>&nbsp;Check it before continuing. You may still record it because this tenant allows unknown numbers with a warning.</div><button type="button" className="btn primary" disabled={busy} onClick={() => void complete(true)}>Record anyway</button></div>}
-    <div className="integration-cancel"><label className="field"><span className="lbl">Cancel reason</span><input className="input" value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} placeholder="Reason (required)" required /></label><button type="button" className="btn" disabled={busy || !cancelReason.trim()} onClick={() => void cancel()}>Cancel with reason</button></div>
+    {task.deadLetterItemId && <div className="integration-cancel"><label className="field"><span className="lbl">Cancel reason</span><input className="input" value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} placeholder="Reason (required)" required /></label><button type="button" className="btn" disabled={busy || !cancelReason.trim()} onClick={() => void cancel()}>Cancel with reason</button></div>}
   </section>;
 }
 

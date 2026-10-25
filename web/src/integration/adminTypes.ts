@@ -1,83 +1,207 @@
+import * as z from "zod/mini";
+export const cursorPage = <T extends z.ZodMiniType>(item: T) => z.object({ items: z.array(item),
+  nextCursor: z.nullable(z.string()) });
+export const connectionKpis = z.object({ connections: z.number(), live: z.number(), paused: z.number(),
+  receivedToday: z.number(), receivedLast30Days: z.number(), waitingToSend: z.number(), openDeadLetters: z.number(),
+  openManualTasks: z.number(), connectionsNeedingAttention: z.number(), relayConnected: z.number() });
+export type ConnectionKpis = z.infer<typeof connectionKpis>;
+export const health = z.object({ status: z.string(), isLive: z.boolean(), notificationState: z.string(),
+  checkedUpTo: z.nullable(z.string()), lastInboundAt: z.nullable(z.string()), receivedToday: z.number(),
+  receivedLast30Days: z.number(), waitingToSend: z.number(), oldestWaitingAt: z.nullable(z.string()),
+  openDeadLetters: z.number(), openManualTasks: z.number(), lastDailyCheckResult: z.nullable(z.string()),
+  lastDailyCheckAt: z.nullable(z.string()), dailyCheckDifferences: z.number(), callsUsed: z.number(),
+  callsCap: z.nullable(z.number()), lastErrorCode: z.nullable(z.string()), lastErrorMessage: z.nullable(z.string()),
+  updatedAt: z.string(), relayConnected: z.boolean() });
+export type Health = z.infer<typeof health>;
+export const syncState = z.object({ state: z.enum(["running", "stopped"]), stoppedAt: z.nullable(z.string()),
+  stoppedByName: z.nullable(z.string()), stopReason: z.nullable(z.string()), resumedAt: z.nullable(z.string()),
+  catchingUp: z.boolean(), notifications: z.enum(["pending", "held", "not_held", "not_supported"]),
+  notificationFailureCode: z.nullable(z.string()), waitingOutbound: z.number() });
+export type SyncState = z.infer<typeof syncState>;
+export const connection = z.object({ connectionId: z.string(), connectionName: z.string(), connectorCode: z.string(),
+  connectorName: z.string(), status: z.string(), isLive: z.boolean(), outboundMode: z.string(), readOnly: z.boolean(),
+  acceptancePassed: z.boolean(), health: health, sync: syncState });
+export type Connection = z.infer<typeof connection>;
+export const tenantStatus = z.object({ connectionId: z.string(), connectionName: z.string(), status: z.string(),
+  isLive: z.boolean(), checkedUpTo: z.nullable(z.string()), waitingToSend: z.number(),
+  messagesNeedingAttention: z.number(), openManualTasks: z.number(), updatedAt: z.string(), sync: syncState });
+export type TenantStatus = z.infer<typeof tenantStatus>;
+export const recordHealth = z.object({ sourceEntity: z.nullable(z.string()), recordType: z.string(),
+  notificationState: z.string(), watermark: z.nullable(z.string()), checkedUpTo: z.nullable(z.string()),
+  behindSeconds: z.nullable(z.number()), intervalSeconds: z.number(), overlapSeconds: z.number(),
+  receivedToday: z.number(), needAttention: z.number(), lastErrorCode: z.nullable(z.string()),
+  lastErrorDetail: z.nullable(z.string()) });
+export type RecordHealth = z.infer<typeof recordHealth>;
+export const healthDetail = z.object({ connectionName: z.string(), health: health, recordTypes: z.array(recordHealth),
+  handOver: z.optional(z.nullable(z.object({ from: z.string(), text: z.string() }))), sync: syncState });
+export type HealthDetail = z.infer<typeof healthDetail>;
+export const connectionEvent = z.object({ sequence: z.number(), kind: z.string(), occurredAt: z.string(),
+  actorName: z.string(), summary: z.string() });
+export type ConnectionEvent = z.infer<typeof connectionEvent>;
+export const checklistItem = z.object({ code: z.string(), label: z.string(), detail: z.string(), required: z.boolean(),
+  evidencePrompt: z.nullable(z.string()), status: z.string(), evidence: z.nullable(z.string()),
+  confirmedAt: z.nullable(z.string()), manualConfirmation: z.boolean() });
+export type ChecklistItem = z.infer<typeof checklistItem>;
+export const checklist = z.object({ displayName: z.string(), customerCostDisclosure: z.string(),
+  items: z.array(checklistItem), requiredItemsConfirmed: z.boolean() });
+export type Checklist = z.infer<typeof checklist>;
+export const warrantyContractSettings = z.object({ maintainedIn: z.enum(["module", "incumbent_until_cutover"]),
+  version: z.string() });
+export type WarrantyContractSettings = z.infer<typeof warrantyContractSettings>;
+export const coexistenceSettings = z.object({ connectionId: z.string(), nativeWarrantyObjectMode: z.enum(["frozen",
+  "pushed"]), pushedModeAvailable: z.boolean(), driftScanEnabled: z.boolean(), watchedFields: z.array(z.string()),
+  explainingFields: z.array(z.string()), pageSize: z.number(), maxPagesPerRun: z.number() });
+export type CoexistenceSettings = z.infer<typeof coexistenceSettings>;
+export const credential = z.object({ purpose: z.string(), isSet: z.boolean(), createdAt: z.nullable(z.string()),
+  expiresAt: z.nullable(z.string()), replaceBy: z.nullable(z.string()), retiredAt: z.nullable(z.string()) });
+export type Credential = z.infer<typeof credential>;
+export const connectionFeatures = z.object({ tenantSideExtension: z.boolean(), interactiveSignIn: z.boolean() });
+export type ConnectionFeatures = z.infer<typeof connectionFeatures>;
+export const syncStart = z.object({ mode: z.enum(["today", "date", "full_history"]), date: z.nullable(z.string()),
+  masterDataFull: z.boolean() });
+export type SyncStart = z.infer<typeof syncStart>;
+export const serviceCertificate = z.object({ subject: z.string(), issuer: z.string(), validFrom: z.string(),
+  validTo: z.string(), sha256Fingerprint: z.string() });
+export type ServiceCertificate = z.infer<typeof serviceCertificate>;
+export const fullHistoryEstimate = z.object({ status: z.enum(["known", "unknown"]), records: z.nullable(z.number()),
+  entities: z.nullable(z.record(z.string(), z.number())) });
+export type FullHistoryEstimate = z.infer<typeof fullHistoryEstimate>;
+export const connectionDetail = z.object({ lifecycleStatus: z.string(), reconciliationWindowDays: z.number(),
+  reconciliationToday: z.string(), connection: connection, createdAt: z.string(), archivedAt: z.nullable(z.string()),
+  features: z.nullable(connectionFeatures), sync: syncState,
+  capabilities: z.array(z.object({ canonicalMessage: z.string(), supportLevel: z.string() })),
+  settings: z.object({ outboundMode: z.string(), readOnly: z.boolean(), nativeWarrantyObjectMode: z.string(),
+  warrantyContractsMaintainedIn: z.enum(["module", "incumbent_until_cutover"]), orderingWaitMinutes: z.number(),
+  syncStart: z.nullable(syncStart), serviceCertificateSha256: z.nullable(z.string()),
+  throttle: z.nullable(z.object({ requestsPerSecond: z.nullable(z.number()), requestsPerMinute: z.nullable(z.number()),
+  requestsPerDay: z.nullable(z.number()), burst: z.number(), maxConcurrentCalls: z.number(),
+  retryAfterCeiling: z.string(), alertThresholdPercent: z.number() })),
+  degradationRules: z.array(z.object({ ruleNumber: z.number(), enabled: z.boolean(), settingsJson: z.string() })) }),
+  credentials: z.array(credential), checklist: checklist });
+export type ConnectionDetail = z.infer<typeof connectionDetail>;
+export const syncControlResult = z.object({ connectionId: z.string(), syncState: z.string(),
+  notifications: syncState.shape.notifications, waitingOutbound: z.number(), failureCode: z.nullable(z.string()),
+  warning: z.nullable(z.string()) });
+export type SyncControlResult = z.infer<typeof syncControlResult>;
+export const registrationField = z.object({ code: z.string(), label: z.string(), type: z.string(),
+  defaultValue: z.nullable(z.string()) });
+export type RegistrationField = z.infer<typeof registrationField>;
+export const registrationConnector = z.object({ code: z.string(), displayName: z.string(),
+  form: z.object({ settings: z.array(registrationField), credentialPurpose: z.string(),
+  secretFields: z.array(registrationField) }) });
+export type RegistrationConnector = z.infer<typeof registrationConnector>;
+export const archiveResult = z.object({ archived: z.boolean(), preconditions: z.object({ waitingOutbox: z.number(),
+  openDeadLetters: z.number(), runningBackfills: z.number(), openManualTasks: z.number(), blocked: z.boolean() }),
+  cleanupErrorCode: z.nullable(z.string()) });
+export type ArchiveResult = z.infer<typeof archiveResult>;
+export const fieldSource = z.object({ field: z.nullable(z.string()),
+  trueValues: z.optional(z.nullable(z.array(z.string()))), valueMap: z.optional(z.nullable(z.record(z.string(),
+  z.string()))) });
+export type FieldSource = z.infer<typeof fieldSource>;
+export const fieldMap = z.object({ fields: z.array(z.object({ code: z.string(), label: z.string(), kind: z.number(),
+  effective: fieldSource, warning: z.nullable(z.string()), surveyedFields: z.array(z.string()) })) });
+export type FieldMap = z.infer<typeof fieldMap>;
+export const approvalView = z.object({ templatesKnown: z.boolean(),
+  documentTypes: z.array(z.object({ collection: z.string(), documentType: z.string(), draftSupported: z.boolean(),
+  activeTemplates: z.array(z.string()), effectiveMode: z.string(), warning: z.nullable(z.string()),
+  configured: z.nullable(z.object({ evidence: z.nullable(z.string()), acceptedAt: z.nullable(z.string()) })) })) });
+export type ApprovalView = z.infer<typeof approvalView>;
+export const relay = z.object({ relayId: z.string(), displayName: z.string(), status: z.string(),
+  lastSeenAt: z.nullable(z.string()), agentVersion: z.nullable(z.string()), hostName: z.nullable(z.string()) });
+export type Relay = z.infer<typeof relay>;
+export const relayIssued = z.object({ secret: z.string(), configuration: z.record(z.string(), z.unknown()) });
+export type RelayIssued = z.infer<typeof relayIssued>;
+export const transportSettings = z.object({ route: z.object({ mode: z.string(),
+  credentialReference: z.nullable(z.string()) }), drainingRoutes: z.array(z.object({ mode: z.string() })),
+  version: z.string() });
+export type TransportSettings = z.infer<typeof transportSettings>;
+export const run = z.object({ runId: z.string(), connectionId: z.string(), connectionName: z.string(),
+  rangeStart: z.string(), rangeEnd: z.string(), trigger: z.string(), status: z.string(), startedAt: z.string(),
+  completedAt: z.nullable(z.string()), mismatchCount: z.number(), locationMismatchCount: z.number(),
+  requestedByName: z.string(), explainedAt: z.nullable(z.string()), explainedByName: z.nullable(z.string()),
+  explanationNote: z.nullable(z.string()) });
+export type Run = z.infer<typeof run>;
+export const entityDay = z.object({ resultId: z.string(), entity: z.string(), businessDate: z.string(),
+  sourceCount: z.number(), moduleCount: z.number(), sourceQuantity: z.number(), moduleQuantity: z.number(),
+  sourceDistinctSerials: z.number(), moduleDistinctSerials: z.number(), sourceKeyFieldHash: z.string(),
+  moduleKeyFieldHash: z.string(), status: z.string(), backfillJobId: z.nullable(z.string()),
+  attentionItemId: z.nullable(z.string()) });
+export type EntityDay = z.infer<typeof entityDay>;
+export const locationCheck = z.object({ resultId: z.string(), itemCode: z.string(), itemName: z.nullable(z.string()),
+  locationCode: z.string(), locationName: z.nullable(z.string()), sourceOnHand: z.number(),
+  moduleUnitCount: z.number(), status: z.string() });
+export type LocationCheck = z.infer<typeof locationCheck>;
+export const backfill = z.object({ backfillId: z.string(), connectionId: z.string(), connectionName: z.string(),
+  entity: z.string(), rangeStart: z.string(), rangeEnd: z.string(), status: z.string(), processedMessages: z.number(),
+  processedPages: z.number(), totalMessages: z.nullable(z.number()), progressPercent: z.nullable(z.number()),
+  estimatedRemaining: z.nullable(z.string()), createdAt: z.string(), startedAt: z.nullable(z.string()),
+  lastPageAt: z.nullable(z.string()), awaitingReconciliationAt: z.nullable(z.string()),
+  completedAt: z.nullable(z.string()), lastFailure: z.nullable(z.string()), savedCursor: z.nullable(z.string()),
+  pageSize: z.number() });
+export type Backfill = z.infer<typeof backfill>;
+export const parallelRunRefusal = z.object({ code: z.string(), message: z.string() });
+export type ParallelRunRefusal = z.infer<typeof parallelRunRefusal>;
+export const parallelRunSyncLag = z.object({ nowSeconds: z.nullable(z.number()), targetSeconds: z.number(),
+  shareWithinTargetToday: z.nullable(z.number()), messagesToday: z.number() });
+export type ParallelRunSyncLag = z.infer<typeof parallelRunSyncLag>;
+export const parallelRunConflictSummary = z.object({ open: z.number(), oldestDetectedAt: z.nullable(z.string()),
+  autoResolved: z.number() });
+export type ParallelRunConflictSummary = z.infer<typeof parallelRunConflictSummary>;
+export const parallelRunFailedMessages = z.object({ open: z.number(), olderThanSevenDays: z.number() });
+export type ParallelRunFailedMessages = z.infer<typeof parallelRunFailedMessages>;
+export const parallelRunReconciliationSummary = z.object({ runs: z.number(), clean: z.number(), explained: z.number(),
+  mismatch: z.number(), failed: z.number(), lastExplainedOn: z.nullable(z.string()) });
+export type ParallelRunReconciliationSummary = z.infer<typeof parallelRunReconciliationSummary>;
+export const handoverStepView = z.object({ order: z.number(), kind: z.string(), label: z.string(),
+  description: z.string(), state: z.enum(["planned", "next", "module_owns", "after_close"]),
+  plannedOn: z.nullable(z.string()), ownedSince: z.nullable(z.string()), evidence: z.nullable(z.string()),
+  confirmedByName: z.nullable(z.string()), confirmedAt: z.nullable(z.string()), facts: z.array(z.string()),
+  canConfirm: z.boolean(), confirmRefusals: z.array(parallelRunRefusal) });
+export type HandoverStepView = z.infer<typeof handoverStepView>;
+export const goLiveItemView = z.object({ code: z.string(), label: z.string(), source: z.enum(["measured",
+  "confirmed"]), status: z.enum(["done", "open", "fail"]), detail: z.string(), evidence: z.nullable(z.string()),
+  confirmedByName: z.nullable(z.string()), confirmedAt: z.nullable(z.string()) });
+export type GoLiveItemView = z.infer<typeof goLiveItemView>;
+export const goLiveView = z.object({ done: z.number(), total: z.number(), issuedAt: z.nullable(z.string()),
+  recordId: z.nullable(z.string()), canIssue: z.boolean(), issueRefusals: z.array(parallelRunRefusal),
+  items: z.array(goLiveItemView) });
+export type GoLiveView = z.infer<typeof goLiveView>;
+export const parallelRunDashboard = z.object({ connectionId: z.string(), connectionLabel: z.string(),
+  status: z.enum(["not_started", "in_progress", "ready"]), days: z.nullable(z.number()),
+  startDate: z.nullable(z.string()), endDate: z.nullable(z.string()), dayNumber: z.nullable(z.number()),
+  daysLeft: z.nullable(z.number()), monthEndCloseOn: z.nullable(z.string()), cutoverAt: z.nullable(z.string()),
+  syncLag: parallelRunSyncLag, conflicts: parallelRunConflictSummary, failedMessages: parallelRunFailedMessages,
+  reconciliation: parallelRunReconciliationSummary, handover: z.array(handoverStepView), goLive: goLiveView });
+export type ParallelRunDashboard = z.infer<typeof parallelRunDashboard>;
+export const parallelRunChecklistItem = z.object({ code: z.string(), label: z.string(), kind: z.string(),
+  status: z.string(), detail: z.string(), evidence: z.nullable(z.string()), confirmedBy: z.nullable(z.string()),
+  confirmedAt: z.nullable(z.string()) });
+export type ParallelRunChecklistItem = z.infer<typeof parallelRunChecklistItem>;
+export const parallelRunView = z.object({ connectionId: z.string(), connectionLabel: z.string(), status: z.string(),
+  days: z.nullable(z.number()), startDate: z.nullable(z.string()), earliestDecommissionDate: z.nullable(z.string()),
+  recommendedDays: z.number(), items: z.array(parallelRunChecklistItem) });
+export type ParallelRunView = z.infer<typeof parallelRunView>;
+export const goLiveRecordView = z.object({ recordId: z.string(), connectionId: z.string(), connectionLabel: z.string(),
+  issuedAt: z.string(), issuedByName: z.string(), items: z.array(goLiveItemView),
+  handover: z.array(handoverStepView) });
+export type GoLiveRecordView = z.infer<typeof goLiveRecordView>;
+export const coexistenceConflictView = z.object({ conflictId: z.string(), connectionId: z.string(),
+  connectionLabel: z.string(), recordType: z.string(), recordKey: z.string(), recordLabel: z.string(),
+  kind: z.string(), fieldName: z.string(), baselineValue: z.nullable(z.string()), remoteValue: z.nullable(z.string()),
+  status: z.string(), detectedAt: z.string(), lastSeenAt: z.string(), incumbentChangedAt: z.nullable(z.string()),
+  decision: z.nullable(z.string()), decisionNote: z.nullable(z.string()), decidedBy: z.nullable(z.string()),
+  decidedAt: z.nullable(z.string()), manualTaskId: z.nullable(z.string()), closedAt: z.nullable(z.string()),
+  deciderRoleLabel: z.optional(z.string()), moduleValueLabel: z.optional(z.nullable(z.string())) });
+export type CoexistenceConflictView = z.infer<typeof coexistenceConflictView>;
+export const coexistenceConflictPage = z.object({ items: z.array(coexistenceConflictView),
+  nextCursor: z.nullable(z.string()) });
+export type CoexistenceConflictPage = z.infer<typeof coexistenceConflictPage>;
 export interface CursorPage<T> { items: T[]; nextCursor: string | null }
-export interface ConnectionKpis { connections: number; live: number; paused: number; receivedToday: number; receivedLast30Days: number; waitingToSend: number; openDeadLetters: number; openManualTasks: number; connectionsNeedingAttention: number; relayConnected: number }
-export interface Health { status: string; isLive: boolean; notificationState: string; checkedUpTo: string | null; lastInboundAt: string | null; receivedToday: number; receivedLast30Days: number; waitingToSend: number; oldestWaitingAt: string | null; openDeadLetters: number; openManualTasks: number; lastDailyCheckResult: string | null; lastDailyCheckAt: string | null; dailyCheckDifferences: number; callsUsed: number; callsCap: number | null; lastErrorCode: string | null; lastErrorMessage: string | null; updatedAt: string; relayConnected: boolean }
-export interface SyncState { state: "running" | "stopped"; stoppedAt: string | null; stoppedByName: string | null; stopReason: string | null; resumedAt: string | null; catchingUp: boolean; notifications: "pending" | "held" | "not_held" | "not_supported"; notificationFailureCode: string | null; waitingOutbound: number }
-export interface Connection { connectionId: string; connectionName: string; connectorCode: string; connectorName: string; status: string; isLive: boolean; outboundMode: string; readOnly: boolean; acceptancePassed: boolean; health: Health; sync: SyncState }
-export interface ConnectionPage extends CursorPage<Connection> { kpis: ConnectionKpis }
-export interface TenantStatus { connectionId: string; connectionName: string; status: string; isLive: boolean; checkedUpTo: string | null; waitingToSend: number; messagesNeedingAttention: number; openManualTasks: number; updatedAt: string; sync: SyncState }
-export interface TenantStatusPage extends CursorPage<TenantStatus> { kpis: ConnectionKpis }
-export interface RecordHealth { sourceEntity: string | null; recordType: string; notificationState: string; watermark: string | null; checkedUpTo: string | null; behindSeconds: number | null; intervalSeconds: number; overlapSeconds: number; receivedToday: number; needAttention: number; lastErrorCode: string | null; lastErrorDetail: string | null }
-export interface HealthDetail { connectionName: string; health: Health; recordTypes: RecordHealth[]; handOver?: { from: string; text: string } | null; sync: SyncState }
-export interface ConnectionEvent { sequence: number; kind: string; occurredAt: string; actorName: string; summary: string }
-export interface ChecklistItem { code: string; label: string; detail: string; required: boolean; evidencePrompt: string | null; status: string; evidence: string | null; confirmedAt: string | null; manualConfirmation: boolean }
-export interface Checklist { displayName: string; customerCostDisclosure: string; items: ChecklistItem[]; requiredItemsConfirmed: boolean }
-export interface WarrantyContractSettings { maintainedIn: "module" | "incumbent_until_cutover"; version: string }
-export interface CoexistenceSettings { connectionId: string; nativeWarrantyObjectMode: "frozen" | "pushed"; pushedModeAvailable: boolean; driftScanEnabled: boolean; watchedFields: string[]; explainingFields: string[]; pageSize: number; maxPagesPerRun: number }
-export interface Credential { purpose: string; isSet: boolean; createdAt: string | null; expiresAt: string | null; replaceBy: string | null; retiredAt: string | null }
-export interface ConnectionFeatures { tenantSideExtension: boolean; interactiveSignIn: boolean }
-export interface SyncStart { mode: "today" | "date" | "full_history"; date: string | null; masterDataFull: boolean }
-export interface ServiceCertificate { subject: string; issuer: string; validFrom: string; validTo: string; sha256Fingerprint: string }
-export interface FullHistoryEstimate { status: "known" | "unknown"; records: number | null; entities: Record<string, number> | null }
-export interface ConnectionDetail { lifecycleStatus: string; reconciliationWindowDays: number; reconciliationToday: string; connection: Connection; createdAt: string; archivedAt: string | null; features: ConnectionFeatures; sync: SyncState; capabilities: { canonicalMessage: string; supportLevel: string }[]; settings: { outboundMode: string; readOnly: boolean; nativeWarrantyObjectMode: string; warrantyContractsMaintainedIn: "module" | "incumbent_until_cutover"; orderingWaitMinutes: number; syncStart: SyncStart | null; serviceCertificateSha256: string | null; throttle: { requestsPerSecond: number | null; requestsPerMinute: number | null; requestsPerDay: number | null; burst: number; maxConcurrentCalls: number; retryAfterCeiling: string; alertThresholdPercent: number } | null; degradationRules: { ruleNumber: number; enabled: boolean; settingsJson: string }[] }; credentials: Credential[]; checklist: Checklist }
+// Hidden coupling: `sync` is required below although the C# contracts declare it nullable. The server builds every
+// connection view through ConnectionQueries.SyncStatesAsync, which always supplies it; if that changes, make `sync`
+// nullable here and handle null on the Integration screens.
+export const connectionPage = z.extend(cursorPage(connection), { kpis: connectionKpis });
+export type ConnectionPage = z.infer<typeof connectionPage>;
+export const tenantStatusPage = z.extend(cursorPage(tenantStatus), { kpis: connectionKpis });
+export type TenantStatusPage = z.infer<typeof tenantStatusPage>;
 
-export interface SyncControlResult { connectionId: string; syncState: string; notifications: SyncState["notifications"]; waitingOutbound: number; failureCode: string | null; warning: string | null }
-export interface RegistrationField { code: string; label: string; type: string; defaultValue: string | null }
-export interface RegistrationConnector { code: string; displayName: string; form: { settings: RegistrationField[]; credentialPurpose: string; secretFields: RegistrationField[] } }
-export interface ArchiveResult { archived: boolean; preconditions: { waitingOutbox: number; openDeadLetters: number; runningBackfills: number; openManualTasks: number; blocked: boolean }; cleanupErrorCode: string | null }
-export interface FieldSource { field: string | null; trueValues?: string[] | null; valueMap?: Record<string, string> | null }
-export interface FieldMap { fields: { code: string; label: string; kind: number; effective: FieldSource; warning: string | null; surveyedFields: string[] }[] }
-export interface ApprovalView { templatesKnown: boolean; documentTypes: { collection: string; documentType: string; draftSupported: boolean; activeTemplates: string[]; effectiveMode: string; warning: string | null; configured: { evidence: string | null; acceptedAt: string | null } | null }[] }
-export interface Relay { relayId: string; displayName: string; status: string; lastSeenAt: string | null; agentVersion: string | null; hostName: string | null }
-export interface RelayIssued { secret: string; configuration: Record<string, unknown> }
-export interface TransportSettings { route: { mode: string; credentialReference: string | null }; drainingRoutes: { mode: string }[]; version: string }
-export interface Run { runId: string; connectionId: string; connectionName: string; rangeStart: string; rangeEnd: string; trigger: string; status: string; startedAt: string; completedAt: string | null; mismatchCount: number; locationMismatchCount: number; requestedByName: string; explainedAt: string | null; explainedByName: string | null; explanationNote: string | null }
-export interface EntityDay { resultId: string; entity: string; businessDate: string; sourceCount: number; moduleCount: number; sourceQuantity: number; moduleQuantity: number; sourceDistinctSerials: number; moduleDistinctSerials: number; sourceKeyFieldHash: string; moduleKeyFieldHash: string; status: string; backfillJobId: string | null; attentionItemId: string | null }
-export interface LocationCheck { resultId: string; itemCode: string; itemName: string | null; locationCode: string; locationName: string | null; sourceOnHand: number; moduleUnitCount: number; status: string }
-export interface Backfill { backfillId: string; connectionId: string; connectionName: string; entity: string; rangeStart: string; rangeEnd: string; status: string; processedMessages: number; processedPages: number; totalMessages: number | null; progressPercent: number | null; estimatedRemaining: string | null; createdAt: string; startedAt: string | null; lastPageAt: string | null; awaitingReconciliationAt: string | null; completedAt: string | null; lastFailure: string | null; savedCursor: string | null; pageSize: number }
-
-export interface ParallelRunRefusal { code: string; message: string }
-export interface ParallelRunSyncLag { nowSeconds: number | null; targetSeconds: number; shareWithinTargetToday: number | null; messagesToday: number }
-export interface ParallelRunConflictSummary { open: number; oldestDetectedAt: string | null; autoResolved: number }
-export interface ParallelRunFailedMessages { open: number; olderThanSevenDays: number }
-export interface ParallelRunReconciliationSummary { runs: number; clean: number; explained: number; mismatch: number; failed: number; lastExplainedOn: string | null }
-export interface HandoverStepView {
-  order: number; kind: string; label: string; description: string; state: "planned" | "next" | "module_owns" | "after_close";
-  plannedOn: string | null; ownedSince: string | null; evidence: string | null; confirmedByName: string | null; confirmedAt: string | null;
-  facts: string[]; canConfirm: boolean; confirmRefusals: ParallelRunRefusal[];
-}
-export interface GoLiveItemView {
-  code: string; label: string; source: "measured" | "confirmed"; status: "done" | "open" | "fail"; detail: string;
-  evidence: string | null; confirmedByName: string | null; confirmedAt: string | null;
-}
-export interface GoLiveView {
-  done: number; total: number; issuedAt: string | null; recordId: string | null; canIssue: boolean;
-  issueRefusals: ParallelRunRefusal[]; items: GoLiveItemView[];
-}
-export interface ParallelRunDashboard {
-  connectionId: string; connectionLabel: string; status: "not_started" | "in_progress" | "ready"; days: number | null;
-  startDate: string | null; endDate: string | null; dayNumber: number | null; daysLeft: number | null; monthEndCloseOn: string | null;
-  cutoverAt: string | null; syncLag: ParallelRunSyncLag; conflicts: ParallelRunConflictSummary;
-  failedMessages: ParallelRunFailedMessages; reconciliation: ParallelRunReconciliationSummary;
-  handover: HandoverStepView[]; goLive: GoLiveView;
-}
-export interface ParallelRunChecklistItem {
-  code: string; label: string; kind: string; status: string; detail: string; evidence: string | null; confirmedBy: string | null; confirmedAt: string | null;
-}
-export interface ParallelRunView {
-  connectionId: string; connectionLabel: string; status: string; days: number | null; startDate: string | null;
-  earliestDecommissionDate: string | null; recommendedDays: number; items: ParallelRunChecklistItem[];
-}
-export interface GoLiveRecordView {
-  recordId: string; connectionId: string; connectionLabel: string; issuedAt: string; issuedByName: string;
-  items: GoLiveItemView[]; handover: HandoverStepView[];
-}
-
-export interface CoexistenceConflictView {
-  conflictId: string; connectionId: string; connectionLabel: string; recordType: string; recordKey: string; recordLabel: string;
-  kind: string; fieldName: string; baselineValue: string | null; remoteValue: string | null; status: string;
-  detectedAt: string; lastSeenAt: string; incumbentChangedAt: string | null; decision: string | null; decisionNote: string | null;
-  decidedBy: string | null; decidedAt: string | null; manualTaskId: string | null; closedAt: string | null;
-  deciderRoleLabel?: string;
-  moduleValueLabel?: string | null;
-}
-export interface CoexistenceConflictPage { items: CoexistenceConflictView[]; nextCursor: string | null }

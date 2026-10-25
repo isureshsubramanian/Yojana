@@ -1,11 +1,11 @@
-import { api } from "../api/client";
-import type { ConnectionExtensionView } from "./extensionTypes";
+import { apiParsed } from "../api/client.ts";
+import { connectionExtensionView } from "./extensionTypes.ts";
 
 const root = (connectionId: string) => `/api/integration/connections/${connectionId}/extension`;
 
 export const extensionApi = {
   read: (connectionId: string, signal?: AbortSignal) =>
-    api<ConnectionExtensionView>(root(connectionId), { signal }),
+    apiParsed(root(connectionId), connectionExtensionView, { signal }),
   check: (connectionId: string) =>
-    api<ConnectionExtensionView>(`${root(connectionId)}/check`, { method: "POST" }),
+    apiParsed(`${root(connectionId)}/check`, connectionExtensionView, { method: "POST" }),
 };
