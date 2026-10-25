@@ -40,8 +40,8 @@ internal sealed partial class DemoSeeder(ServiceLayerClient client)
             partner.Code, partner.Name, [])));
         objects.AddRange(DemoData.ContractTemplates.Select(template => new DemoObject("shared",
             "ContractTemplates", template.Name, template.Description, [])));
-        objects.Add(new("shared", "ProductTrees", "YD-SRV-TWIN",
-            "Twin chassis with two nodes, drives and redundant power", []));
+        objects.AddRange(DemoData.ProductTrees.Select(tree => new DemoObject("shared", "ProductTrees", tree.Code,
+            tree.Description, [])));
         foreach (var scenario in ScenarioCatalogue.All)
         {
             if (scenario.Disposition == DemoDisposition.ProductOnly) continue;
@@ -103,7 +103,8 @@ internal sealed partial class DemoSeeder(ServiceLayerClient client)
         foreach (var template in DemoData.ContractTemplates)
             await EnsureContractTemplateAsync(template, context, created, existing, unsupported,
                 cancellationToken);
-        await EnsureProductTreeAsync(context, created, existing, unsupported, cancellationToken);
+        foreach (var tree in DemoData.ProductTrees)
+            await EnsureProductTreeAsync(tree, context, created, existing, unsupported, cancellationToken);
 
         foreach (var scenario in ScenarioCatalogue.All.Where(value => value.Disposition == DemoDisposition.Data))
         {
@@ -259,16 +260,16 @@ internal sealed partial class DemoSeeder(ServiceLayerClient client)
         TrackCreated("ContractTemplates", template.Name, null, [], created);
     }
 
-    private async Task EnsureProductTreeAsync(ServiceContext context, Dictionary<string, int> created,
+    private async Task EnsureProductTreeAsync(DemoTree tree, ServiceContext context, Dictionary<string, int> created,
         Dictionary<string, int> existing, List<string> unsupported, CancellationToken cancellationToken)
     {
-        const string code = "YD-SRV-TWIN";
+        var code = tree.Code;
         if (!context.EntitySets.Contains("ProductTrees"))
         {
             unsupported.Add($"{code}: the supported API does not expose bills of material");
             return;
         }
-        var lines = DemoData.TwinChassisBom
+        var lines = tree.Lines
             .Select(line => new { ItemCode = line.ItemCode, Quantity = line.Quantity, Warehouse = context.Warehouse })
             .ToArray();
         var found = await client.FindOneAsync("ProductTrees",
@@ -278,7 +279,7 @@ internal sealed partial class DemoSeeder(ServiceLayerClient client)
             var present = found.Value.TryGetProperty("ProductTreeLines", out var current)
                 ? current.EnumerateArray().Select(line => line.GetProperty("ItemCode").GetString()).ToHashSet()
                 : [];
-            if (DemoData.TwinChassisBom.All(line => present.Contains(line.ItemCode)))
+            if (tree.Lines.All(line => present.Contains(line.ItemCode)))
             {
                 TrackExisting("ProductTrees", code, null, [], existing);
                 return;

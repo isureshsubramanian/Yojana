@@ -1,6 +1,8 @@
 namespace Yojana.DemoIncumbent;
 
 internal sealed record DemoItem(string Code, string Name, bool Serialised = true);
+
+internal sealed record DemoTree(string Code, string Description, IReadOnlyList<(string ItemCode, int Quantity)> Lines);
 internal sealed record DemoPartner(string Code, string Name, bool Supplier);
 internal sealed record DemoContractTemplate(string Name, string Description, int Duration,
     int ResolutionTime, string ResolutionUnit, int ResponseTime, string ResponseUnit,
@@ -18,6 +20,11 @@ internal static class DemoData
         new("YD-SRV-1U", "Kestrel Systems 1U server"),
         new("YD-SRV-15U", "Kestrel Systems 1.5U server"),
         new("YD-SRV-TWIN", "Kestrel Systems twin-node chassis"),
+        new("YD-SRV-2U", "Kestrel Systems 2U storage server"),
+        new("YD-CPU-32C", "32-core server processor"),
+        new("YD-DIMM-64G", "64 GB DDR5 registered memory module"),
+        new("YD-RAID-8P", "8-port RAID controller"),
+        new("YD-NIC-25G", "Dual-port 25 GbE network adapter"),
         new("YD-NODE-TWIN", "Kestrel Systems twin compute node"),
         new("YD-HPC-NODE", "Kestrel Systems HPC node"),
         new("YD-STOR", "Arvenna storage shelf"),
@@ -37,7 +44,13 @@ internal static class DemoData
         new("YD-CABLE", "Fibre patch cable", false),
         new("YD-RAIL", "Rail kit, tool-less", false),
         new("YD-PWR-CBL", "Power cable C13-C14, 2 m", false),
+        new("YD-HEATSINK", "Processor heat sink, 2U", false),
+        new("YD-FAN-HS", "Hot-swap fan module", false),
+        new("YD-BEZEL", "Front bezel with lock", false),
     ];
+
+    /// <summary>The incumbent's own labour item, used as a BOM line; it already exists in the demo company.</summary>
+    public const string LabourItem = "L10001";
 
     /// <summary>
     /// The twin chassis bill of materials: serialised parts and, for the full-BOM certificate (ADR-0020 Q7), two
@@ -46,6 +59,23 @@ internal static class DemoData
     public static IReadOnlyList<(string ItemCode, int Quantity)> TwinChassisBom { get; } =
     [
         ("YD-NODE-TWIN", 2), ("YD-NVME", 4), ("YD-HDD", 2), ("YD-PSU", 2), ("YD-RAIL", 1), ("YD-PWR-CBL", 2),
+    ];
+
+    /// <summary>
+    /// A 14-line storage server for the full-BOM certificate: eight serialised lines, five non-serialised ones and one
+    /// labour line, which the certificate must leave out.
+    /// </summary>
+    public static IReadOnlyList<(string ItemCode, int Quantity)> StorageServerBom { get; } =
+    [
+        ("YD-MAINBOARD", 1), ("YD-CPU-32C", 2), ("YD-HEATSINK", 2), ("YD-DIMM-64G", 8), ("YD-NVME", 2), ("YD-HDD", 8),
+        ("YD-RAID-8P", 1), ("YD-NIC-25G", 1), ("YD-PSU", 2), ("YD-FAN-HS", 6), ("YD-BEZEL", 1), ("YD-RAIL", 1),
+        ("YD-PWR-CBL", 2), (LabourItem, 1),
+    ];
+
+    public static IReadOnlyList<DemoTree> ProductTrees { get; } =
+    [
+        new("YD-SRV-TWIN", "Twin chassis with two nodes, drives and redundant power", TwinChassisBom),
+        new("YD-SRV-2U", "2U storage server with processors, memory, drives, fans and assembly labour", StorageServerBom),
     ];
 
     public static IReadOnlyList<DemoPartner> Partners { get; } =
