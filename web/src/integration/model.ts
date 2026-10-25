@@ -14,7 +14,7 @@ const reasonLabels: Record<string, string> = {
   max_outbox_age: "Could not send", rejected: "Could not send", unsupported: "Needs hand entry",
 };
 const recordLabels: Record<string, string> = {
-  ItemUpserted: "Items", PartyUpserted: "Customers and suppliers", WarrantyLineSold: "Warranty lines sold",
+  ItemUpserted: "Items", BomUpserted: "Bills of materials", PartyUpserted: "Customers and suppliers", WarrantyLineSold: "Warranty lines sold",
   DocumentCancelled: "Cancellations", TransferPosted: "Transfers", InventoryAdjusted: "Stock adjustments", ReturnReceived: "Returns",
   DeliveryPosted: "Delivery", GoodsReceiptPosted: "Goods receipt", InvoicePosted: "Invoice",
   ProductionCompleted: "Production completion", CreateCreditMemo: "Credit note",

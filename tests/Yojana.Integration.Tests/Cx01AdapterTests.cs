@@ -19,6 +19,44 @@ namespace Yojana.Integration.Tests;
 
 public sealed class Cx01AdapterTests
 {
+    [Fact]
+    public void Bill_of_materials_sync_defaults_to_once_a_day_at_two_in_the_morning()
+    {
+        var settings = new Cx01ConnectionSettings(new Uri("https://source.example.invalid"), "FICTIONAL_DEMO", "test");
+        Assert.Equal(Cx01BomSyncSchedule.Daily, settings.BomSyncSchedule);
+        Assert.Equal("02:00", settings.BomSyncDailyAt);
+    }
+
+    [Theory]
+    // Site in India (UTC+05:30): 02:00 local is 20:30 UTC the day before.
+    [InlineData("2026-09-01T21:00:00Z", "2026-09-01T20:30:00Z")]
+    [InlineData("2026-09-01T20:29:00Z", "2026-08-31T20:30:00Z")]
+    public void The_daily_run_is_the_latest_two_in_the_morning_site_time(string now, string expected) =>
+        Assert.Equal(DateTime.Parse(expected, null, System.Globalization.DateTimeStyles.AdjustToUniversal),
+            Cx01BomSyncSchedule.MostRecentDailyRun("02:00", TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata"),
+                DateTime.Parse(now, null, System.Globalization.DateTimeStyles.AdjustToUniversal)));
+
+    [Theory]
+    [InlineData(null, "daily", "2026-09-01T10:00:00Z", true)]                    // never read: read now
+    [InlineData("2026-09-01T20:31:00Z", "daily", "2026-09-02T10:00:00Z", false)] // read after last night's 02:00
+    [InlineData("2026-09-01T20:29:00Z", "daily", "2026-09-01T20:45:00Z", true)]  // 02:00 passed since the last read
+    [InlineData("2026-09-01T10:00:00Z", "every_6_hours", "2026-09-01T15:59:00Z", false)]
+    [InlineData("2026-09-01T10:00:00Z", "every_6_hours", "2026-09-01T16:00:00Z", true)]
+    public async Task A_bill_of_materials_read_is_due_only_on_its_schedule(string? lastRead, string schedule, string now, bool due)
+    {
+        var settings = new Cx01ConnectionSettings(new Uri("https://source.example.invalid"), "FICTIONAL_DEMO", "test")
+            { BomSyncSchedule = schedule };
+        var watermark = lastRead is null ? null
+            : Cx01BomSyncSchedule.Watermark(DateTime.Parse(lastRead, null, System.Globalization.DateTimeStyles.AdjustToUniversal));
+        Assert.Equal(due, await new Cx01BomSyncSchedule(new FixedZone("Asia/Kolkata")).DueAsync(settings, watermark,
+            DateTime.Parse(now, null, System.Globalization.DateTimeStyles.AdjustToUniversal), CancellationToken.None));
+    }
+
+    private sealed class FixedZone(string zone) : Yojana.Serialisation.Contracts.ITenantTimeZoneReadPort
+    {
+        public Task<string> GetAsync(CancellationToken cancellationToken) => Task.FromResult(zone);
+    }
+
     [Theory]
     [InlineData("Items?$top=80&$skip=20", "/b1s/v2/Items?$top=80&$skip=20")]
     [InlineData("/b1s/v2/Items?$skip=20", "/b1s/v2/Items?$skip=20")]
@@ -93,6 +131,124 @@ public sealed class Cx01AdapterTests
             second.Messages[0].Envelope.ErpExternalId);
         Assert.All(first.Messages.Concat(second.Messages), message =>
             Assert.Equal("backfill", message.Envelope.CaptureMode.Value));
+    }
+
+    [Fact]
+    public async Task Product_tree_poll_maps_only_the_production_tree_and_preserves_mixed_lines()
+    {
+        await using var simulator = new Cx01Simulator();
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+
+        var result = await context.Adapter.PollAsync(new(context.TenantId, context.ConnectionId, "product_trees",
+            null, TimeSpan.FromMinutes(2), 10), CancellationToken.None);
+
+        var accepted = Assert.Single(result.Events);
+        Assert.Equal(nameof(BomUpserted), accepted.MessageType);
+        using var document = JsonDocument.Parse(accepted.CanonicalMessage);
+        var payload = document.RootElement.GetProperty("payload");
+        Assert.Equal("FIC-SRV-TWIN", payload.GetProperty("parent_item_external_id").GetString());
+        var lines = payload.GetProperty("lines").EnumerateArray().ToList();
+        Assert.Equal(8, lines.Count);
+        Assert.Equal(7, lines.Count(line => line.GetProperty("kind").GetString() == "item"));
+        Assert.Single(lines, line => line.GetProperty("kind").GetString() == "text");
+        Assert.DoesNotContain("FIC-SALES-KIT", accepted.CanonicalMessage, StringComparison.Ordinal);
+        Assert.All(simulator.ProductTreeQueries, query => Assert.DoesNotContain("UpdateDate", query,
+            StringComparison.Ordinal));
+        Assert.Contains(simulator.ProductTreeQueries, query => query.Contains("$filter=TreeType", StringComparison.Ordinal));
+        Assert.DoesNotContain(simulator.ProductTreeQueries, query => query.Contains("$select", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Real_product_tree_shape_maps_every_line_number_description_and_uom()
+    {
+        using var tree = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,
+            "Connectors", "CX01", "Fixtures", "tree-2u-real.json")));
+        var mapped = Cx01Mapper.Map(new TenantId(Guid.CreateVersion7()), Guid.CreateVersion7(),
+            Cx01Protocol.Entities["product_trees"], tree.RootElement,
+            new Dictionary<int, IReadOnlyList<CanonicalSerial>>(),
+            new Dictionary<int, IReadOnlyList<CanonicalSerial>>(), new HashSet<int>(), "poll",
+            new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc));
+        using var canonical = JsonDocument.Parse(mapped.Acceptance.CanonicalMessage);
+        var lines = canonical.RootElement.GetProperty("payload").GetProperty("lines").EnumerateArray().ToList();
+
+        Assert.Equal(14, lines.Count);
+        Assert.Equal(Enumerable.Range(0, 14), lines.Select(line => line.GetProperty("line_no").GetInt32()));
+        Assert.Equal(new[]
+        {
+            "Kestrel server motherboard", "32-core server processor", "Processor heat sink, 2U",
+            "64 GB DDR5 registered memory module", "Quill 3.84 TB NVMe drive", "Quill 16 TB hard drive",
+            "8-port RAID controller", "Dual-port 25 GbE network adapter", "Kestrel hot-swap power supply",
+            "Hot-swap fan module", "Front bezel with lock", "Rail kit, tool-less",
+            "Power cable C13-C14, 2 m", "Labor Hours Production",
+        }, lines.Select(line => line.GetProperty("description").GetString()));
+        var labour = Assert.Single(lines, line => line.GetProperty("item_external_id").GetString() == "L10001");
+        Assert.Equal("item", labour.GetProperty("kind").GetString());
+        Assert.Equal(JsonValueKind.Null, labour.GetProperty("uom").ValueKind);
+    }
+
+    [Fact]
+    public async Task Product_tree_poll_emits_only_changed_content_and_deletes_only_after_a_complete_read()
+    {
+        await using var simulator = new Cx01Simulator();
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+        var request = new ConnectorPollRequest(context.TenantId, context.ConnectionId, "product_trees",
+            null, TimeSpan.Zero, 1_024);
+
+        var first = await context.Adapter.PollAsync(request, CancellationToken.None);
+        var accepted = Assert.Single(first.Events);
+        context.BomState.Remember(accepted);
+        Assert.Empty((await context.Adapter.PollAsync(request, CancellationToken.None)).Events);
+
+        simulator.ProductionTreeNodeQuantity = 3m;
+        var changed = Assert.Single((await context.Adapter.PollAsync(request, CancellationToken.None)).Events);
+        context.BomState.Remember(changed);
+        simulator.ProductionTreePresent = false;
+        var deleted = Assert.Single((await context.Adapter.PollAsync(request, CancellationToken.None)).Events);
+        using var deletion = JsonDocument.Parse(deleted.CanonicalMessage);
+        Assert.True(deletion.RootElement.GetProperty("payload").GetProperty("deleted").GetBoolean());
+
+        simulator.ProductionTreePresent = true;
+        simulator.AdditionalProductionTreePresent = true;
+        simulator.FailSecondProductTreePage = true;
+        await Assert.ThrowsAsync<Cx01RemoteException>(() => context.Adapter.PollAsync(request,
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Product_tree_update_date_queries_are_refused_in_the_live_error_shape()
+    {
+        await using var simulator = new Cx01Simulator();
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+
+        var exception = await Assert.ThrowsAsync<Cx01RemoteException>(() => context.Client.GetAsync(
+            context.ConnectionId, Cx01Protocol.Root + "ProductTrees?$select=TreeCode,UpdateDate",
+            CancellationToken.None));
+
+        Assert.Equal("-1000", exception.RemoteCode);
+        Assert.Equal("Property 'UpdateDate' of 'ProductTree'is invalid", exception.RemoteMessage);
+    }
+
+    [Fact]
+    public async Task Product_tree_webhook_read_uses_the_same_hash_rule_and_maps_a_gone_tree_as_deleted()
+    {
+        await using var simulator = new Cx01Simulator();
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+
+        var first = Assert.IsType<Cx01MappedAcceptance>(await context.Adapter.CaptureKeyAsync(
+            context.ConnectionId, "ProductTrees", "FIC-SRV-TWIN", CancellationToken.None));
+        context.BomState.Remember(first.Acceptance);
+        Assert.Null(await context.Adapter.CaptureKeyAsync(context.ConnectionId, "ProductTrees", "FIC-SRV-TWIN",
+            CancellationToken.None));
+
+        simulator.ProductionTreeNodeQuantity = 3m;
+        var changed = Assert.IsType<Cx01MappedAcceptance>(await context.Adapter.CaptureKeyAsync(
+            context.ConnectionId, "ProductTrees", "FIC-SRV-TWIN", CancellationToken.None));
+        context.BomState.Remember(changed.Acceptance);
+        simulator.ProductionTreePresent = false;
+        var deleted = Assert.IsType<Cx01MappedAcceptance>(await context.Adapter.CaptureKeyAsync(
+            context.ConnectionId, "ProductTrees", "FIC-SRV-TWIN", CancellationToken.None));
+        using var canonical = JsonDocument.Parse(deleted.Acceptance.CanonicalMessage);
+        Assert.True(canonical.RootElement.GetProperty("payload").GetProperty("deleted").GetBoolean());
     }
 
     [Fact]
@@ -211,6 +367,7 @@ public sealed class Cx01AdapterTests
         Assert.Equal(CapabilitySupport.Manual, declaration.Messages[nameof(CreateReplacementDelivery)]);
         Assert.Equal(CapabilitySupport.Unsupported,
             declaration.Messages[nameof(ChangeStockStatusOrLocation)]);
+        Assert.Equal(CapabilitySupport.Native, declaration.Messages[nameof(BomUpserted)]);
     }
 
     [Theory]
@@ -351,7 +508,8 @@ internal sealed class Cx01TestContext : IAsyncDisposable
     private readonly IntegrationDbContext db;
 
     private Cx01TestContext(TenantId tenantId, Guid connectionId, Cx01Client client, Cx01Settings settings,
-        Cx01Adapter adapter, RememberingSerialHistory history, CollectingAttributionTasks tasks,
+        Cx01Adapter adapter, RememberingSerialHistory history, RememberingBomSyncState bomState,
+        CollectingAttributionTasks tasks,
         CollectingInboundRejections rejections,
         Cx01Transport transport, IntegrationDbContext db)
     {
@@ -361,6 +519,7 @@ internal sealed class Cx01TestContext : IAsyncDisposable
         Settings = settings;
         Adapter = adapter;
         History = history;
+        BomState = bomState;
         Tasks = tasks;
         Rejections = rejections;
         this.transport = transport;
@@ -373,6 +532,7 @@ internal sealed class Cx01TestContext : IAsyncDisposable
     public Cx01Settings Settings { get; }
     public Cx01Adapter Adapter { get; }
     public RememberingSerialHistory History { get; }
+    public RememberingBomSyncState BomState { get; }
     public CollectingAttributionTasks Tasks { get; }
     public CollectingInboundRejections Rejections { get; }
 
@@ -414,13 +574,15 @@ internal sealed class Cx01TestContext : IAsyncDisposable
             "Server=localhost;Database=not_opened;Encrypt=True;TrustServerCertificate=True");
         var db = new IntegrationDbContext(options, tenant);
         var history = new RememberingSerialHistory();
+        var bomState = new RememberingBomSyncState();
         var tasks = new CollectingAttributionTasks();
         var rejections = new CollectingInboundRejections();
         var adapter = new Cx01Adapter(tenant, clock, db,
             new GatewayReferenceStore(db, tenant, clock, new NoPersonalDataErasures()),
-            settings, client, history, new NoCapturedDocuments(), tasks, new NoOwnWrites(), rejections,
+            bomState, settings, client, history, new NoCapturedDocuments(), tasks, new NoOwnWrites(), rejections,
             new EmptySurveyReader(), new EmptyTrackingPermissions());
-        return new(tenantId, connectionId, client, settings, adapter, history, tasks, rejections, transport, db);
+        return new(tenantId, connectionId, client, settings, adapter, history, bomState, tasks, rejections,
+            transport, db);
     }
 
     public ValueTask DisposeAsync()
@@ -428,6 +590,26 @@ internal sealed class Cx01TestContext : IAsyncDisposable
         transport.Dispose();
         db.Dispose();
         return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class RememberingBomSyncState : ICx01BomSyncStateReader
+{
+    private readonly Dictionary<string, Cx01BomSyncState> states = new(StringComparer.Ordinal);
+
+    public Task<IReadOnlyDictionary<string, Cx01BomSyncState>> ReadAsync(Guid connectionId,
+        CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyDictionary<string, Cx01BomSyncState>>(states);
+
+    public void Set(string externalId, string contentHash, bool deleted = false) =>
+        states[externalId] = new(contentHash, deleted);
+
+    public void Remember(Yojana.Integration.Inbox.InboundAcceptance acceptance)
+    {
+        using var document = JsonDocument.Parse(acceptance.CanonicalMessage);
+        var payload = document.RootElement.GetProperty("payload");
+        var bom = payload.Deserialize<BomUpserted>(IntegrationContracts.Json)!;
+        states[bom.ParentItemExternalId] = new(BomContentHash.Compute(bom.Lines), bom.Deleted);
     }
 }
 

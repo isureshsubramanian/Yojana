@@ -17,11 +17,13 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Data.Platform;
 using Yojana.Platform.Data.Platform.Entities;
 using Yojana.Platform.Tenancy;
+using Yojana.Integration.Contracts;
 using Yojana.Serialisation;
 using Yojana.Serialisation.Certificates;
 using Yojana.Serialisation.Claims.Risk;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Jurisdictions;
+using Yojana.Serialisation.Settings;
 using Wolverine;
 
 namespace Yojana.Serialisation.DatabaseTests;
@@ -91,6 +93,7 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         builder.Services.AddSingleton<TestCertificateRunChunkObserver>();
         builder.Services.AddSingleton<ICertificateRunChunkObserver>(sp => sp.GetRequiredService<TestCertificateRunChunkObserver>());
         builder.AddSerialisationModule();
+        builder.Services.AddSingleton<IErpBomCapabilityPort, TestErpBomCapabilityPort>();
         builder.Services.AddDbContext<Yojana.Serialisation.Data.SerialisationDbContext>(options => options.AddInterceptors(PolicyCommandCounter.Instance), optionsLifetime: ServiceLifetime.Singleton);
         builder.Services.ConfigureWolverine(options =>
         {
@@ -213,6 +216,13 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         return scope;
     }
 
+    public async Task EnableErpBomCompletenessAsync(TenantId tenant)
+    {
+        using var scope = ScopeFor(tenant);
+        await scope.ServiceProvider.GetRequiredService<ITenantSettings>()
+            .SetAsync(ErpBomCompletenessSettings.Key, bool.TrueString, CancellationToken.None);
+    }
+
     /// <summary>A request-equivalent scope whose SQL connections carry the customer party RLS key.</summary>
     public IServiceScope ScopeForPortal(TenantId tenant, Guid partyRef)
     {
@@ -288,6 +298,11 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
             new ImportRulePack(Guid.NewGuid(), pack.RulePackId, "test:legal-admin"),
             new DeliveryOptions { TenantId = tenant.ToString() }, CancellationToken.None);
     }
+}
+
+internal sealed class TestErpBomCapabilityPort : IErpBomCapabilityPort
+{
+    public Task<bool> HasActiveBomSourceAsync(CancellationToken cancellationToken) => Task.FromResult(true);
 }
 
 [CollectionDefinition("serialisation host", DisableParallelization = true)]

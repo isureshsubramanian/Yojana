@@ -10,14 +10,17 @@ public sealed class ReleaseRecordPayloadBuilder(
     ICertificateRefurbishmentReadPort refurbishments,
     ICertificateReplacementReadPort replacements,
     AsBuiltCompleteness completeness,
+    IBomQueryPort boms,
+    ReleaseRecordIssuePointSettings issuePointSettings,
     IItemNamePort items,
     ILocationNamePort locations,
     IPartyNamePort parties)
 {
     public async Task<ReleaseRecordPayload> BuildAsync(CertificateUnitFact unit, CertificateTriggerSnapshot trigger,
         string formType, CertificatePresentation presentation, CertificateProvenanceSnapshot provenance,
-        CancellationToken cancellationToken) =>
-        (await BuildManyAsync([new(unit, trigger, formType, presentation, provenance)], cancellationToken))[0];
+        CancellationToken cancellationToken, string? itemClass = null) =>
+        (await BuildManyAsync([new(unit, trigger, formType, presentation, provenance, itemClass)],
+            cancellationToken))[0];
 
     /// <summary>
     /// Builds many release records with one read per port for the whole list (a migration chunk records thousands),
@@ -30,6 +33,13 @@ public sealed class ReleaseRecordPayloadBuilder(
         var conditionFacts = await conditions.ReadManyAsync(unitIds, cancellationToken);
         var refurbishmentFacts = await refurbishments.ReadManyAsync(unitIds, cancellationToken);
         var replacementFacts = await replacements.ReadManyAsync(unitIds, cancellationToken);
+        var issueSettings = await issuePointSettings.GetAsync(cancellationToken);
+        var fullBomItems = inputs.Where(input => ReleaseRecordIssuePointSettings.ResolveBomContent(issueSettings,
+                input.ItemClass) == ReleaseRecordBomContent.FullBom)
+            .Select(input => input.Unit.ItemId).Distinct().ToList();
+        var fullBoms = new Dictionary<Guid, BillOfMaterials?>();
+        foreach (var itemId in fullBomItems)
+            fullBoms[itemId] = await boms.BillOfMaterialsAsync(itemId, cancellationToken);
         var reports = await completeness.QueryAsync(inputs.Select(input => (input.Unit.UnitId, input.Unit.ItemId,
             DateOnly.FromDateTime(input.Unit.Build?.ReleasedAt ?? input.Unit.CommissionedAt))).ToList(), cancellationToken);
         var itemIds = inputs.SelectMany(input => input.Unit.Assembly.Select(row => row.ChildItemId).OfType<Guid>()
@@ -50,15 +60,17 @@ public sealed class ReleaseRecordPayloadBuilder(
             : await locations.NamesAsync(facilityIds, cancellationToken);
         return inputs.Select((input, index) => Compose(input, conditionFacts[input.Unit.UnitId],
             refurbishmentFacts[input.Unit.UnitId], replacementFacts[input.Unit.UnitId], reports[index], itemNames,
-            childSerials, partyNames, facilities)).ToList();
+            childSerials, partyNames, facilities, fullBomItems.Contains(input.Unit.ItemId),
+            fullBoms.GetValueOrDefault(input.Unit.ItemId))).ToList();
     }
 
     private static ReleaseRecordPayload Compose(ReleaseRecordBuildInput input, CertificateConditionFact condition,
         CertificateRefurbishmentFact refurbishment, CertificateReplacementFact replacement, UnitCompleteness report,
         IReadOnlyDictionary<Guid, ItemLabel> itemNames, IReadOnlyDictionary<Guid, string> childSerials,
-        IReadOnlyDictionary<Guid, PartyLabel> partyNames, IReadOnlyDictionary<Guid, LocationLabel> facilities)
+        IReadOnlyDictionary<Guid, PartyLabel> partyNames, IReadOnlyDictionary<Guid, LocationLabel> facilities,
+        bool fullBomRequested, BillOfMaterials? billOfMaterials)
     {
-        var (unit, trigger, formType, presentation, provenance) = input;
+        var (unit, trigger, formType, presentation, provenance, _) = input;
         var facility = unit.Build?.FacilityId is not { } facilityId ? null
             : facilities.GetValueOrDefault(facilityId) is { } label
                 ? string.IsNullOrWhiteSpace(label.Name) ? label.Code : label.Name : null;
@@ -106,13 +118,20 @@ public sealed class ReleaseRecordPayloadBuilder(
             .Where(id => id != Guid.Empty).Distinct().Select(id => id.ToString("N")).ToList();
         var refurbisher = refurbishment.RefurbisherRef is { } refId && partyNames.TryGetValue(refId, out var refLabel)
             ? refLabel.Name ?? refLabel.Code : null;
+        var bomLines = !fullBomRequested ? null : billOfMaterials?.Lines
+            .Where(line => line.Kind == "item" && !line.Serialised && line.InventoryItem != false)
+            .OrderBy(line => line.LineNo)
+            .Select(line => new ReleaseBomLineSnapshot(line.LineNo, line.ItemCode ?? "Unknown part",
+                string.IsNullOrWhiteSpace(line.Description) ? null : line.Description, line.Quantity, line.Uom))
+            .ToList() ?? [];
         return new("1.0", formType, trigger, identifiers,
             new ReleaseModelSnapshot(model?.Code ?? "Unknown item", model?.Name, unit.Build?.Revision),
             unit.Build is null ? "purchased" : "built_in_house",
             unit.Build?.ReleasedAt ?? unit.CommissionedAt, facility, lots, assembly, required, condition.Tests, condition.Grade,
             refurbishment.CycleNumber, condition.SanitisationReference, condition.Firmware,
             refurbishment.WorkReference, refurbisher, refurbishment.LifeEpisode, presentation.Issuer,
-            presentation.Branding, presentation.Snapshot, provenance, condition.Battery);
+            presentation.Branding, presentation.Snapshot, provenance, condition.Battery, fullBomRequested,
+            fullBomRequested ? billOfMaterials?.AsAt : null, bomLines);
     }
 
     private static int IdentifierPriority(string type) => type switch
@@ -132,7 +151,7 @@ public sealed class ReleaseRecordPayloadBuilder(
 
 /// <summary>One release record to build: the unit snapshot and what the issuing command supplies.</summary>
 public sealed record ReleaseRecordBuildInput(CertificateUnitFact Unit, CertificateTriggerSnapshot Trigger, string FormType,
-    CertificatePresentation Presentation, CertificateProvenanceSnapshot Provenance);
+    CertificatePresentation Presentation, CertificateProvenanceSnapshot Provenance, string? ItemClass = null);
 
 public sealed class WarrantyCertificatePayloadBuilder(
     ICertificateEntitlementReadPort entitlements,

@@ -2,6 +2,7 @@
   <ItemGroup>
     <ProjectReference Include="../Yojana.Serialisation.Contracts/Yojana.Serialisation.Contracts.csproj" />
     <ProjectReference Include="../../Platform/Yojana.Platform/Yojana.Platform.csproj" />
+    <ProjectReference Include="../../Integration/Yojana.Integration.Contracts/Yojana.Integration.Contracts.csproj" />
     <!-- GS1 AI validating parser (Apache-2.0; licence recorded in tools/gates/licence-policy.json, notices regenerated in the same change). -->
     <PackageReference Include="Solidsoft.Reply.Parsers.Gs1Ai" />
     <!-- Barcode generation (Apache-2.0; tagged licence recorded in the same change; package and tag contain no NOTICE). -->

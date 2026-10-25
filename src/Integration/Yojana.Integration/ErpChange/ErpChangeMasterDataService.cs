@@ -108,7 +108,7 @@ public sealed class ErpChangeMasterDataService(
 
     private async Task TranslateTargetMasterDataAsync(Guid connectionId, CancellationToken cancellationToken)
     {
-        var messageTypes = new[] { nameof(ItemUpserted), nameof(PartyUpserted) };
+        var messageTypes = new[] { nameof(ItemUpserted), nameof(BomUpserted), nameof(PartyUpserted) };
         for (var attempt = 0; attempt < 100; attempt++)
         {
             var pending = await db.InboundMessages.AsNoTracking().Where(row =>

@@ -23,6 +23,51 @@ namespace Yojana.Integration.DatabaseTests;
 public sealed class Cx01SimulatorDatabaseTests(IntegrationHostFixture fixture)
 {
     [DatabaseFact]
+    public async Task Simulator_product_tree_syncs_through_the_gateway_into_the_BOM_projection()
+    {
+        await using var simulator = new Cx01Simulator();
+        var tenant = await fixture.NewTenantAsync("cxbom");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.CreateVersion7());
+        using (var configure = fixture.ScopeFor(tenant))
+            await ConfigureAsync(configure.ServiceProvider, tenant, connection, simulator, webhooks: false);
+
+        InboundAcceptance acceptance;
+        using (var capture = fixture.ScopeFor(tenant))
+            acceptance = (await capture.ServiceProvider.GetRequiredService<Cx01Adapter>()
+                .CaptureKeyAsync(connection, "ProductTrees", "FIC-SRV-TWIN", default))!.Acceptance;
+        using (var translate = fixture.ScopeFor(tenant))
+        {
+            var accepted = await translate.ServiceProvider.GetRequiredService<InboundMessageStore>()
+                .Accept(acceptance, default);
+            var result = await translate.ServiceProvider.GetRequiredService<IMessageBus>()
+                .InvokeAsync<GatewayTranslationResult>(new TranslateInboundMessage(accepted.InboundMessageId),
+                    new DeliveryOptions { TenantId = tenant.ToString() });
+            if (!result.Translated)
+            {
+                for (var attempt = 0; attempt < 100; attempt++)
+                {
+                    using var statusScope = fixture.ScopeFor(tenant);
+                    var status = await statusScope.ServiceProvider.GetRequiredService<IntegrationDbContext>()
+                        .InboundMessages.AsNoTracking().Where(row => row.InboundMessageId == accepted.InboundMessageId)
+                        .Select(row => row.TranslationStatus).SingleAsync();
+                    if (status == InboundTranslationStatus.Completed) break;
+                    if (attempt == 99) Assert.Fail($"{accepted.InboundMessageId:N} did not complete translation.");
+                    await Task.Delay(20);
+                }
+            }
+        }
+
+        using var check = fixture.ScopeFor(tenant);
+        var db = check.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var header = await db.BomProjections.SingleAsync(row => row.ParentItemExternalId == "FIC-SRV-TWIN");
+        var lines = await db.BomProjectionLines.Where(row => row.BomProjectionId == header.BomProjectionId)
+            .OrderBy(row => row.LineNo).ToListAsync();
+        Assert.Equal(8, lines.Count);
+        Assert.Equal(7, lines.Count(row => row.Kind == "item"));
+        Assert.Single(lines, row => row.Kind == "text");
+    }
+
+    [DatabaseFact]
     public async Task Simulator_receipt_then_cancellation_leaves_its_serialised_unit_reversed()
     {
         await using var simulator = new Cx01Simulator();
@@ -372,6 +417,7 @@ public sealed class Cx01SimulatorDatabaseTests(IntegrationHostFixture fixture)
         Assert.True(survey.Webhooks.ReleaseSupportsWebhooks);
         Assert.True(survey.Webhooks.Enabled);
         Assert.Equal(3, survey.Webhooks.RetryTimes);
+        Assert.Equal(CapabilitySupport.Native, survey.BillOfMaterialsSupport);
         Assert.Contains(survey.UserFields, field => field.MandatoryWithoutDefault && field.WrittenObject);
         Assert.All(Cx01Simulator.TrackingTables, table => Assert.Equal("allowed", survey.TrackingTableAllowlist[table].State));
         Assert.True(simulator.SerialQueryCreated);

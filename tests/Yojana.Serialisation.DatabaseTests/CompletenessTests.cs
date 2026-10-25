@@ -35,6 +35,7 @@ public sealed class CompletenessTests(SerialisationHostFixture fixture)
         var pumpItem = Guid.NewGuid();
         var wrongPumpItem = Guid.NewGuid();
         ports.RegisterBom(parentItem, [new ExpectedComponent("A1", pcbItem, "PCB-07", 1), new ExpectedComponent("SB", pumpItem, "PU-3", 1)]);
+        await fixture.EnableErpBomCompletenessAsync(tenant);
 
         var complete = await UnitAsync(tenant, parentItem, $"{p}-01");
         var missing = await UnitAsync(tenant, parentItem, $"{p}-02");
@@ -73,6 +74,7 @@ public sealed class CompletenessTests(SerialisationHostFixture fixture)
         var parentItem = Guid.NewGuid();
         ports.Register(InMemoryItemPorts.DefaultProfile(parentItem) with { AsBuiltCompleteness = ItemSerialisationProfile.Completeness.Warn });
         ports.RegisterBom(parentItem, [new ExpectedComponent("A1", Guid.NewGuid(), "PCB-07", 1)]);
+        await fixture.EnableErpBomCompletenessAsync(tenant);
         var unit = await UnitAsync(tenant, parentItem, $"{p}-01");
         var released = await InvokeAsync<ReleaseUnitResult>(tenant, new ReleaseUnit(Guid.NewGuid(), unit, At.AddHours(2), "q", Entity, "sig"));
         Assert.Equal(LifecycleStatus.Released, released.LifecycleStatus);
@@ -90,5 +92,25 @@ public sealed class CompletenessTests(SerialisationHostFixture fixture)
         var unit = await UnitAsync(tenant, Guid.NewGuid(), $"{p}-01");
         var released = await InvokeAsync<ReleaseUnitResult>(tenant, new ReleaseUnit(Guid.NewGuid(), unit, At.AddHours(2), "q", Entity, "sig"));
         Assert.Equal(LifecycleStatus.Released, released.LifecycleStatus);
+    }
+
+    [DatabaseFact]
+    public async Task Synced_BOM_does_not_block_when_the_tenant_setting_is_off()
+    {
+        var tenant = await fixture.NewTenantAsync("coff");
+        var parentItem = Guid.NewGuid();
+        fixture.Services.GetRequiredService<InMemoryItemPorts>().RegisterBom(parentItem,
+            [new ExpectedComponent("A1", Guid.NewGuid(), "FIC-NVME", 1)]);
+        var unit = await UnitAsync(tenant, parentItem, "COFF-" + Guid.NewGuid().ToString("N")[..8]);
+
+        var released = await InvokeAsync<ReleaseUnitResult>(tenant,
+            new ReleaseUnit(Guid.NewGuid(), unit, At.AddHours(2), "q", Entity, "sig"));
+
+        Assert.Equal(LifecycleStatus.Released, released.LifecycleStatus);
+        using var scope = fixture.ScopeFor(tenant);
+        var report = await scope.ServiceProvider.GetRequiredService<AsBuiltCompleteness>()
+            .CheckAsync(unit, parentItem, DateOnly.FromDateTime(At), default);
+        Assert.True(report.IsComplete);
+        Assert.Empty(report.Slots);
     }
 }

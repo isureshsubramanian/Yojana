@@ -13,7 +13,7 @@ using Yojana.Integration.Privacy;
 namespace Yojana.Integration.Gateway;
 
 public sealed record ItemReferenceAttributes(bool IsWarrantyProduct, string? WarrantyTemplateRef,
-    string ManufacturerItemCode = "");
+    string ManufacturerItemCode = "", bool? IsInventoryItem = null);
 public sealed record PartyReferenceAttributes(string? TaxId, string Country, string PartyKind);
 
 public sealed class GatewayReferenceStore(IntegrationDbContext db, ITenantContext tenant, IClock clock,
@@ -74,11 +74,73 @@ public sealed class GatewayReferenceStore(IntegrationDbContext db, ITenantContex
         row.TrackingMode = item.TrackingMode.RawValue ?? item.TrackingMode.Value;
         row.Uom = item.Uom;
         row.AttributesJson = JsonSerializer.Serialize(
-            new ItemReferenceAttributes(item.IsWarrantyProduct, item.WarrantyTemplateRef, item.ItemExternalId),
+            new ItemReferenceAttributes(item.IsWarrantyProduct, item.WarrantyTemplateRef, item.ItemExternalId,
+                item.IsInventoryItem),
             IntegrationContracts.Json);
         row.Deleted = item.Deleted;
         row.UpdatedAt = clock.UtcNow;
         return id;
+    }
+
+    public async Task<bool> UpsertBomAsync(Guid connectionId, BomUpserted bom,
+        CancellationToken cancellationToken)
+    {
+        var parentItemId = await ResolveAsync(connectionId, "item", bom.ParentItemExternalId, false,
+            cancellationToken);
+        var row = db.BomProjections.Local.SingleOrDefault(value => value.TenantId == tenant.TenantId
+                && value.ParentItemId == parentItemId)
+            ?? await db.BomProjections.SingleOrDefaultAsync(value => value.TenantId == tenant.TenantId
+                && value.ParentItemId == parentItemId, cancellationToken);
+        var contentHash = BomContentHash.Compute(bom.Lines);
+        if (row is not null && (row.SourceChangedAt > bom.SourceChangedAt
+            || row.ContentHash == contentHash && row.Deleted == bom.Deleted)) return false;
+        if (row is null)
+        {
+            row = new BomProjection
+            {
+                TenantId = tenant.TenantId,
+                BomProjectionId = TimeOrderedId.New(clock.UtcNow),
+                ParentItemId = parentItemId,
+                ParentItemExternalId = bom.ParentItemExternalId,
+                ContentHash = contentHash,
+            };
+            db.BomProjections.Add(row);
+        }
+
+        var previous = await db.BomProjectionLines.Where(value => value.TenantId == tenant.TenantId
+            && value.BomProjectionId == row.BomProjectionId).ToListAsync(cancellationToken);
+        db.BomProjectionLines.RemoveRange(previous);
+        row.ConnectionId = connectionId;
+        row.ParentItemExternalId = bom.ParentItemExternalId;
+        row.ContentHash = contentHash;
+        row.SourceChangedAt = bom.SourceChangedAt;
+        row.Deleted = bom.Deleted;
+        row.UpdatedAt = clock.UtcNow;
+        if (bom.Deleted) return true;
+
+        var externalIds = bom.Lines.Where(line => line.ItemExternalId is not null)
+            .Select(line => line.ItemExternalId!).Distinct(StringComparer.Ordinal).ToList();
+        var resolved = externalIds.Count == 0
+            ? new Dictionary<string, Guid>(StringComparer.Ordinal)
+            : await db.ExternalIdMaps.AsNoTracking().Where(value => value.TenantId == tenant.TenantId
+                    && value.ConnectionId == connectionId && value.EntityType == "item"
+                    && externalIds.Contains(value.ExternalId) && value.ValidTo == null)
+                .ToDictionaryAsync(value => value.ExternalId, value => value.ModuleId, StringComparer.Ordinal,
+                    cancellationToken);
+        db.BomProjectionLines.AddRange(bom.Lines.Select(line => new BomProjectionLine
+        {
+            TenantId = tenant.TenantId,
+            BomProjectionId = row.BomProjectionId,
+            LineNo = line.LineNo,
+            Kind = line.Kind.RawValue ?? line.Kind.Value,
+            ItemId = line.ItemExternalId is not null && resolved.TryGetValue(line.ItemExternalId, out var itemId)
+                ? itemId : null,
+            ItemExternalId = line.ItemExternalId,
+            Description = line.Description,
+            Quantity = line.Quantity,
+            Uom = line.Uom,
+        }));
+        return true;
     }
 
     public async Task<Guid> UpsertPartyAsync(Guid connectionId, PartyUpserted party,

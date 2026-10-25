@@ -61,7 +61,8 @@ public sealed record Cx01SurveyResult(
     Cx01SurveyOwnerAnswers OwnerAnswers,
     // Null when not read (older survey, or the integration user may not read approval templates).
     IReadOnlyList<Cx01SurveyApprovalTemplate>? ApprovalTemplates = null, string? LocalCurrencyCode = null,
-    IReadOnlyDictionary<string, int>? FieldLengths = null);
+    IReadOnlyDictionary<string, int>? FieldLengths = null,
+    string BillOfMaterialsSupport = CapabilitySupport.Native);
 
 public sealed record Cx01SurveyPage(
     Guid ConnectionId,
@@ -114,6 +115,8 @@ public sealed class Cx01SurveyProbe(ICx01SurveyRemotePort remote, IClock clock)
         var release = await remote.ReleaseAsync(connectionId, cancellationToken);
         var metadata = await remote.GetTextAsync(connectionId, Cx01Protocol.Metadata, cancellationToken);
         var releaseSupports = metadata.Contains(Cx01Protocol.EventSubscriptions, StringComparison.Ordinal);
+        var billOfMaterialsSupport = metadata.Contains("ProductTrees", StringComparison.Ordinal)
+            ? CapabilitySupport.Native : CapabilitySupport.Unsupported;
         using var admin = await remote.PostAsync(connectionId, Cx01Protocol.Root + Cx01Protocol.AdminInfo,
             cancellationToken);
         var adminRoot = admin?.RootElement ?? default;
@@ -129,7 +132,8 @@ public sealed class Cx01SurveyProbe(ICx01SurveyRemotePort remote, IClock clock)
                 Int(adminRoot, "MaxNumberOfWebHooks"), subscriptionCount,
                 "Error 10001237 while enabling webhooks means a configured company folder path is invalid; "
                 + "the customer's administrator must correct it. The adapter does not change company settings."),
-            userFields, allowlist, answers, approvalTemplates, Text(adminRoot, "LocalCurrency"), ReadLengths(metadata, userFields));
+            userFields, allowlist, answers, approvalTemplates, Text(adminRoot, "LocalCurrency"),
+            ReadLengths(metadata, userFields), billOfMaterialsSupport);
     }
 
     private static Dictionary<string, int> ReadLengths(string metadata, IReadOnlyList<Cx01SurveyUserField> fields)

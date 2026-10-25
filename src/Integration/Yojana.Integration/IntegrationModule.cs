@@ -120,6 +120,7 @@ public static class IntegrationModule
             ConnectionPollingJob.JobName, ConnectionPollingJob.Cron));
         builder.Services.AddSingleton<Cx01SessionRegistry>();
         builder.Services.AddScoped<Cx01Settings>();
+        builder.Services.AddScoped<Cx01BomSyncSchedule>();
         builder.Services.AddScoped<Cx01WarrantyStatusHealth>();
         builder.Services.AddKeyedScoped<IConnectionHealthNoteSource, Cx01WarrantyStatusHealth>(
             Cx01Capabilities.ConnectorCode);
@@ -140,6 +141,7 @@ public static class IntegrationModule
         builder.Services.AddSingleton(RecurringTenantJob.For<Cx01SessionKeepAliveJob>(
             Cx01SessionKeepAliveJob.JobName, Cx01SessionKeepAliveJob.Cron));
         builder.Services.AddScoped<ICx01SerialHistory, EfCx01SerialHistory>();
+        builder.Services.AddScoped<ICx01BomSyncStateReader, EfCx01BomSyncStateReader>();
         builder.Services.AddScoped<ICx01DocumentCaptureStore, EfCx01DocumentCaptureStore>();
         builder.Services.AddScoped<ICx01AttributionTaskSink, EfCx01AttributionTaskSink>();
         builder.Services.AddScoped<ICx01OwnWriteStore, EfCx01OwnWriteStore>();
@@ -268,6 +270,11 @@ public static class IntegrationModule
             sp.GetRequiredService<IntegrationDbContext>(),
             sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantContext>()));
         builder.Services.AddScoped<IItemQueryPort>(sp => sp.GetRequiredService<IntegrationItemQueryPort>());
+        builder.Services.AddScoped(sp => new IntegrationBomQueryPort(
+            sp.GetRequiredService<IntegrationDbContext>(),
+            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantContext>()));
+        builder.Services.AddScoped<IBomQueryPort>(sp => sp.GetRequiredService<IntegrationBomQueryPort>());
+        builder.Services.AddScoped<IErpBomCapabilityPort, ErpBomCapabilityPort>();
         builder.Services.TryAddScoped<IConnectorAdapterResolver, ConnectorAdapterResolver>();
         builder.Services.TryAddScoped<IReconciliationBackfillScheduler, NullReconciliationBackfillScheduler>();
         builder.Services.AddScoped(sp => new ReconciliationSettings(

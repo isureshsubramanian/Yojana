@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Yojana.Integration.Contracts;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
+using Yojana.Integration.Gateway;
 using Yojana.Integration.Inbox;
 using Yojana.Integration.Outbox;
 using Yojana.Platform.Contracts.Identifiers;
@@ -13,7 +14,42 @@ using Yojana.Platform.Contracts.Time;
 namespace Yojana.Integration.Connectors.CX01;
 
 internal sealed record Cx01MappedAcceptance(InboundAcceptance Acceptance,
-    IReadOnlyList<Cx01MissingSerialLine> MissingSerialLines);
+    IReadOnlyList<Cx01MissingSerialLine> MissingSerialLines, string? ContentHash = null);
+
+public sealed record Cx01BomSyncState(string ContentHash, bool Deleted);
+
+public interface ICx01BomSyncStateReader
+{
+    Task<IReadOnlyDictionary<string, Cx01BomSyncState>> ReadAsync(Guid connectionId,
+        CancellationToken cancellationToken);
+}
+
+public sealed class EfCx01BomSyncStateReader(IntegrationDbContext db, ITenantContext tenant)
+    : ICx01BomSyncStateReader
+{
+    public async Task<IReadOnlyDictionary<string, Cx01BomSyncState>> ReadAsync(Guid connectionId,
+        CancellationToken cancellationToken)
+    {
+        var result = await db.BomProjections.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && row.ConnectionId == connectionId)
+            .ToDictionaryAsync(row => row.ParentItemExternalId,
+                row => new Cx01BomSyncState(row.ContentHash, row.Deleted), StringComparer.Ordinal,
+                cancellationToken);
+        var pending = await db.InboundMessages.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                && row.ConnectionId == connectionId && row.ErpEntity == "ProductTrees" && row.IsLatest
+                && row.MessageType == nameof(BomUpserted))
+            .Select(row => new { row.ErpExternalId, row.CanonicalMessage }).ToListAsync(cancellationToken);
+        foreach (var row in pending)
+        {
+            using var document = JsonDocument.Parse(row.CanonicalMessage);
+            var payload = document.RootElement.GetProperty("payload");
+            var bom = payload.Deserialize<BomUpserted>(IntegrationContracts.Json)
+                ?? throw new InvalidOperationException("Stored CX01 BOM message is invalid.");
+            result[row.ErpExternalId] = new(BomContentHash.Compute(bom.Lines), bom.Deleted);
+        }
+        return result;
+    }
+}
 
 public sealed record Cx01MissingSerialLine(int LineNo, string ItemCode, string? WarehouseCode,
     decimal Quantity);
@@ -205,7 +241,10 @@ internal static class Cx01Mapper
     {
         fields ??= Cx01FieldReader.Defaults;
         var key = Text(raw, entity.KeyField) ?? throw new InvalidOperationException("CX01 response has no key.");
-        var changed = ChangeMarker(raw, key);
+        var bomLines = entity.CanonicalMessage == nameof(BomUpserted) ? BomLines(raw) : null;
+        var contentHash = bomLines is null ? null : BomContentHash.Compute(bomLines);
+        var changed = contentHash is null ? ChangeMarker(raw, key)
+            : observedUtc.ToString("yyyy-MM-ddTHH:mm:ss.fffffff", CultureInfo.InvariantCulture) + "|" + contentHash;
         // COUPLED to ReconciliationService.ModuleDigestsAsync and Cx01Adapter.EntityDayDigestsAsync: these are calendar
         // dates in the ERP company's day, kept as that date at 00:00 UTC; reconciliation buckets by the UTC date and
         // must not convert them to a zone. Only the observed-time fallback is a real instant.
@@ -215,7 +254,7 @@ internal static class Cx01Mapper
         object payload;
         var completeness = "complete";
         var messageType = entity.CanonicalMessage;
-        if (!mapCancelledOriginal && messageType is not ("ItemUpserted" or "PartyUpserted")
+        if (!mapCancelledOriginal && messageType is not ("ItemUpserted" or "PartyUpserted" or "BomUpserted")
             && Text(raw, "CancelStatus") == "csCancellation")
         {
             messageType = "DocumentCancelled";
@@ -229,7 +268,11 @@ internal static class Cx01Mapper
                         : Flag(raw, "ManageBatchNumbers") ? "lot" : "none"),
                     Text(raw, "InventoryUOM") ?? "EA", fields.YesNo(raw, Cx01FieldMap.ItemWarrantyProduct),
                     fields.Text(raw, Cx01FieldMap.ItemWarrantyTemplate),
-                    Flag(raw, "Frozen"));
+                    Flag(raw, "Frozen"), IsInventoryItem(raw));
+                break;
+            case "BomUpserted":
+                payload = new BomUpserted(key, new DateTimeOffset(observedUtc, TimeSpan.Zero),
+                    Flag(raw, "Frozen") || Flag(raw, "Deleted"), bomLines!);
                 break;
             case "PartyUpserted":
                 payload = new PartyUpserted(key, OpenEnum.Known(PartnerKind(Text(raw, "CardType"))),
@@ -280,7 +323,8 @@ internal static class Cx01Mapper
         var canonical = Activator.CreateInstance(canonicalType, envelope, messageType, payload)
             ?? throw new InvalidOperationException("Could not create the canonical CX01 message.");
         return new(new InboundAcceptance(envelope, messageType,
-            JsonSerializer.Serialize(canonical, canonicalType, IntegrationContracts.Json), RetainedRaw(raw)), missing);
+            JsonSerializer.Serialize(canonical, canonicalType, IntegrationContracts.Json), RetainedRaw(raw)), missing,
+            contentHash);
     }
 
     public static string ChangeMarker(JsonElement value, string key)
@@ -291,6 +335,14 @@ internal static class Cx01Mapper
     }
 
     public static bool IsCancelledOriginal(JsonElement value) => Text(value, "CancelStatus") == "csYes";
+
+    /// <summary>
+    /// Only production trees describe how a physical unit was built. Sales, assembly and template trees are
+    /// commercial groupings; admitting them would make certificate parts depend on selling configuration.
+    /// </summary>
+    public static bool ShouldMap(Cx01EntityDefinition entity, JsonElement value) =>
+        entity.CanonicalMessage != nameof(BomUpserted)
+        || Text(value, "TreeType") == "iProductionTree";
 
     public static IReadOnlyList<Cx01MissingSerialLine> MissingSerialLines(JsonElement value)
     {
@@ -333,6 +385,35 @@ internal static class Cx01Mapper
                 Currency(document, currencyMap)));
         }
         return result;
+    }
+
+    internal static List<BomUpsertedLine> BomLines(JsonElement document)
+    {
+        if (!document.TryGetProperty("ProductTreeLines", out var lines)
+            || lines.ValueKind != JsonValueKind.Array) return [];
+        return lines.EnumerateArray().Select(line =>
+        {
+            var kind = BomKind(Text(line, "ItemType") ?? Text(line, "LineType") ?? Text(line, "Type"));
+            var externalId = kind.Value == "text" ? null : Text(line, "ItemCode");
+            return new BomUpsertedLine(
+                Int(line, "ChildNum", "VisualOrder"), kind, externalId,
+                Text(line, "ItemName") ?? (kind.Value == "text" ? Text(line, "LineText") : null)
+                    ?? externalId ?? "",
+                Decimal(line, "Quantity"), Text(line, "InventoryUOM"));
+        }).ToList();
+    }
+
+    private static OpenEnum BomKind(string? value)
+    {
+        var kind = value?.Trim() switch
+        {
+            "4" or "item" or "iItem" or "pit_Item" => "item",
+            "290" or "resource" or "iResource" or "pit_Resource" => "resource",
+            "-18" or "text" or "iText" or "pit_Text" => "text",
+            null or "" => "item",
+            var unknown => unknown,
+        };
+        return OpenEnum.Read(kind, new HashSet<string>(["item", "resource", "text"], StringComparer.Ordinal));
     }
 
     private static IEnumerable<JsonElement> LineElements(JsonElement value)
@@ -437,6 +518,13 @@ internal static class Cx01Mapper
     private static int Int(JsonElement value, string property) =>
         value.TryGetProperty(property, out var found) && found.TryGetInt32(out var number) ? number : 0;
 
+    private static int Int(JsonElement value, params string[] properties)
+    {
+        foreach (var property in properties)
+            if (value.TryGetProperty(property, out var found) && found.TryGetInt32(out var number)) return number;
+        return 0;
+    }
+
     private static decimal Decimal(JsonElement value, string property) =>
         value.TryGetProperty(property, out var found) && found.TryGetDecimal(out var number) ? number : 0;
 
@@ -445,6 +533,9 @@ internal static class Cx01Mapper
 
     private static bool Flag(JsonElement value, string property) =>
         Text(value, property) is "tYES" or "Y" or "true" or "True";
+
+    private static bool IsInventoryItem(JsonElement value) =>
+        Text(value, "InventoryItem") is not ("tNO" or "N" or "false" or "False");
 
     private static DateTimeOffset? Date(JsonElement value, string property) =>
         DateTimeOffset.TryParse(Text(value, property), CultureInfo.InvariantCulture,

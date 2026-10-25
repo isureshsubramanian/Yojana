@@ -4,6 +4,7 @@ using Yojana.Serialisation.Commands;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
+using Yojana.Serialisation.Settings;
 
 namespace Yojana.Serialisation.Identity;
 
@@ -33,7 +34,8 @@ public sealed record UnitCompleteness(Guid UnitId, Guid ItemId, IReadOnlyList<Sl
 /// an identifier. The standing query answers "by serial or list" one row per unit and one column per slot, which is what the
 /// As-built completeness screen shows. The item class policy decides whether a shortfall blocks or warns.
 /// </summary>
-public sealed class AsBuiltCompleteness(SerialisationDbContext db, IBomQueryPort bom, IItemQueryPort items, ITenantContext tenant)
+public sealed class AsBuiltCompleteness(SerialisationDbContext db, IBomQueryPort bom, IItemQueryPort items,
+    ITenantContext tenant, ErpBomCompletenessSettings settings)
 {
     public async Task<UnitCompleteness> CheckAsync(Guid unitId, Guid itemId, DateOnly effectiveAt, CancellationToken cancellationToken) =>
         (await QueryAsync([(unitId, itemId)], effectiveAt, cancellationToken))[0];
@@ -46,6 +48,14 @@ public sealed class AsBuiltCompleteness(SerialisationDbContext db, IBomQueryPort
     public async Task<IReadOnlyList<UnitCompleteness>> QueryAsync(
         IReadOnlyList<(Guid UnitId, Guid ItemId, DateOnly EffectiveAt)> units, CancellationToken cancellationToken)
     {
+        if (!await settings.EnabledAsync(cancellationToken))
+        {
+            var disabledProfiles = await items.GetManyAsync(units.Select(unit => unit.ItemId).Distinct().ToList(),
+                cancellationToken);
+            return units.Select(unit => new UnitCompleteness(unit.UnitId, unit.ItemId, [], [],
+                disabledProfiles.GetValueOrDefault(unit.ItemId)?.AsBuiltCompleteness
+                    ?? ItemSerialisationProfile.Completeness.Block)).ToList();
+        }
         var tenantId = tenant.TenantId;
         var unitIds = units.Select(u => u.UnitId).ToList();
         var links = await db.AssemblyLinks.AsNoTracking().Where(l => l.TenantId == tenantId && unitIds.Contains(l.ParentUnitId) && l.RemovedAt == null).ToListAsync(cancellationToken);

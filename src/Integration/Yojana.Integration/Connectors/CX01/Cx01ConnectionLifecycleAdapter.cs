@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Yojana.Integration.Contracts;
 
 namespace Yojana.Integration.Connectors.CX01;
@@ -9,7 +10,9 @@ public sealed class Cx01ConnectionLifecycleAdapter(Cx01Settings settings, Cx01Cl
 {
     public ConnectionRegistrationForm RegistrationForm => new(
         [new("service_uri", "Server address", "url"), new("company_database", "Company database", "text"),
-         new("release", "Release", "text", "unknown"), new("transport", "Connection route", "route", "direct")],
+         new("release", "Release", "text", "unknown"), new("transport", "Connection route", "route", "direct"),
+         new("bom_sync_schedule", "Bill of materials sync", "select", Cx01BomSyncSchedule.Daily, Cx01BomSyncSchedule.Options),
+         new("bom_sync_daily_at", "Daily sync time (site time)", "time", "02:00")],
         Cx01Client.CredentialPurpose, [new("user_name", "Dedicated integration user", "text"), new("password", "Password", "password")]);
     public string DefaultOutboundMode => "reference_only";
     public IReadOnlyList<string> CredentialPurposes => [Cx01Client.CredentialPurpose];
@@ -28,7 +31,12 @@ public sealed class Cx01ConnectionLifecycleAdapter(Cx01Settings settings, Cx01Cl
             throw new Cx01DocumentRuleException("Documents mode requires the remote local currency code from the company survey or connection settings.");
         await settings.SetAsync(connectionId, configured, ct);
         var declaration = Cx01Capabilities.For(configured.Release, configured.WebhooksAvailable, gateway?.OutboundMode ?? DefaultOutboundMode);
-        return new(declaration.Messages, declaration.Throttle, Cx01Protocol.Entities.ToDictionary(x => x.Key, x => x.Value.CanonicalMessage), []);
+        return new(declaration.Messages, declaration.Throttle,
+            Cx01Protocol.Entities.ToDictionary(x => x.Key, x => x.Value.CanonicalMessage), [],
+            new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                ["product_trees"] = Cx01BomSyncSchedule.WakeSeconds,
+            });
     }
 
     public async Task<ConnectionProbe> SmokeReadAsync(Guid connectionId, CancellationToken ct)
@@ -44,6 +52,7 @@ public sealed class Cx01ConnectionLifecycleAdapter(Cx01Settings settings, Cx01Cl
         return new(JsonSerializer.SerializeToElement(new
         {
             result.ObservedAt, result.Release, result.Webhooks, result.TrackingTableAllowlist,
+            result.BillOfMaterialsSupport,
             MandatoryFieldsWithoutDefault = result.UserFields.Count(field => field.MandatoryWithoutDefault),
             result.OwnerAnswers,
         }, IntegrationContracts.Json), result.Webhooks.ReleaseSupportsWebhooks);
@@ -61,6 +70,7 @@ public sealed class Cx01ConnectionLifecycleAdapter(Cx01Settings settings, Cx01Cl
         return result is null ? null : new(JsonSerializer.SerializeToElement(new
         {
             result.ObservedAt, result.Release, result.Webhooks, result.TrackingTableAllowlist,
+            result.BillOfMaterialsSupport,
             MandatoryFieldsWithoutDefault = result.UserFields.Count(field => field.MandatoryWithoutDefault),
             result.OwnerAnswers,
         }, IntegrationContracts.Json), result.Webhooks.ReleaseSupportsWebhooks);

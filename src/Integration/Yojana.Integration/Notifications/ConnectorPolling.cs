@@ -66,6 +66,7 @@ public sealed class ConnectionPollingService(
                     && connection.ConnectionId == x.ConnectionId && connection.Status == ConnectionStatus.Active)
                 && (x.Watermark != null && x.Watermark != ""
                     || x.CanonicalMessage == "ItemUpserted" || x.CanonicalMessage == "PartyUpserted"
+                    || x.CanonicalMessage == "BomUpserted"
                     || db.ConnectionGatewaySettings.Any(setting => setting.TenantId == x.TenantId
                         && setting.ConnectionId == x.ConnectionId && setting.SyncStartMode != null)))
             .OrderBy(x => x.NextPollAt).ThenBy(x => x.ConnectionId).ThenBy(x => x.EntityType)

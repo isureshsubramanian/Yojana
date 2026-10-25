@@ -26,6 +26,7 @@
     "uom": "EA",
     "is_warranty_product": false,
     "warranty_template_ref": null,
-    "deleted": false
+    "deleted": false,
+    "is_inventory_item": true
   }
 }

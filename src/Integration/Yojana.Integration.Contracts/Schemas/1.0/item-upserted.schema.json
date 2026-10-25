@@ -50,6 +50,9 @@
         },
         "deleted": {
           "type": "boolean"
+        },
+        "is_inventory_item": {
+          "type": "boolean"
         }
       },
       "additionalProperties": true

@@ -52,6 +52,7 @@ internal static class Cx01Protocol
         new Dictionary<string, Cx01EntityDefinition>(StringComparer.Ordinal)
         {
             ["items"] = new("Items", "ItemCode", "ItemUpserted"),
+            ["product_trees"] = new("ProductTrees", "TreeCode", "BomUpserted"),
             ["business_partners"] = new("BusinessPartners", "CardCode", "PartyUpserted"),
             ["deliveries"] = new("DeliveryNotes", "DocEntry", "DeliveryPosted"),
             ["returns"] = new("Returns", "DocEntry", "ReturnReceived"),
@@ -67,6 +68,7 @@ internal static class Cx01Protocol
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["Items"] = "OITM",
+            ["ProductTrees"] = "OITT",
             ["BusinessPartners"] = "OCRD",
             ["DeliveryNotes"] = "ODLN",
             ["Returns"] = "ORDN",

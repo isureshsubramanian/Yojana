@@ -11,7 +11,7 @@ public static class ConnectorAcceptanceScenarioCatalogue
     public static IReadOnlyList<ConnectorEdgeScenarioDefinition> All { get; } =
     [
         new("duplicate-notification", "A duplicate delivery notification before and after processing has one effect.",
-            [nameof(ItemUpserted), nameof(GoodsReceiptPosted), nameof(DeliveryPosted)]),
+            [nameof(ItemUpserted), nameof(BomUpserted), nameof(GoodsReceiptPosted), nameof(DeliveryPosted)]),
         new("out-of-order-receipt-delivery", "A delivery waits for its receipt and the bounded late path remains deterministic.",
             [nameof(ItemUpserted), nameof(GoodsReceiptPosted), nameof(DeliveryPosted)]),
         new("remote-outage-beyond-retry-window", "An outage beyond the retry window reaches review and recovers once.",

@@ -21,6 +21,7 @@ public sealed class Cx01Adapter(
     IClock clock,
     IntegrationDbContext db,
     GatewayReferenceStore references,
+    ICx01BomSyncStateReader bomSyncState,
     Cx01Settings settings,
     Cx01Client client,
     ICx01SerialHistory serialHistory,
@@ -31,7 +32,8 @@ public sealed class Cx01Adapter(
     ICx01SurveyReader surveyReader,
     ICx01TrackingPermissionSink trackingPermissions,
     Cx01OutboundDocuments? documents = null,
-    Cx01NativeWarrantyWriter? nativeWarranty = null) : IConnectorAdapter, IOutboundConnector,
+    Cx01NativeWarrantyWriter? nativeWarranty = null,
+    Cx01BomSyncSchedule? bomSchedule = null) : IConnectorAdapter, IOutboundConnector,
     IConnectorWatermarkSeed
 {
     public string ConnectorCode => Cx01Capabilities.ConnectorCode;
@@ -50,6 +52,7 @@ public sealed class Cx01Adapter(
     public DateTime? InstantOf(string watermark) => Cx01Watermark.Parse(watermark) is var value
         && value != Cx01Watermark.Empty ? value.Timestamp.UtcDateTime : null;
     public bool IsMasterData(string entityType) => entityType is "items" or "item"
+        or "product_trees" or "product_tree" or "ProductTrees"
         or "business_partners" or "business_partner" or "Items" or "BusinessPartners";
 
     public async Task<Connections.FullHistoryEstimate> EstimateFullHistoryAsync(Guid connectionId,
@@ -79,6 +82,8 @@ public sealed class Cx01Adapter(
     {
         EnsureTenant(request.TenantId);
         var entity = Entity(request.EntityType);
+        if (entity.CanonicalMessage == nameof(BomUpserted))
+            return await PollBomsAsync(request, entity, cancellationToken);
         var configured = await settings.GetAsync(request.ConnectionId, cancellationToken);
         var cursor = Cx01Watermark.Parse(request.Watermark);
         var from = cursor.Timestamp == DateTimeOffset.MinValue
@@ -109,6 +114,11 @@ public sealed class Cx01Adapter(
             }
             using (document)
             {
+                if (!Cx01Mapper.ShouldMap(entity, document.RootElement))
+                {
+                    next = Cx01Watermark.Max(next, changed);
+                    continue;
+                }
                 if (Cx01Mapper.IsCancelledOriginal(document.RootElement)
                     && await WasCapturedAsync(request.ConnectionId, entity, changed.Key, cancellationToken))
                 {
@@ -137,7 +147,7 @@ public sealed class Cx01Adapter(
     {
         var messages = new List<InboundAcceptance>();
         foreach (var entity in Cx01Protocol.Entities.Values.OrderBy(value => value.Collection,
-                     StringComparer.Ordinal))
+                     StringComparer.Ordinal).Where(value => value.CanonicalMessage != nameof(BomUpserted)))
         {
             messages.AddRange(await ReadMappedRangeAsync(connectionId, entity, rangeStart, rangeEnd,
                 cursor: null, pageSize: int.MaxValue, captureMode: "replay", cancellationToken));
@@ -188,13 +198,16 @@ public sealed class Cx01Adapter(
     }
 
     public Task<bool> SupportsRangedReadsAsync(Guid connectionId, string entity,
-        CancellationToken cancellationToken) => Task.FromResult(TryEntity(entity, out _));
+        CancellationToken cancellationToken) => Task.FromResult(TryEntity(entity, out var definition)
+            && definition.CanonicalMessage != nameof(BomUpserted));
 
     public async Task<ConnectorRangePage> ReadRangePageAsync(Guid connectionId, string entity,
         DateOnly rangeStart, DateOnly rangeEnd, string? cursor, int pageSize,
         CancellationToken cancellationToken)
     {
         var definition = Entity(entity);
+        if (definition.CanonicalMessage == nameof(BomUpserted))
+            throw new InvalidOperationException("CX01 production trees have no source change date and do not support ranged reads.");
         var configured = await settings.GetAsync(connectionId, cancellationToken);
         var from = new DateTimeOffset(rangeStart.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
         var to = new DateTimeOffset(rangeEnd.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
@@ -211,6 +224,7 @@ public sealed class Cx01Adapter(
             last = changed;
             using var document = await client.GetAsync(connectionId,
                 Cx01Protocol.ByKey(definition, changed.Key), cancellationToken);
+            if (!Cx01Mapper.ShouldMap(definition, document.RootElement)) continue;
             if (Cx01Mapper.IsCancelledOriginal(document.RootElement)
                 && await WasCapturedAsync(connectionId, definition, changed.Key, cancellationToken)) continue;
             if (!await IsOwnWriteAsync(connectionId, definition, document.RootElement, cancellationToken))
@@ -324,7 +338,12 @@ public sealed class Cx01Adapter(
         var configured = await settings.GetAsync(connectionId, cancellationToken);
         JsonDocument document;
         try { document = await client.GetAsync(connectionId, Cx01Protocol.ByKey(entity, key), cancellationToken); }
-        catch (Cx01RemoteException exception) when (exception.IsRecordGone) { return null; }
+        catch (Cx01RemoteException exception) when (exception.IsRecordGone)
+        {
+            return entity.CanonicalMessage == nameof(BomUpserted)
+                ? await MapDeletedBomIfChangedAsync(connectionId, entity, key, "webhook", cancellationToken)
+                : null;
+        }
         catch (Cx01RemoteException exception) when (exception.IsBusinessRejection)
         {
             await inboundRejections.ParkAsync(connectionId, entity.Collection, key, exception, cancellationToken);
@@ -332,16 +351,96 @@ public sealed class Cx01Adapter(
         }
         using (document)
         {
+            if (!Cx01Mapper.ShouldMap(entity, document.RootElement)) return null;
             if (Cx01Mapper.IsCancelledOriginal(document.RootElement)
                 && await WasCapturedAsync(connectionId, entity, key, cancellationToken)) return null;
             if (await IsOwnWriteAsync(connectionId, entity, document.RootElement, cancellationToken)) return null;
             var mapped = await MapWithSerialFallbackAsync(connectionId, entity, document.RootElement, configured,
                 "webhook", cancellationToken);
+            if (entity.CanonicalMessage == nameof(BomUpserted)
+                && !await BomChangedAsync(connectionId, key, mapped, deleted: false, cancellationToken)) return null;
             if (mapped.MissingSerialLines.Count > 0)
                 await attributionTasks.RaiseAsync(connectionId, entity.Collection, key, mapped.MissingSerialLines,
                     cancellationToken);
             return mapped;
         }
+    }
+
+    private async Task<ConnectorPollResult> PollBomsAsync(ConnectorPollRequest request,
+        Cx01EntityDefinition entity, CancellationToken cancellationToken)
+    {
+        var configured = await settings.GetAsync(request.ConnectionId, cancellationToken);
+        // Without a schedule (tests that build the adapter by hand) every wake reads, as before.
+        if (bomSchedule is not null
+            && !await bomSchedule.DueAsync(configured, request.Watermark, clock.UtcNow, cancellationToken))
+            return new([], request.Watermark);
+        var states = new Dictionary<string, Cx01BomSyncState>(
+            await bomSyncState.ReadAsync(request.ConnectionId, cancellationToken), StringComparer.Ordinal);
+        var observed = clock.UtcNow;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var acceptances = new List<InboundAcceptance>();
+        var filter = Uri.EscapeDataString("TreeType eq 'iProductionTree'");
+        var path = Cx01Protocol.Collection(entity) + "?$filter=" + filter + "&$top="
+            + configured.PollPageSize.ToString(CultureInfo.InvariantCulture);
+        while (path is not null)
+        {
+            using var page = await client.GetAsync(request.ConnectionId, path, cancellationToken);
+            foreach (var raw in Values(page.RootElement))
+            {
+                if (!Cx01Mapper.ShouldMap(entity, raw)) continue;
+                var key = RequiredText(raw, entity.KeyField);
+                seen.Add(key);
+                var mapped = Cx01Mapper.Map(tenant.TenantId, request.ConnectionId, entity, raw,
+                    new Dictionary<int, IReadOnlyList<CanonicalSerial>>(),
+                    new Dictionary<int, IReadOnlyList<CanonicalSerial>>(), new HashSet<int>(), "poll", observed);
+                var hash = mapped.ContentHash!;
+                if (states.TryGetValue(key, out var state) && !state.Deleted && state.ContentHash == hash) continue;
+                acceptances.Add(mapped.Acceptance);
+                states[key] = new(hash, false);
+            }
+            path = page.RootElement.TryGetProperty("@odata.nextLink", out var next)
+                ? Cx01Protocol.NextPage(next.GetString()) : null;
+        }
+
+        // Absence means deletion only after every page completed. An exception leaves this method before this point.
+        foreach (var missing in states.Where(pair => !pair.Value.Deleted && !seen.Contains(pair.Key))
+                     .OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            var deleted = MapDeletedBom(request.ConnectionId, entity, missing.Key, "poll", observed);
+            acceptances.Add(deleted.Acceptance);
+        }
+        return new(acceptances, Cx01BomSyncSchedule.Watermark(observed));
+    }
+
+    private async Task<Cx01MappedAcceptance?> MapDeletedBomIfChangedAsync(Guid connectionId,
+        Cx01EntityDefinition entity, string key, string captureMode, CancellationToken cancellationToken)
+    {
+        var states = await bomSyncState.ReadAsync(connectionId, cancellationToken);
+        if (!states.TryGetValue(key, out var state) || state.Deleted) return null;
+        return MapDeletedBom(connectionId, entity, key, captureMode, clock.UtcNow);
+    }
+
+    private Cx01MappedAcceptance MapDeletedBom(Guid connectionId, Cx01EntityDefinition entity, string key,
+        string captureMode, DateTime observed)
+    {
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            TreeCode = key,
+            TreeType = "iProductionTree",
+            Deleted = "tYES",
+            ProductTreeLines = Array.Empty<object>(),
+        }, Cx01Protocol.Json));
+        return Cx01Mapper.Map(tenant.TenantId, connectionId, entity, document.RootElement,
+            new Dictionary<int, IReadOnlyList<CanonicalSerial>>(),
+            new Dictionary<int, IReadOnlyList<CanonicalSerial>>(), new HashSet<int>(), captureMode, observed);
+    }
+
+    private async Task<bool> BomChangedAsync(Guid connectionId, string key, Cx01MappedAcceptance mapped,
+        bool deleted, CancellationToken cancellationToken)
+    {
+        var states = await bomSyncState.ReadAsync(connectionId, cancellationToken);
+        return !states.TryGetValue(key, out var state) || state.Deleted != deleted
+            || state.ContentHash != mapped.ContentHash;
     }
 
     private async Task<Cx01MappedAcceptance> MapWithSerialFallbackAsync(Guid connectionId,
@@ -426,6 +525,7 @@ public sealed class Cx01Adapter(
         {
             using var document = await client.GetAsync(connectionId,
                 Cx01Protocol.ByKey(entity, changed.Key), cancellationToken);
+            if (!Cx01Mapper.ShouldMap(entity, document.RootElement)) continue;
             if (Cx01Mapper.IsCancelledOriginal(document.RootElement)
                 && await WasCapturedAsync(connectionId, entity, changed.Key, cancellationToken)) continue;
             if (await IsOwnWriteAsync(connectionId, entity, document.RootElement, cancellationToken)) continue;
@@ -504,6 +604,7 @@ public sealed class Cx01Adapter(
         var key = entityType switch
         {
             "item" => "items",
+            "product_tree" => "product_trees",
             "business_partner" => "business_partners",
             "delivery" => "deliveries",
             "return" => "returns",

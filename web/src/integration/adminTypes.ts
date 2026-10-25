@@ -84,7 +84,9 @@ export const syncControlResult = z.object({ connectionId: z.string(), syncState:
   warning: z.nullable(z.string()) });
 export type SyncControlResult = z.infer<typeof syncControlResult>;
 export const registrationField = z.object({ code: z.string(), label: z.string(), type: z.string(),
-  defaultValue: z.nullable(z.string()) });
+  defaultValue: z.nullable(z.string()),
+  /** Choices of a "select" field; null for every other type. */
+  options: z.optional(z.nullable(z.array(z.object({ value: z.string(), label: z.string() })))) });
 export type RegistrationField = z.infer<typeof registrationField>;
 export const registrationConnector = z.object({ code: z.string(), displayName: z.string(),
   form: z.object({ settings: z.array(registrationField), credentialPurpose: z.string(),

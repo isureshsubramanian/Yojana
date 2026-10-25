@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Yojana.Integration.Contracts;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
@@ -8,10 +9,11 @@ using Yojana.Serialisation.Ledger;
 namespace Yojana.Serialisation.Certificates;
 
 /// <summary>Tenant-owned release-record timing, isolated from trigger handlers behind this narrow policy contract.</summary>
-public sealed class ReleaseRecordIssuePointSettings(ITenantSettings settings)
+public sealed class ReleaseRecordIssuePointSettings(ITenantSettings settings, IErpBomCapabilityPort capabilities)
 {
     public const string Key = "certificates.release_record_issue_point";
-    public static readonly ReleaseRecordIssuePointPolicy Default = new(ReleaseRecordIssuePoint.AtBuildRelease, []);
+    public static readonly ReleaseRecordIssuePointPolicy Default = new(ReleaseRecordIssuePoint.AtBuildRelease, [],
+        ReleaseRecordBomContent.SerialisedOnly);
 
     // Coupled to the factory registration in SerialisationModule: exposing ITenantSettings directly to certificate
     // handlers would expose PlatformDbContext beside SerialisationDbContext and break Wolverine transaction discovery.
@@ -20,16 +22,23 @@ public sealed class ReleaseRecordIssuePointSettings(ITenantSettings settings)
         var stored = await settings.GetVersionedAsync(Key, cancellationToken);
         var policy = stored is null ? Default : Deserialise(stored.Value);
         return new(policy.DefaultIssuePoint, policy.ItemClassOverrides,
-            stored?.Version ?? ITenantSettings.MissingVersion);
+            stored?.Version ?? ITenantSettings.MissingVersion, policy.DefaultBomContent);
     }
 
     public async Task<ReleaseRecordIssuePointSettingsView> SetAsync(UpdateReleaseRecordIssuePointSettings update,
         CancellationToken cancellationToken)
     {
-        var policy = Normalise(new(update.DefaultIssuePoint, update.ItemClassOverrides));
+        var policy = Normalise(new(update.DefaultIssuePoint, update.ItemClassOverrides,
+            update.DefaultBomContent));
+        if ((policy.DefaultBomContent == ReleaseRecordBomContent.FullBom
+                || policy.ItemClassOverrides.Any(row => row.BomContent == ReleaseRecordBomContent.FullBom))
+            && !await capabilities.HasActiveBomSourceAsync(cancellationToken))
+            throw new CommandRefusedException("full_bom_needs_erp_bom",
+                "This tenant has no active ERP connection that supplies bills of materials.");
         var stored = await settings.SetAsync(Key, JsonSerializer.Serialize(policy, LedgerJson.Options),
             update.ExpectedVersion, cancellationToken);
-        return new(policy.DefaultIssuePoint, policy.ItemClassOverrides, stored.Version);
+        return new(policy.DefaultIssuePoint, policy.ItemClassOverrides, stored.Version,
+            policy.DefaultBomContent);
     }
 
     public async Task<string> ResolveAsync(string? itemClass, CancellationToken cancellationToken)
@@ -45,14 +54,26 @@ public sealed class ReleaseRecordIssuePointSettings(ITenantSettings settings)
                 string.Equals(row.ItemClass, itemClass, StringComparison.OrdinalIgnoreCase))?.IssuePoint
                 ?? view.DefaultIssuePoint;
 
+    public static string ResolveBomContent(ReleaseRecordIssuePointSettingsView view, string? itemClass) =>
+        itemClass is null
+            ? view.DefaultBomContent
+            : view.ItemClassOverrides.FirstOrDefault(row =>
+                string.Equals(row.ItemClass, itemClass, StringComparison.OrdinalIgnoreCase))?.BomContent
+                ?? view.DefaultBomContent;
+
     private static ReleaseRecordIssuePointPolicy Deserialise(string text) =>
         Normalise(JsonSerializer.Deserialize<ReleaseRecordIssuePointPolicy>(text, LedgerJson.Options) ?? Default);
 
     private static ReleaseRecordIssuePointPolicy Normalise(ReleaseRecordIssuePointPolicy policy)
     {
         RequireIssuePoint(policy.DefaultIssuePoint);
+        var defaultBomContent = string.IsNullOrWhiteSpace(policy.DefaultBomContent)
+            ? ReleaseRecordBomContent.SerialisedOnly : policy.DefaultBomContent.Trim();
+        RequireBomContent(defaultBomContent);
         var rows = policy.ItemClassOverrides.Select(row => new ReleaseRecordIssuePointOverride(
-                row.ItemClass.Trim(), row.IssuePoint.Trim()))
+                row.ItemClass.Trim(), row.IssuePoint.Trim(),
+                string.IsNullOrWhiteSpace(row.BomContent)
+                    ? ReleaseRecordBomContent.SerialisedOnly : row.BomContent.Trim()))
             .Where(row => row.ItemClass.Length > 0)
             .OrderBy(row => row.ItemClass, StringComparer.OrdinalIgnoreCase).ToList();
         if (rows.Any(row => row.ItemClass.Length > 100))
@@ -61,8 +82,12 @@ public sealed class ReleaseRecordIssuePointSettings(ITenantSettings settings)
         if (rows.GroupBy(row => row.ItemClass, StringComparer.OrdinalIgnoreCase).Any(group => group.Count() > 1))
             throw new CommandRefusedException("certificate_issue_point_item_class_duplicate",
                 "Each item class can have only one release-record issue-point override.");
-        foreach (var row in rows) RequireIssuePoint(row.IssuePoint);
-        return new(policy.DefaultIssuePoint.Trim(), rows);
+        foreach (var row in rows)
+        {
+            RequireIssuePoint(row.IssuePoint);
+            RequireBomContent(row.BomContent);
+        }
+        return new(policy.DefaultIssuePoint.Trim(), rows, defaultBomContent);
     }
 
     private static void RequireIssuePoint(string value)
@@ -70,6 +95,13 @@ public sealed class ReleaseRecordIssuePointSettings(ITenantSettings settings)
         if (!ReleaseRecordIssuePoint.All.Contains(value.Trim(), StringComparer.Ordinal))
             throw new CommandRefusedException("certificate_issue_point_unknown",
                 $"Unknown release-record issue point '{value}'.");
+    }
+
+    private static void RequireBomContent(string value)
+    {
+        if (!ReleaseRecordBomContent.All.Contains(value.Trim(), StringComparer.Ordinal))
+            throw new CommandRefusedException("certificate_bom_content_unknown",
+                $"Unknown release-record BOM content choice '{value}'.");
     }
 }
 
