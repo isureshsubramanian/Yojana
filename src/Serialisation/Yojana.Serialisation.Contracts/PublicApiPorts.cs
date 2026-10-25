@@ -1,6 +1,9 @@
 namespace Yojana.Serialisation.Contracts;
 
 /// <summary>The stable scope vocabulary of the version-one customer application API.</summary>
+/// <remarks>COUPLING (scope vocabulary): Yojana.Developer.Contracts.PublicApiScopes (the API client and token side)
+/// holds the same names; change both together. PublicApiScopeVocabularyTests in the Developer test project fails when
+/// the two lists differ.</remarks>
 public static class PublicApiScopes
 {
     public const string UnitsRead = "units.read";

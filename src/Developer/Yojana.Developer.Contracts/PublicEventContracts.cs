@@ -58,6 +58,9 @@ public static class PublicEventTypes
 }
 
 /// <summary>API client scopes (ADR-0018 D5). One scope per resource and action.</summary>
+/// <remarks>COUPLING (scope vocabulary): Yojana.Serialisation.Contracts.PublicApiScopes holds the same names for the
+/// read and write ports; a scope added or renamed here only must also change there, or a client is granted a scope no
+/// endpoint checks. PublicApiScopeVocabularyTests fails when the two lists differ.</remarks>
 public static class PublicApiScopes
 {
     public const string UnitsRead = "units.read";
