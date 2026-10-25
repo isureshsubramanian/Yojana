@@ -99,7 +99,7 @@ test("the risk-review screen uses the claim queue, four summary KPIs, report and
   assert.match(screen, /for \(const flag of open\)/); assert.match(screen, /claimsApi\.decideRiskFlag/); assert.match(screen, /reason\.trim\(\)/);
   assert.match(screen, /riskCount=\{summary\?\.heldClaims\}/); assert.match(screen, /distinctClaimsDeniedAfterConfirmedFlag/);
   assert.match(api, /\/api\/claims\/risk-review/); assert.match(api, /risk-review\/summary/); assert.match(api, /risk-flags\/report/); assert.match(api, /risk-rules/);
-  assert.match(types, /interface ClaimRiskReviewPage/); assert.match(types, /interface ClaimRiskReviewSummary/);
+  assert.match(types, /export type ClaimRiskReviewPage = z\.infer/); assert.match(types, /export type ClaimRiskReviewSummary = z\.infer/);
   assert.match(routes, /claims\/risk-review/); assert.match(claims, /<ClaimsTabs current="claims"/);
 });
 

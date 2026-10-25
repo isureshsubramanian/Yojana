@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
+import { fieldCatalogueEntrySchema } from "../src/certificates/types.ts";
 import {
   certificateDatePatterns,
   certificateDateTimeExample,
@@ -19,6 +21,13 @@ test("certificate time setting presents both clock choices", () => {
     { value: "HH:mm", label: "24-hour" },
     { value: "h:mm tt", label: "12-hour" },
   ]);
+});
+
+test("certificate API schemas accept the DTO and refuse a missing required field", () => {
+  assert.equal(fieldCatalogueEntrySchema.safeParse({ path: "unit.serial", type: "string", repeating: false, description: null }).success, true);
+  assert.equal(fieldCatalogueEntrySchema.safeParse({ path: "unit.serial", type: "string", description: null }).success, false);
+  const source = readFileSync(new URL("../src/certificates/api.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /\bapi(?:<[^>]*>)?\(/);
 });
 
 test("certificate date samples use the tenant time zone", () => {

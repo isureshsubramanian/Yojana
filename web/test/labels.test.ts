@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { activationReasons, bindingTableRows, highlightLayout, reviewActions } from "../src/labels/editorModel.ts";
 import { dayBounds, defaultPrintJobDays, printJobRejectionSummary, summaryKpis } from "../src/labels/printJobModel.ts";
+import { labelBindableFieldSchema } from "../src/labels/types.ts";
 
 test("label layout mirror marks placeholders and every legal phrase hit without changing text", () => {
   const layout = "^FD{{serial}} Warranty void if removed. void^FS";
@@ -9,6 +11,13 @@ test("label layout mirror marks placeholders and every legal phrase hit without 
   assert.equal(segments.map((segment) => segment.text).join(""), layout);
   assert.deepEqual(segments.filter((segment) => segment.kind === "placeholder").map((segment) => segment.text), ["{{serial}}"]);
   assert.deepEqual(segments.filter((segment) => segment.kind === "phrase").map((segment) => segment.text), ["Warranty void", "void"]);
+});
+
+test("labels API schemas accept the DTO and refuse a missing required field", () => {
+  assert.equal(labelBindableFieldSchema.safeParse({ fieldPath: "identifier.internal_serial", expiryControlled: false }).success, true);
+  assert.equal(labelBindableFieldSchema.safeParse({ fieldPath: "identifier.internal_serial" }).success, false);
+  const source = readFileSync(new URL("../src/labels/api.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /\bapi(?:<[^>]*>)?\(/);
 });
 
 test("legal phrases match whole words or phrase boundaries, case-insensitively", () => {

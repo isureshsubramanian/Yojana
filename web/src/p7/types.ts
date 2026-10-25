@@ -1,50 +1,94 @@
-export interface DocumentRef { type: string; id: string; line?: number | null }
+import * as z from "zod/mini";
 
-export interface ImportRow {
-  rowResultId: string; rowNumber: number; sheet: string | null; rawValue: string | null;
-  normalisedValue: string | null; outcome: string; rule: string | null; orderNumber: string | null;
-  lot: string | null; customerAssetTag: string | null; unitId: string | null;
-  comparisonPartition: string | null; proposedAction: string | null; reviewedAction: string | null;
-  collisionUnitName: string | null; collisionOwnerName: string | null;
-}
-export interface ImportSummary { jobId: string; source: string; fileName: string; format: string; mode: string; status: string; applied: number; skipped: number; rejected: number; recordedTime: string }
-export interface ImportPage { items: ImportSummary[]; nextCursor: string | null }
-export interface ImportFileHistoryRow { jobId: string; fileName: string; format: string; size: number; originalHash: string; convertedHash: string | null; uploaderName: string; uploaderReference: string; uploadedAt: string; source: string; status: string; applied: number; skipped: number; rejected: number; storageState: string; originalAvailable: boolean; convertedAvailable: boolean; archiveStoreName: string | null; mayDownload: boolean }
-export interface ImportFileHistoryPage { items: ImportFileHistoryRow[]; nextCursor: string | null }
-export interface FeedMessageHistoryRow { feedMessageId: string; messageReference: string; documentType: string; documentId: string; documentLine: number; importJobId: string; payloadHash: string; status: string; shipped: number; assetTags: number; rejected: number; callerName: string; receivedAt: string }
-export interface FeedMessageHistoryPage { items: FeedMessageHistoryRow[]; nextCursor: string | null }
-export interface ComparisonInputFile { id: string | null; name: string; hash: string | null }
-export interface ComparisonHistoryRow { jobId: string; firstFile: ComparisonInputFile; secondFile: ComparisonInputFile; status: string; applied: number; skipped: number; rejected: number; ranAt: string }
-export interface ComparisonHistoryPage { items: ComparisonHistoryRow[]; nextCursor: string | null }
-export interface ImportRowPage { items: ImportRow[]; nextCursor: string | null }
-export interface ImportJob extends ImportSummary { originalHash: string; convertedHash: string | null; target: DocumentRef | null; targetName: string | null; originalArchiveReference: string | null; convertedArchiveReference: string | null; inboxReference: string | null; rows: ImportRow[] }
-export interface ImportRunResult { jobs: ImportJob[]; replayed: boolean }
-export interface CompareResult { comparisonJobId: string; onlyInA: number; onlyInB: number; both: number; duplicates: number; existingCollisions: number; rows: ImportRow[] }
+const text = z.string();
+const nullableText = z.nullable(text);
+const count = z.number();
+export const documentRefSchema = z.object({ type: text, id: text, line: z.nullable(count) });
+export type DocumentRef = z.infer<typeof documentRefSchema>;
+export const importRowSchema = z.object({ rowResultId: text, rowNumber: count, sheet: nullableText, rawValue: nullableText, normalisedValue: nullableText, outcome: text, rule: nullableText, orderNumber: nullableText, lot: nullableText, customerAssetTag: nullableText, unitId: nullableText, comparisonPartition: nullableText, proposedAction: nullableText, reviewedAction: nullableText, collisionUnitName: nullableText, collisionOwnerName: nullableText });
+export type ImportRow = z.infer<typeof importRowSchema>;
+export const importSummarySchema = z.object({ jobId: text, source: text, fileName: text, format: text, mode: text, status: text, applied: count, skipped: count, rejected: count, recordedTime: text });
+export type ImportSummary = z.infer<typeof importSummarySchema>;
+export const importPageSchema = z.object({ items: z.array(importSummarySchema), nextCursor: nullableText });
+export type ImportPage = z.infer<typeof importPageSchema>;
+export const importFileHistoryRowSchema = z.object({ jobId: text, fileName: text, format: text, size: count, originalHash: text, convertedHash: nullableText, uploaderName: text, uploaderReference: text, uploadedAt: text, source: text, status: text, applied: count, skipped: count, rejected: count, storageState: text, originalAvailable: z.boolean(), convertedAvailable: z.boolean(), archiveStoreName: nullableText, mayDownload: z.boolean() });
+export type ImportFileHistoryRow = z.infer<typeof importFileHistoryRowSchema>;
+export const importFileHistoryPageSchema = z.object({ items: z.array(importFileHistoryRowSchema), nextCursor: nullableText });
+export type ImportFileHistoryPage = z.infer<typeof importFileHistoryPageSchema>;
+export const feedMessageHistoryRowSchema = z.object({ feedMessageId: text, messageReference: text, documentType: text, documentId: text, documentLine: count, importJobId: text, payloadHash: text, status: text, shipped: count, assetTags: count, rejected: count, callerName: text, receivedAt: text });
+export type FeedMessageHistoryRow = z.infer<typeof feedMessageHistoryRowSchema>;
+export const feedMessageHistoryPageSchema = z.object({ items: z.array(feedMessageHistoryRowSchema), nextCursor: nullableText });
+export type FeedMessageHistoryPage = z.infer<typeof feedMessageHistoryPageSchema>;
+export const comparisonInputFileSchema = z.object({ id: nullableText, name: text, hash: nullableText });
+export type ComparisonInputFile = z.infer<typeof comparisonInputFileSchema>;
+export const comparisonHistoryRowSchema = z.object({ jobId: text, firstFile: comparisonInputFileSchema, secondFile: comparisonInputFileSchema, status: text, applied: count, skipped: count, rejected: count, ranAt: text });
+export type ComparisonHistoryRow = z.infer<typeof comparisonHistoryRowSchema>;
+export const comparisonHistoryPageSchema = z.object({ items: z.array(comparisonHistoryRowSchema), nextCursor: nullableText });
+export type ComparisonHistoryPage = z.infer<typeof comparisonHistoryPageSchema>;
+export const importRowPageSchema = z.object({ items: z.array(importRowSchema), nextCursor: nullableText });
+export type ImportRowPage = z.infer<typeof importRowPageSchema>;
+export const importJobSchema = z.extend(importSummarySchema, { originalHash: text, convertedHash: nullableText, target: z.nullable(documentRefSchema), targetName: nullableText, originalArchiveReference: nullableText, convertedArchiveReference: nullableText, inboxReference: nullableText, rows: z.array(importRowSchema) });
+export type ImportJob = z.infer<typeof importJobSchema>;
+export const importRunResultSchema = z.object({ jobs: z.array(importJobSchema), replayed: z.boolean() });
+export type ImportRunResult = z.infer<typeof importRunResultSchema>;
+export const compareResultSchema = z.object({ comparisonJobId: text, onlyInA: count, onlyInB: count, both: count, duplicates: count, existingCollisions: count, rows: z.array(importRowSchema), replayed: z.boolean() });
+export type CompareResult = z.infer<typeof compareResultSchema>;
 
-export interface Coverage { coverageFamily: string; start: string | null; expiry: string | null; status: string }
-export interface IdentifierLineage { value: string; type: string; current: boolean; replacedBy: string | null }
-export interface PortalUnit { unitId: string; serial: string; lifecycleStatus: string; itemCode: string; itemName: string | null; condition: string | null; coverage: Coverage[]; identifiers: IdentifierLineage[] }
-export interface PortalLookup { outcome: string; units: PortalUnit[] }
-export interface PortalContext { organisationName: string }
-export interface PublicLookup { outcome: string; identifier: string | null; identifierType: string | null; itemCode: string | null; itemName: string | null; condition: string | null; manufactureMonth: string | null; warrantyStatus: string | null; authenticatedEntryPoint: string }
-export interface InstalledBaseRow { unitId: string; serial: string; itemCode: string; itemName: string | null; deliveryDate: string; customerPoRef: string | null; customerItemRef: string | null; isComponent: boolean; coverage: Coverage[] }
-export interface InstalledBasePage { rows: InstalledBaseRow[]; hasMore: boolean; nextDeliveryDate: string | null; nextUnitId: string | null }
-export interface ServiceHistoryRow { eventId: string; eventType: string; at: string; status: string | null }
-export interface ServiceHistoryPage { rows: ServiceHistoryRow[]; hasMore: boolean; nextAt: string | null; nextSequence: number | null }
-export interface CertificateRow { certificateId: string; kind: string; formType: string; version: number; trackingNumber: string; status: string; issuedAt: string; owner: { code: string; name: string | null } | null }
-export interface CertificatePage { rows: CertificateRow[]; hasMore: boolean; nextIssuedAt: string | null; nextCertificateId: string | null }
-export interface WhereUsedParent { unitId: string; serial: string; current: boolean; installedAt: string; removedAt: string | null; liveEntitlements: Coverage[] }
-export interface WhereUsedResult { outcome: string; validationReasons: string[]; componentUnitId: string | null; parents: WhereUsedParent[]; componentEntitlements: Coverage[] }
-export interface SerialListResult { matched: { input: string; unit: PortalUnit }[]; unmatched: string[]; invalid: { input: string; identifierType: string | null; reasons: string[] }[] }
-export interface PortalRegistrationResult { registrationId: string; unitId: string; entitlementId: string; outcome: string; status: string; deliveryAt: string; evidenceAt: string; graceDays: number; startDate: string | null; replayed: boolean }
-export interface PortalRmaResult { rmaId: string; rmaNumber: string; stage: string; replayed: boolean }
+export const coverageSchema = z.object({ coverageFamily: text, start: nullableText, expiry: nullableText, status: text });
+export type Coverage = z.infer<typeof coverageSchema>;
+export const identifierLineageSchema = z.object({ value: text, type: text, current: z.boolean(), replacedBy: nullableText });
+export type IdentifierLineage = z.infer<typeof identifierLineageSchema>;
+export const portalUnitSchema = z.object({ unitId: text, serial: text, lifecycleStatus: text, itemCode: text, itemName: nullableText, condition: nullableText, coverage: z.array(coverageSchema), identifiers: z.array(identifierLineageSchema) });
+export type PortalUnit = z.infer<typeof portalUnitSchema>;
+export const portalLookupSchema = z.object({ outcome: text, units: z.array(portalUnitSchema) });
+export type PortalLookup = z.infer<typeof portalLookupSchema>;
+export const portalContextSchema = z.object({ organisationName: text });
+export type PortalContext = z.infer<typeof portalContextSchema>;
+export const publicLookupSchema = z.object({ outcome: text, identifier: nullableText, identifierType: nullableText, itemCode: nullableText, itemName: nullableText, condition: nullableText, manufactureMonth: nullableText, warrantyStatus: nullableText, authenticatedEntryPoint: text });
+export type PublicLookup = z.infer<typeof publicLookupSchema>;
+export const installedBaseRowSchema = z.object({ unitId: text, serial: text, itemCode: text, itemName: nullableText, deliveryDate: text, customerPoRef: nullableText, customerItemRef: nullableText, isComponent: z.boolean(), coverage: z.array(coverageSchema) });
+export type InstalledBaseRow = z.infer<typeof installedBaseRowSchema>;
+export const installedBasePageSchema = z.object({ rows: z.array(installedBaseRowSchema), hasMore: z.boolean(), nextDeliveryDate: nullableText, nextUnitId: nullableText });
+export type InstalledBasePage = z.infer<typeof installedBasePageSchema>;
+export const serviceHistoryRowSchema = z.object({ eventId: text, eventType: text, at: text, status: nullableText });
+export type ServiceHistoryRow = z.infer<typeof serviceHistoryRowSchema>;
+export const serviceHistoryPageSchema = z.object({ rows: z.array(serviceHistoryRowSchema), hasMore: z.boolean(), nextAt: nullableText, nextSequence: z.nullable(count) });
+export type ServiceHistoryPage = z.infer<typeof serviceHistoryPageSchema>;
+const certificateOwnerSchema = z.object({ code: text, name: text, kind: nullableText, effectiveFrom: text });
+export const certificateRowSchema = z.object({ certificateId: text, kind: text, formType: text, version: count, trackingNumber: text, status: text, issuedAt: text, owner: z.nullable(certificateOwnerSchema) });
+export type CertificateRow = z.infer<typeof certificateRowSchema>;
+export const certificatePageSchema = z.object({ rows: z.array(certificateRowSchema), hasMore: z.boolean(), nextIssuedAt: nullableText, nextCertificateId: nullableText });
+export type CertificatePage = z.infer<typeof certificatePageSchema>;
+export const whereUsedParentSchema = z.object({ unitId: text, serial: text, current: z.boolean(), installedAt: text, removedAt: nullableText, liveEntitlements: z.array(coverageSchema) });
+export type WhereUsedParent = z.infer<typeof whereUsedParentSchema>;
+export const whereUsedResultSchema = z.object({ outcome: text, validationReasons: z.array(text), componentUnitId: nullableText, parents: z.array(whereUsedParentSchema), componentEntitlements: z.array(coverageSchema) });
+export type WhereUsedResult = z.infer<typeof whereUsedResultSchema>;
+export const serialListResultSchema = z.object({ matched: z.array(z.object({ input: text, unit: portalUnitSchema })), unmatched: z.array(text), invalid: z.array(z.object({ input: text, identifierType: nullableText, reasons: z.array(text) })) });
+export type SerialListResult = z.infer<typeof serialListResultSchema>;
+export const portalRegistrationResultSchema = z.object({ registrationId: text, unitId: text, entitlementId: text, outcome: text, status: text, deliveryAt: text, evidenceAt: text, graceDays: count, startDate: nullableText, replayed: z.boolean() });
+export type PortalRegistrationResult = z.infer<typeof portalRegistrationResultSchema>;
+export const portalRmaResultSchema = z.object({ rmaId: text, rmaNumber: text, stage: text, replayed: z.boolean() });
+export type PortalRmaResult = z.infer<typeof portalRmaResultSchema>;
 
-export interface ReconciliationRow { ordinal: number; input: string; identifierType: string | null; normalisedIdentifier: string | null; outcome: string; validationReasons: string[]; unit: string | null; item: string | null; otherOwner: string | null; assertionId: string | null; assertionStatus: string | null; customerPoRef: string | null; customerItemRef: string | null; unitAtCustomerSiteDefault: boolean | null }
-export interface ReconciliationPage { reconciliationId: string; sourceKind: string; customer: string; total: number; owned: number; ownedByAnotherParty: number; notFound: number; invalid: number; items: ReconciliationRow[]; nextCursor: string | null; replayed: boolean }
+export const reconciliationRowSchema = z.object({ ordinal: count, input: text, identifierType: nullableText, normalisedIdentifier: nullableText, outcome: text, validationReasons: z.array(text), unit: nullableText, item: nullableText, otherOwner: nullableText, assertionId: nullableText, assertionStatus: nullableText, customerPoRef: nullableText, customerItemRef: nullableText, unitAtCustomerSiteDefault: z.nullable(z.boolean()) });
+export type ReconciliationRow = z.infer<typeof reconciliationRowSchema>;
+export const reconciliationPageSchema = z.object({ reconciliationId: text, sourceKind: text, customer: text, total: count, owned: count, ownedByAnotherParty: count, notFound: count, invalid: count, items: z.array(reconciliationRowSchema), nextCursor: nullableText, replayed: z.boolean() });
+export type ReconciliationPage = z.infer<typeof reconciliationPageSchema>;
 
-export interface InternalLookup { serial: string; item: string; lifecycleStatus: string; disposition: string; identifiers: { type: string; value: string; current: boolean }[]; ownership: { owner: string; validFrom: string; validTo: string | null; current: boolean; customerPoReference: string | null; customerItemReference: string | null; saleChains: { order: string | null; delivery: string | null; invoice: string | null; deliveredAt: string | null; invoicedAt: string | null; warrantyLines: { line: number; item: string; price: number; currency: string; policyCode: string | null; internalNote: string | null }[]; internalNote: string | null }[] }[]; serviceHistory: { kind: string; reference: string; status: string; recordedAt: string; internalNote: string | null; cost: number | null; currency: string | null; recordId?: string | null }[] }
-export interface XrefRow { rootSerial: string; parentSerial: string | null; depth: number; slot: string | null; internalSerial: string; manufacturerSerial: string | null; vendorSerial: string | null; customerSerial: string | null; assetTag: string | null; item: string; currentOwner: string | null }
-export interface XrefPage { items: XrefRow[]; nextCursor: string | null; selectedRoots: number }
-export interface DisclosureRow { field: string; tier: string; enabled: boolean }
-export interface DisclosurePolicy { publicTierEnabled: boolean; fields: DisclosureRow[]; settingsVersion: string }
-export interface ReferenceOption { kind: string; id: string; type: string | null; code: string | null; name: string | null; number: string | null; status: string | null }
+const internalIdentifierSchema = z.object({ type: text, value: text, current: z.boolean() });
+const internalWarrantyLineSchema = z.object({ line: count, item: text, price: count, currency: text, policyCode: nullableText, internalNote: nullableText });
+const internalSaleChainSchema = z.object({ order: nullableText, delivery: nullableText, invoice: nullableText, deliveredAt: nullableText, invoicedAt: nullableText, warrantyLines: z.array(internalWarrantyLineSchema), internalNote: nullableText });
+const internalOwnershipSchema = z.object({ owner: text, validFrom: text, validTo: nullableText, current: z.boolean(), customerPoReference: nullableText, customerItemReference: nullableText, saleChains: z.array(internalSaleChainSchema) });
+const internalServiceSchema = z.object({ kind: text, reference: text, status: text, recordedAt: text, internalNote: nullableText, cost: z.nullable(count), currency: nullableText, recordId: nullableText });
+export const internalLookupSchema = z.object({ serial: text, item: text, lifecycleStatus: text, disposition: text, identifiers: z.array(internalIdentifierSchema), ownership: z.array(internalOwnershipSchema), serviceHistory: z.array(internalServiceSchema) });
+export type InternalLookup = z.infer<typeof internalLookupSchema>;
+export const xrefRowSchema = z.object({ rootSerial: text, parentSerial: nullableText, depth: count, slot: nullableText, internalSerial: text, manufacturerSerial: nullableText, vendorSerial: nullableText, customerSerial: nullableText, assetTag: nullableText, item: text, currentOwner: nullableText });
+export type XrefRow = z.infer<typeof xrefRowSchema>;
+export const xrefPageSchema = z.object({ items: z.array(xrefRowSchema), nextCursor: nullableText, selectedRoots: count });
+export type XrefPage = z.infer<typeof xrefPageSchema>;
+export const disclosureRowSchema = z.object({ field: text, tier: text, enabled: z.boolean() });
+export type DisclosureRow = z.infer<typeof disclosureRowSchema>;
+export const disclosurePolicySchema = z.object({ publicTierEnabled: z.boolean(), fields: z.array(disclosureRowSchema), settingsVersion: text });
+export type DisclosurePolicy = z.infer<typeof disclosurePolicySchema>;
+export const referenceOptionSchema = z.object({ kind: text, id: text, type: nullableText, code: nullableText, name: nullableText, partyType: nullableText, number: nullableText, status: nullableText, itemId: nullableText });
+export type ReferenceOption = z.infer<typeof referenceOptionSchema>;

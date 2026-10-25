@@ -1,55 +1,71 @@
-export type CampaignCriterionKind = "identifier_range" | "child" | "firmware" | "lot";
-export type CampaignReason = "safety" | "reliability" | "firmware" | "regulatory" | "goodwill";
+import * as z from "zod/mini";
 
-export interface CampaignCriterion {
-  criterionId: string;
-  kind: CampaignCriterionKind;
-  scheme: string | null;
-  rangeStart: string | null;
-  rangeEnd: string | null;
-  lotId: string | null;
-  childUnitId: string | null;
-  childItemId: string | null;
-  firmwareValue: string | null;
-  effectiveAt: string | null;
-  childLotId: string | null;
-  firmwareKey: string | null;
-}
+const text = z.string();
+const nullableText = z.nullable(text);
+const count = z.number();
 
-export interface Campaign {
-  campaignId: string; code: string; name: string; coverageSource: "recall" | "goodwill"; reserveTag: string;
-  partsPct: number; labourPct: number; travelPct: number;
-  status: "draft" | "selected" | "active" | "closed"; criteria: CampaignCriterion[];
-  createdAt: string; createdBy: string; updatedAt: string; updatedBy: string; selectedAt: string | null;
-  reasonCode: CampaignReason; reasonNote: string | null; runsUntil: string | null; version: string;
-}
+export const campaignCriterionKindSchema = z.enum(["identifier_range", "child", "firmware", "lot"]);
+export const campaignReasonSchema = z.enum(["safety", "reliability", "firmware", "regulatory", "goodwill"]);
+export type CampaignCriterionKind = z.infer<typeof campaignCriterionKindSchema>;
+export type CampaignReason = z.infer<typeof campaignReasonSchema>;
 
-export interface CampaignListRow { campaignId: string; code: string; name: string; coverageSource: string; status: string; selectedUnits: number; selectedAt: string | null; reserveTag: string; reasonCode: CampaignReason; runsUntil: string | null; partsPct: number; labourPct: number; travelPct: number }
-export interface Page<T> { items: T[]; total: number; skip: number; take: number }
+export const campaignCriterionSchema = z.object({
+  criterionId: text, kind: campaignCriterionKindSchema, scheme: nullableText, rangeStart: nullableText,
+  rangeEnd: nullableText, lotId: nullableText, childUnitId: nullableText, childItemId: nullableText,
+  firmwareValue: nullableText, effectiveAt: nullableText, childLotId: nullableText, firmwareKey: nullableText,
+});
+export type CampaignCriterion = z.infer<typeof campaignCriterionSchema>;
 
-export interface CampaignMatchRow {
-  unitId: string; serial: string | null; itemId: string; ownerPartyRef: string | null; ownerPartyType: string | null;
-  custodianPartyRef: string | null; custodianPartyType: string | null; custodyKind: string | null;
-  matchedChildSerial: string | null; firmwareKey: string | null; firmwareValue: string | null; firmwareSince: string | null;
-}
-export interface CampaignPreview { campaignId: string; page: Page<CampaignMatchRow> }
-export interface CampaignFunnelStep { kind: CampaignCriterionKind; count: number }
-export interface CampaignMatchEvidence { kind: CampaignCriterionKind; label: string; value: string }
+export const campaignSchema = z.object({
+  campaignId: text, code: text, name: text, coverageSource: z.enum(["recall", "goodwill"]), reserveTag: text,
+  partsPct: count, labourPct: count, travelPct: count,
+  status: z.enum(["draft", "selected", "active", "closed"]), criteria: z.array(campaignCriterionSchema),
+  createdAt: text, createdBy: text, updatedAt: text, updatedBy: text, selectedAt: nullableText,
+  reasonCode: campaignReasonSchema, reasonNote: nullableText, runsUntil: nullableText, version: text,
+});
+export type Campaign = z.infer<typeof campaignSchema>;
 
-export interface CampaignUnitRow {
-  unitId: string; serial: string | null; ownerPartyRef: string | null; ownerPartyType: string | null; ownerSince: string | null;
-  custodianPartyRef: string | null; custodianPartyType: string | null; custodyKind: string | null; custodyAtSelection: string | null; custodySince: string | null;
-  invoicePartyRef: string | null; selectedAt: string; selectedBy: string; claimId: string | null; claimNumber: string | null; claimStatus: string | null;
-}
-export interface CampaignUnitsSummary {
-  unitsSelected: number; selectedAt: string | null; addedSinceFirstSelection: number; recipients: number; owners: number;
-  custodiansNotOwner: number; ownerDiffersFromInvoice: number; repaired: number; inOurHands: number;
-}
-export interface SelectCampaignResult { campaignId: string; matched: number; added: number; selected: number; eventBatches: number; replayed: boolean }
+export const campaignListRowSchema = z.object({
+  campaignId: text, code: text, name: text, coverageSource: text, status: text, selectedUnits: count,
+  selectedAt: nullableText, reserveTag: text, reasonCode: campaignReasonSchema, runsUntil: nullableText,
+  partsPct: count, labourPct: count, travelPct: count,
+});
+export type CampaignListRow = z.infer<typeof campaignListRowSchema>;
 
-export interface CampaignDraft {
-  code: string; name: string; coverageSource: "recall" | "goodwill"; reserveTag: string; status: Campaign["status"];
-  partsPct: number; labourPct: number; travelPct: number;
-  reasonCode: CampaignReason; reasonNote: string; runsUntil: string;
-  criteria: CampaignCriterion[];
-}
+export const pageSchema = <T extends z.ZodMiniType>(item: T) => z.object({ items: z.array(item), total: count, skip: count, take: count });
+export type Page<T> = { items: T[]; total: number; skip: number; take: number };
+
+export const campaignMatchRowSchema = z.object({
+  unitId: text, serial: nullableText, itemId: text, ownerPartyRef: nullableText, ownerPartyType: nullableText,
+  custodianPartyRef: nullableText, custodianPartyType: nullableText, custodyKind: nullableText,
+  matchedChildSerial: nullableText, firmwareKey: nullableText, firmwareValue: nullableText, firmwareSince: nullableText,
+});
+export type CampaignMatchRow = z.infer<typeof campaignMatchRowSchema>;
+export const campaignPreviewSchema = z.object({ campaignId: text, page: pageSchema(campaignMatchRowSchema) });
+export type CampaignPreview = z.infer<typeof campaignPreviewSchema>;
+export const campaignFunnelStepSchema = z.object({ kind: campaignCriterionKindSchema, count });
+export type CampaignFunnelStep = z.infer<typeof campaignFunnelStepSchema>;
+export const campaignMatchEvidenceSchema = z.object({ kind: campaignCriterionKindSchema, label: text, value: text });
+export type CampaignMatchEvidence = z.infer<typeof campaignMatchEvidenceSchema>;
+
+export const campaignUnitRowSchema = z.object({
+  unitId: text, serial: nullableText, ownerPartyRef: nullableText, ownerPartyType: nullableText, ownerSince: nullableText,
+  custodianPartyRef: nullableText, custodianPartyType: nullableText, custodyKind: nullableText,
+  custodyAtSelection: nullableText, custodySince: nullableText, invoicePartyRef: nullableText, selectedAt: text,
+  selectedBy: text, claimId: nullableText, claimNumber: nullableText, claimStatus: nullableText,
+});
+export type CampaignUnitRow = z.infer<typeof campaignUnitRowSchema>;
+export const campaignUnitsSummarySchema = z.object({
+  unitsSelected: count, selectedAt: nullableText, addedSinceFirstSelection: count, recipients: count, owners: count,
+  custodiansNotOwner: count, ownerDiffersFromInvoice: count, repaired: count, inOurHands: count,
+});
+export type CampaignUnitsSummary = z.infer<typeof campaignUnitsSummarySchema>;
+export const selectCampaignResultSchema = z.object({ campaignId: text, matched: count, added: count, selected: count, eventBatches: count, replayed: z.boolean() });
+export type SelectCampaignResult = z.infer<typeof selectCampaignResultSchema>;
+
+export const campaignDraftSchema = z.object({
+  code: text, name: text, coverageSource: z.enum(["recall", "goodwill"]), reserveTag: text,
+  status: z.enum(["draft", "selected", "active", "closed"]), partsPct: count, labourPct: count, travelPct: count,
+  reasonCode: campaignReasonSchema, reasonNote: text, runsUntil: text, criteria: z.array(campaignCriterionSchema),
+});
+export type CampaignDraft = z.infer<typeof campaignDraftSchema>;

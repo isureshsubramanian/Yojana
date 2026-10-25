@@ -1,51 +1,104 @@
-import type { PolicyCoverItem } from "./coverItems";
-import type { BulkOperationArguments, DocumentRef } from "../api/units";
+import * as z from "zod/mini";
+import { policyCoverItemResponseSchema, policyCoverItemSchema } from "./coverItems.ts";
 
-export interface EntitlementView { entitlementId: string; unitId: string; coverageFamily: string; direction: string; type: string; storedStatus: string; effectiveStatus: string; closedReason: string | null; startDate: string | null; endDate: string | null; daysRemaining: number | null; policyVersionId: string; startBasis: string | null; startTimeZone: string; parentEntitlementId: string | null; rootEntitlementId: string | null; supersedesEntitlementId: string | null }
-export interface UnitEntitlementRow { entitlementId: string; coverageFamily: string; coverageFamilyName: string; accountingTag: string; direction: string; type: string; storedStatus: string; effectiveStatus: string; future: boolean; closedReason: string | null; closedEffective: string | null; ownerPartyRef: string | null; ownerPartyType: string | null; policyCode: string; policyName: string; policyVersion: number; terms: CoverageTerms; regionScope: string[]; transferable: string; sourceDocumentType: string | null; sourceDocumentId: string | null; sourceDocumentLine: number | null; accrualCohort: string | null; startDate: string | null; startBasis: string | null; startExplanation: string | null; endDate: string | null; endInclusive: boolean; computedByRuleVersion: string | null; daysRemaining: number | null; parentEntitlementId: string | null; rootEntitlementId: string | null; supersedesEntitlementId: string | null; successorEntitlementId: string | null }
-export interface EntitlementLedgerEvent { eventId: string; type: string; at: string; actor: string; documentType: string | null; documentId: string | null; documentLine: number | null; attributes: string }
-export interface EntitlementAmendmentRow { amendmentId: string; entitlementId: string; field: string; before: string | null; after: string | null; reasonCode: string; approvedBy: string | null; actor: string; at: string }
-export interface EntitlementSuspensionRow { suspensionId: string; entitlementId: string; from: string; to: string | null; reason: string; clockPaused: boolean; actor: string }
-export interface EntitlementUsageLimitRow { entitlementId: string; coverageFamily: string; meterType: string; limit: number; used: number; left: number; period: string; resetsOn: string | null }
-export interface UnitEntitlementDetail { unitId: string; asOf: string; hasOpenClaims: boolean; entitlements: UnitEntitlementRow[]; lineage: EntitlementLedgerEvent[]; amendments: EntitlementAmendmentRow[]; suspensions: EntitlementSuspensionRow[]; usageLimits: EntitlementUsageLimitRow[] }
-export interface WarrantyCoveringEntitlement { entitlementId: string; family: string; type: string; storedStatus: string; effectiveStatus: string; start: string | null; end: string | null; daysRemaining: number | null; coverage: string }
-export interface WarrantyCheck { unitId: string; on: string; family: string | null; covered: boolean; coveringEntitlements: WarrantyCoveringEntitlement[]; endDate: string | null; daysRemaining: number | null; reason: string | null }
+const text = z.string();
+const nullableText = z.nullable(text);
+const count = z.number();
+export const documentRefSchema = z.object({ type: text, id: text, line: z.nullable(count) });
 
-export interface DurationRule { value: number; unit: string; endOfMonth: string; endInclusive: boolean }
-export interface StartFallback { trigger: string; offsetDays: number }
-export interface StartRule { trigger: string; fallbacks: StartFallback[]; capDays: number | null }
-export interface UsageLimitTerm { meterType: string; limit: number; period: string }
-export interface CoverageTerms { partsPct: number; labourPct: number; travelPct: number; serviceMode: string; responseHours: number | null; coverageHours: string | null }
-export interface RefurbishedTerm { itemId: string | null; grade: string; channel: string; region: string; durationMonths: number; statutoryFloorMonths: number | null; statementKind: string }
-export interface EligibilityRule { kind: string; baseFamily: string; withinDays: number | null }
-export interface AmendmentValueTerm { amount: number; currency: string; per: string }
-export interface PolicyTerms { duration: DurationRule; durationBasis: string; usageLimits: UsageLimitTerm[]; start: StartRule; coverage: CoverageTerms; exclusions: string[]; items?: PolicyCoverItem[]; regionScope: string[]; transferable: string; settlementFormula: string; replacementPolicyCode: string | null; refurbished: RefurbishedTerm[]; doaWindowDays: number | null; assuranceOrService: string; referenceTimeZoneRule: string; serviceContractRegulated: boolean; eligibility: EligibilityRule | null; amendmentValue: AmendmentValueTerm | null; noClaimWithinDaysOfPurchase: number | null }
-export interface PolicyIssue { severity: string; code: string; field: string; message: string }
-export interface PolicyValidation { issues: PolicyIssue[]; canPublish: boolean }
-export interface PolicySummary { policyCode: string; name: string; coverageFamily: string; versions: number; inForceVersion: number | null; inForceFrom: string | null; draftVersion: number | null; liveEntitlements: number }
-export interface PolicyVersion { policyVersionId: string; version: number; appliesToContractsFrom: string; status: string; ruleVersion: string; liveEntitlements: number; createdAt: string; createdBy: string; publishedAt: string | null; publishedBy: string | null }
-export interface PolicyDetail { policyVersionId: string; policyCode: string; version: number; name: string; coverageFamily: string; entitlementType: string; appliesToContractsFrom: string; status: string; ruleVersion: string; terms: PolicyTerms; validation: PolicyValidation; documentVersion: string; waitingPeriodDefaultDays: number }
-export interface PolicyDraftResult { policyVersionId: string; policyCode: string; version: number; status: string; validation: PolicyValidation }
-export interface CoverageFamily { familyCode: string; name: string; stacking: boolean; accountingTag: string; active: boolean }
-export interface ReplacementPolicy { replacementPolicyId: string; code: string; rule: string; minDays: number | null; extensionMonths: number | null; description: string | null }
-export interface AmendmentApprovalTier { upToDays: number | null; role: string; financeReview: boolean; financeReviewAboveAmount: number | null }
-export interface AmendmentReasonRule { reasonCode: string; sourceDocumentRequired: boolean; systemOnly: boolean; tiers: AmendmentApprovalTier[] }
-export interface AmendmentApprovalPolicy { reasons: AmendmentReasonRule[]; reductionRole: string }
-export interface RefurbishedFloor { countryOrRegionGroup: string; buyerKind: string; minimumMonths: number }
-export interface RefurbishedGoodsPolicy { floors: RefurbishedFloor[] }
-export interface WarrantyJurisdictionRule { countryOrRegionGroup: string; allowed: boolean; disclosureRequired: boolean; licensedObligorRequired: boolean }
-export interface WarrantyReferencePolicy { jurisdictions: WarrantyJurisdictionRule[] }
-export interface TenantCurrency { currency: string | null }
+export const entitlementViewSchema = z.object({ entitlementId: text, unitId: text, coverageFamily: text, direction: text, type: text, storedStatus: text, effectiveStatus: text, closedReason: nullableText, startDate: nullableText, endDate: nullableText, daysRemaining: z.nullable(count), policyVersionId: text, startBasis: nullableText, startTimeZone: text, parentEntitlementId: nullableText, rootEntitlementId: nullableText, supersedesEntitlementId: nullableText });
+export type EntitlementView = z.infer<typeof entitlementViewSchema>;
+export const coverageTermsSchema = z.object({ partsPct: count, labourPct: count, travelPct: count, serviceMode: text, responseHours: z.nullable(count), coverageHours: nullableText });
+export type CoverageTerms = z.infer<typeof coverageTermsSchema>;
+export const unitEntitlementRowSchema = z.object({ entitlementId: text, coverageFamily: text, coverageFamilyName: text, accountingTag: text, direction: text, type: text, storedStatus: text, effectiveStatus: text, future: z.boolean(), closedReason: nullableText, closedEffective: nullableText, ownerPartyRef: nullableText, ownerPartyType: nullableText, policyCode: text, policyName: text, policyVersion: count, terms: coverageTermsSchema, regionScope: z.array(text), transferable: text, sourceDocumentType: nullableText, sourceDocumentId: nullableText, sourceDocumentLine: z.nullable(count), accrualCohort: nullableText, startDate: nullableText, startBasis: nullableText, startExplanation: nullableText, endDate: nullableText, endInclusive: z.boolean(), computedByRuleVersion: nullableText, daysRemaining: z.nullable(count), parentEntitlementId: nullableText, rootEntitlementId: nullableText, supersedesEntitlementId: nullableText, successorEntitlementId: nullableText });
+export type UnitEntitlementRow = z.infer<typeof unitEntitlementRowSchema>;
+export const entitlementLedgerEventSchema = z.object({ eventId: text, type: text, at: text, actor: text, documentType: nullableText, documentId: nullableText, documentLine: z.nullable(count), attributes: text });
+export type EntitlementLedgerEvent = z.infer<typeof entitlementLedgerEventSchema>;
+export const entitlementAmendmentRowSchema = z.object({ amendmentId: text, entitlementId: text, field: text, before: nullableText, after: nullableText, reasonCode: text, approvedBy: nullableText, actor: text, at: text });
+export type EntitlementAmendmentRow = z.infer<typeof entitlementAmendmentRowSchema>;
+export const entitlementSuspensionRowSchema = z.object({ suspensionId: text, entitlementId: text, from: text, to: nullableText, reason: text, clockPaused: z.boolean(), actor: text });
+export type EntitlementSuspensionRow = z.infer<typeof entitlementSuspensionRowSchema>;
+export const entitlementUsageLimitRowSchema = z.object({ entitlementId: text, coverageFamily: text, meterType: text, limit: count, used: count, left: count, period: text, resetsOn: nullableText });
+export type EntitlementUsageLimitRow = z.infer<typeof entitlementUsageLimitRowSchema>;
+export const unitEntitlementDetailSchema = z.object({ unitId: text, asOf: text, hasOpenClaims: z.boolean(), entitlements: z.array(unitEntitlementRowSchema), lineage: z.array(entitlementLedgerEventSchema), amendments: z.array(entitlementAmendmentRowSchema), suspensions: z.array(entitlementSuspensionRowSchema), usageLimits: z.array(entitlementUsageLimitRowSchema) });
+export type UnitEntitlementDetail = z.infer<typeof unitEntitlementDetailSchema>;
+export const warrantyCoveringEntitlementSchema = z.object({ entitlementId: text, family: text, type: text, storedStatus: text, effectiveStatus: text, start: nullableText, end: nullableText, daysRemaining: z.nullable(count), coverage: text });
+export type WarrantyCoveringEntitlement = z.infer<typeof warrantyCoveringEntitlementSchema>;
+export const warrantyCheckSchema = z.object({ unitId: text, on: text, family: nullableText, covered: z.boolean(), coveringEntitlements: z.array(warrantyCoveringEntitlementSchema), endDate: nullableText, daysRemaining: z.nullable(count), reason: nullableText });
+export type WarrantyCheck = z.infer<typeof warrantyCheckSchema>;
 
-export interface EntitlementRequirement { requirementId: string; unitId: string; ownershipEpisodeId: string; itemId: string; sourceDocument: DocumentRef | null; status: string; missingInput: string | null; detail: string | null; raisedAt: string; resolvedAt: string | null; entitlementId: string | null }
-export interface EntitlementRequirementPage { items: EntitlementRequirement[]; total: number; skip: number; take: number }
-export interface WarrantyLineException { exceptionId: string; document: DocumentRef; itemId: string; status: string; missingInput: string; detail: string | null; triggerAt: string; raisedAt: string; resolvedAt: string | null }
-export interface WarrantyLineExceptionPage { items: WarrantyLineException[]; total: number; skip: number; take: number }
-export interface GapRow { unitId: string; primarySerial: string | null; itemId: string; saleDate: string; customerPartyRef: string; channel: string; dropShip: boolean; requirementStatus: string | null; missingInput: string | null }
-export interface GapPage { rows: GapRow[]; total: number; skip: number; take: number }
-export interface GapCount { itemId: string; channel: string; dropShip: boolean; count: number }
-export interface GapRun { runId: string; runAt: string; trigger: string; total: number; counts: GapCount[] }
+export const durationRuleSchema = z.object({ value: count, unit: text, endOfMonth: text, endInclusive: z.boolean() });
+export type DurationRule = z.infer<typeof durationRuleSchema>;
+export const startFallbackSchema = z.object({ trigger: text, offsetDays: count });
+export type StartFallback = z.infer<typeof startFallbackSchema>;
+export const startRuleSchema = z.object({ trigger: text, fallbacks: z.array(startFallbackSchema), capDays: z.nullable(count) });
+export type StartRule = z.infer<typeof startRuleSchema>;
+export const usageLimitTermSchema = z.object({ meterType: text, limit: count, period: text });
+export type UsageLimitTerm = z.infer<typeof usageLimitTermSchema>;
+export const refurbishedTermSchema = z.object({ itemId: nullableText, grade: text, channel: text, region: text, durationMonths: count, statutoryFloorMonths: z.nullable(count), statementKind: text });
+export type RefurbishedTerm = z.infer<typeof refurbishedTermSchema>;
+export const eligibilityRuleSchema = z.object({ kind: text, baseFamily: text, withinDays: z.nullable(count) });
+export type EligibilityRule = z.infer<typeof eligibilityRuleSchema>;
+export const amendmentValueTermSchema = z.object({ amount: count, currency: text, per: text });
+export type AmendmentValueTerm = z.infer<typeof amendmentValueTermSchema>;
+export const policyTermsSchema = z.object({ duration: durationRuleSchema, durationBasis: text, usageLimits: z.array(usageLimitTermSchema), start: startRuleSchema, coverage: coverageTermsSchema, exclusions: z.array(text), regionScope: z.array(text), transferable: text, settlementFormula: text, replacementPolicyCode: nullableText, refurbished: z.array(refurbishedTermSchema), doaWindowDays: z.nullable(count), assuranceOrService: text, referenceTimeZoneRule: text, serviceContractRegulated: z.boolean(), eligibility: z.nullable(eligibilityRuleSchema), amendmentValue: z.nullable(amendmentValueTermSchema), items: z.nullable(z.array(policyCoverItemSchema)), noClaimWithinDaysOfPurchase: z.nullable(count) });
+export type PolicyTerms = z.infer<typeof policyTermsSchema>;
+export const policyTermsResponseSchema = z.object({ ...policyTermsSchema.shape, items: z.nullable(z.array(policyCoverItemResponseSchema)) });
+export const policyIssueSchema = z.object({ severity: text, code: text, field: text, message: text });
+export type PolicyIssue = z.infer<typeof policyIssueSchema>;
+export const policyValidationSchema = z.object({ issues: z.array(policyIssueSchema), canPublish: z.boolean() });
+export type PolicyValidation = z.infer<typeof policyValidationSchema>;
+export const policySummarySchema = z.object({ policyCode: text, name: text, coverageFamily: text, versions: count, inForceVersion: z.nullable(count), inForceFrom: nullableText, draftVersion: z.nullable(count), liveEntitlements: count });
+export type PolicySummary = z.infer<typeof policySummarySchema>;
+export const policyVersionSchema = z.object({ policyVersionId: text, version: count, appliesToContractsFrom: text, status: text, ruleVersion: text, liveEntitlements: count, createdAt: text, createdBy: text, publishedAt: nullableText, publishedBy: nullableText });
+export type PolicyVersion = z.infer<typeof policyVersionSchema>;
+export const policyDetailSchema = z.object({ policyVersionId: text, policyCode: text, version: count, name: text, coverageFamily: text, entitlementType: text, appliesToContractsFrom: text, status: text, ruleVersion: text, terms: policyTermsSchema, validation: policyValidationSchema, documentVersion: text, waitingPeriodDefaultDays: count });
+export type PolicyDetail = z.infer<typeof policyDetailSchema>;
+export const policyDetailResponseSchema = z.object({ ...policyDetailSchema.shape, terms: policyTermsResponseSchema });
+export const policyDraftResultSchema = z.object({ policyVersionId: text, policyCode: text, version: count, status: text, validation: policyValidationSchema });
+export type PolicyDraftResult = z.infer<typeof policyDraftResultSchema>;
+export const coverageFamilySchema = z.object({ familyCode: text, name: text, stacking: z.boolean(), accountingTag: text, active: z.boolean(), version: text });
+export type CoverageFamily = z.infer<typeof coverageFamilySchema>;
+export const replacementPolicySchema = z.object({ replacementPolicyId: text, code: text, rule: text, minDays: z.nullable(count), extensionMonths: z.nullable(count), description: nullableText, version: text });
+export type ReplacementPolicy = z.infer<typeof replacementPolicySchema>;
+export const amendmentApprovalTierSchema = z.object({ upToDays: z.nullable(count), role: text, financeReview: z.boolean(), financeReviewAboveAmount: z.nullable(count) });
+export type AmendmentApprovalTier = z.infer<typeof amendmentApprovalTierSchema>;
+export const amendmentReasonRuleSchema = z.object({ reasonCode: text, sourceDocumentRequired: z.boolean(), systemOnly: z.boolean(), tiers: z.array(amendmentApprovalTierSchema) });
+export type AmendmentReasonRule = z.infer<typeof amendmentReasonRuleSchema>;
+export const amendmentApprovalPolicySchema = z.object({ reasons: z.array(amendmentReasonRuleSchema), reductionRole: text });
+export type AmendmentApprovalPolicy = z.infer<typeof amendmentApprovalPolicySchema>;
+export const refurbishedFloorSchema = z.object({ jurisdiction: text, buyerKind: text, minimumMonths: count });
+export type RefurbishedFloor = z.infer<typeof refurbishedFloorSchema>;
+export const refurbishedGoodsPolicySchema = z.object({ floors: z.array(refurbishedFloorSchema) });
+export type RefurbishedGoodsPolicy = z.infer<typeof refurbishedGoodsPolicySchema>;
+export const warrantyJurisdictionRuleSchema = z.object({ countryOrRegionGroup: text, allowed: z.boolean(), disclosureRequired: z.boolean(), licensedObligorRequired: z.boolean() });
+export type WarrantyJurisdictionRule = z.infer<typeof warrantyJurisdictionRuleSchema>;
+export const warrantyReferencePolicySchema = z.object({ jurisdictions: z.array(warrantyJurisdictionRuleSchema) });
+export type WarrantyReferencePolicy = z.infer<typeof warrantyReferencePolicySchema>;
+const currencyUsageSchema = z.object({ kind: text, count });
+export const tenantCurrencySchema = z.object({ currency: nullableText, changeable: z.boolean(), usage: z.array(currencyUsageSchema) });
+const tenantCurrencyViewSchema = z.object({ currency: nullableText });
+export type TenantCurrency = z.infer<typeof tenantCurrencyViewSchema>;
 
-/** P2-T21: a bulk execution waiting for approval, stored by the server with a fingerprint of the requester's preview. */
-export interface BulkApprovalRequest { requestId: string; selectionId: string; operation: string; status: "pending" | "approved" | "rejected" | "withdrawn" | "stale"; sourceDocument: DocumentRef; arguments: BulkOperationArguments; total: number; change: number; skip: number; block: number; rules: string[]; requestedBy: string; requestedAt: string; note: string | null; decidedBy: string | null; decidedAt: string | null; decisionNote: string | null; executedCommandId: string | null }
-export interface BulkApprovalRequestPage { items: BulkApprovalRequest[]; total: number; skip: number; take: number }
+export const entitlementRequirementSchema = z.object({ requirementId: text, unitId: text, ownershipEpisodeId: text, itemId: text, sourceDocument: z.nullable(documentRefSchema), status: text, missingInput: nullableText, detail: nullableText, raisedAt: text, resolvedAt: nullableText, entitlementId: nullableText });
+export type EntitlementRequirement = z.infer<typeof entitlementRequirementSchema>;
+export const entitlementRequirementPageSchema = z.object({ items: z.array(entitlementRequirementSchema), total: count, skip: count, take: count });
+export type EntitlementRequirementPage = z.infer<typeof entitlementRequirementPageSchema>;
+export const warrantyLineExceptionSchema = z.object({ exceptionId: text, document: documentRefSchema, itemId: text, status: text, missingInput: text, detail: nullableText, triggerAt: text, raisedAt: text, resolvedAt: nullableText });
+export type WarrantyLineException = z.infer<typeof warrantyLineExceptionSchema>;
+export const warrantyLineExceptionPageSchema = z.object({ items: z.array(warrantyLineExceptionSchema), total: count, skip: count, take: count });
+export type WarrantyLineExceptionPage = z.infer<typeof warrantyLineExceptionPageSchema>;
+export const gapRowSchema = z.object({ unitId: text, primarySerial: nullableText, itemId: text, saleDate: text, customerPartyRef: text, channel: text, dropShip: z.boolean(), requirementStatus: nullableText, missingInput: nullableText });
+export type GapRow = z.infer<typeof gapRowSchema>;
+export const gapPageSchema = z.object({ rows: z.array(gapRowSchema), total: count, skip: count, take: count });
+export type GapPage = z.infer<typeof gapPageSchema>;
+export const gapCountSchema = z.object({ itemId: text, channel: text, dropShip: z.boolean(), count });
+export type GapCount = z.infer<typeof gapCountSchema>;
+export const gapRunSchema = z.object({ runId: text, runAt: text, trigger: text, total: count, counts: z.array(gapCountSchema) });
+export type GapRun = z.infer<typeof gapRunSchema>;
+
+export const bulkOperationArgumentsSchema = z.object({ eventTime: text, actorRef: text, legalEntityId: text, sourceDocument: documentRefSchema, reason: nullableText, note: nullableText, extra: z.nullable(z.record(text, text)), initiatedVia: text, initiatingRole: nullableText, correctsCorrectionId: nullableText });
+export const bulkApprovalRequestSchema = z.object({ requestId: text, selectionId: text, operation: text, status: z.enum(["pending", "approved", "rejected", "withdrawn", "stale"]), sourceDocument: documentRefSchema, arguments: bulkOperationArgumentsSchema, total: count, change: count, skip: count, block: count, rules: z.array(text), requestedBy: text, requestedAt: text, note: nullableText, decidedBy: nullableText, decidedAt: nullableText, decisionNote: nullableText, executedCommandId: nullableText });
+export type BulkApprovalRequest = z.infer<typeof bulkApprovalRequestSchema>;
+export const bulkApprovalRequestPageSchema = z.object({ items: z.array(bulkApprovalRequestSchema), total: count, skip: count, take: count });
+export type BulkApprovalRequestPage = z.infer<typeof bulkApprovalRequestPageSchema>;
