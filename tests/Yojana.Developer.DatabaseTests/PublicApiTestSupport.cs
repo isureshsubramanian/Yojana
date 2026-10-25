@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Yojana.Developer.Authentication;
 using Yojana.Developer.Clients;
@@ -54,6 +55,7 @@ internal static class PublicApiTestSupport
             .Register(new ItemLabel(item, "SERVER-" + item.ToString("N")[..6].ToUpperInvariant(),
                 "Fictional rack server"));
         var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var seq = await NextEventSeqAsync(db);
         db.Units.Add(new Unit
         {
             TenantId = tenant, UnitId = unitId, LifecycleStatus = LifecycleStatus.Released,
@@ -65,7 +67,7 @@ internal static class PublicApiTestSupport
         {
             TenantId = tenant, UnitId = unitId, ItemId = item, LifecycleStatus = LifecycleStatus.Released,
             Disposition = UnitDisposition.Active, ConditionGrade = "new", OwnerPartyRef = party,
-            OpenOwnershipEpisodeId = episodeId, LastEventSeq = 1, LastEventTime = at,
+            OpenOwnershipEpisodeId = episodeId, LastEventSeq = seq, LastEventTime = at,
         });
         db.ItemAssignments.Add(new UnitItemAssignment
         {
@@ -88,6 +90,19 @@ internal static class PublicApiTestSupport
         });
         await db.SaveChangesAsync();
         return unitId;
+    }
+
+    // Seeded state takes its seq from the ledger's own sequence: a hard-coded seq collides with the first real append
+    // on a fresh database (the sequence also starts at 1) and the projector refuses it as out of order.
+    private static async Task<long> NextEventSeqAsync(SerialisationDbContext db)
+    {
+        // NEXT VALUE FOR cannot sit in a derived table (which SqlQueryRaw builds), so read it through the connection.
+        var connection = db.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open) await db.Database.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT NEXT VALUE FOR [{SerialisationDbContext.SchemaName}].[{SerialisationDbContext.EventSequence}]";
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
     }
 
     internal static async Task<Guid> SeedEntitlementAsync(DeveloperHostFixture fixture, TenantId tenant,

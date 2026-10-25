@@ -186,10 +186,11 @@ public sealed class PublicWriteIdempotencyTests(DeveloperHostFixture fixture)
         ownership.OpeningDocumentType = "delivery";
         ownership.OpeningDocumentId = Guid.CreateVersion7();
         ownership.OpeningDocumentLine = 1;
+        var seq = await db.Current.Where(row => row.UnitId == unit).Select(row => row.LastEventSeq).SingleAsync();
         db.Events.Add(new UnitEvent
         {
             TenantId = tenant, EventTime = fixture.Clock.UtcNow.AddDays(-30), EventId = Guid.CreateVersion7(),
-            UnitId = unit, Seq = 1, EventType = UnitEventType.Released, LegalEntityId = Guid.CreateVersion7(),
+            UnitId = unit, Seq = seq, EventType = UnitEventType.Released, LegalEntityId = Guid.CreateVersion7(),
             ActorRef = "fixture", RecordedTime = fixture.Clock.UtcNow.AddDays(-30),
             IdempotencyKey = Guid.NewGuid().ToString("N"), Attributes = "{}",
         });
