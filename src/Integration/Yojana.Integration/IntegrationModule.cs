@@ -270,6 +270,12 @@ public static class IntegrationModule
             sp.GetRequiredService<IntegrationDbContext>(),
             sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantContext>()));
         builder.Services.AddScoped<IItemQueryPort>(sp => sp.GetRequiredService<IntegrationItemQueryPort>());
+        // HIDDEN COUPLING (registration order): this must follow AddSerialisationModule so it replaces the catalogue
+        // name port; the catalogue stays reachable only through its published key (see SerialisationModule).
+        builder.Services.AddScoped<IItemNamePort>(sp => new IntegrationItemNamePort(
+            sp.GetRequiredService<IntegrationDbContext>(),
+            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantContext>(),
+            sp.GetRequiredKeyedService<IItemNamePort>(SerialisationPortKeys.ItemNameCatalogue)));
         builder.Services.AddScoped(sp => new IntegrationBomQueryPort(
             sp.GetRequiredService<IntegrationDbContext>(),
             sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantContext>()));

@@ -212,3 +212,31 @@ public sealed class IntegrationItemQueryPort(IntegrationDbContext db, ITenantCon
         SerialisationPoint.ProductionRelease, "standard_10y", ItemSerialisationProfile.ReusePolicies.Never,
         ItemSerialisationProfile.Completeness.Block, IdentifierScheme.Internal);
 }
+
+/// <summary>
+/// Item code and ERP description from the item projection. A deleted item keeps its label so an issued record still
+/// names the part; ids the projection does not hold go to the Serialisation catalogue port.
+/// </summary>
+public sealed class IntegrationItemNamePort(IntegrationDbContext db, ITenantContext tenant, IItemNamePort catalogue)
+    : IItemNamePort
+{
+    public async Task<IReadOnlyDictionary<Guid, ItemLabel>> NamesAsync(IReadOnlyCollection<Guid> itemIds,
+        CancellationToken cancellationToken)
+    {
+        var ids = itemIds.Distinct().ToList();
+        var rows = ids.Count == 0 ? [] : await db.ReferenceProjections.AsNoTracking()
+            .Where(x => x.TenantId == tenant.TenantId && x.EntityType == "item" && ids.Contains(x.ModuleId)
+                && x.Code != null)
+            .Select(x => new { x.ModuleId, x.Code, x.DisplayName }).ToListAsync(cancellationToken);
+        var answer = rows.GroupBy(x => x.ModuleId).ToDictionary(x => x.Key,
+            x => new ItemLabel(x.Key, x.First().Code!, x.First().DisplayName));
+        var missing = ids.Where(id => !answer.ContainsKey(id)).ToList();
+        if (missing.Count > 0)
+            foreach (var (id, label) in await catalogue.NamesAsync(missing, cancellationToken)) answer[id] = label;
+        return answer;
+    }
+
+    // Search stays on the catalogue until ADR-0022 decides the item-picker source and its index.
+    public Task<IReadOnlyList<ItemLabel>> SearchAsync(string text, int take, CancellationToken cancellationToken) =>
+        catalogue.SearchAsync(text, take, cancellationToken);
+}

@@ -429,6 +429,11 @@ public static class SerialisationModule
         // a scoped database adapter without turning this development catalogue into a captive scoped dependency.
         builder.Services.AddSingleton(sp => new InMemoryItemNamePort(sp.GetRequiredService<InMemoryItemPorts>()));
         builder.Services.TryAddSingleton<IItemNamePort>(sp => sp.GetRequiredService<InMemoryItemNamePort>());
+        // HIDDEN COUPLING (registration order): the Integration module is added after this one and its later
+        // IItemNamePort registration wins; it reaches this catalogue only through the published key for item ids it
+        // does not hold. Changing the module order in Program.cs silently restores catalogue-only names.
+        builder.Services.AddKeyedSingleton<IItemNamePort>(SerialisationPortKeys.ItemNameCatalogue,
+            (sp, _) => sp.GetRequiredService<InMemoryItemNamePort>());
         builder.Services.AddSingleton<InMemoryItemFamilyNamePort>();
         builder.Services.TryAddSingleton<IItemFamilyNamePort>(sp => sp.GetRequiredService<InMemoryItemFamilyNamePort>());
         builder.Services.AddSingleton<InMemoryPartyContactPort>();

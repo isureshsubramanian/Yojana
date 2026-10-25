@@ -14,6 +14,15 @@ public interface IItemNamePort
     Task<IReadOnlyList<ItemLabel>> SearchAsync(string text, int take, CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// Service keys for ports the Serialisation module registers itself. A connector that replaces
+/// <see cref="IItemNamePort"/> resolves <see cref="ItemNameCatalogue"/> for items it does not hold.
+/// </summary>
+public static class SerialisationPortKeys
+{
+    public const string ItemNameCatalogue = "serialisation:item-name-catalogue";
+}
+
 /// <summary>An item-family label supplied by the item-owning module or a connector.</summary>
 public sealed record ItemFamilyLabel(string Code, string Name);
 

@@ -201,6 +201,31 @@ public sealed class BomProjectionDatabaseTests(IntegrationHostFixture fixture)
             await db.ExceptionTasks.AsNoTracking().Select(row => row.InboundMessageId).ToListAsync());
     }
 
+    [DatabaseFact]
+    public async Task Item_names_come_from_the_erp_projection_and_fall_back_to_the_catalogue()
+    {
+        // Found 2026-10-26: release records printed "ITEM-97156C8D" for ERP parts because the name port was still
+        // the development catalogue.
+        var tenant = await fixture.NewTenantAsync("itemname");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.CreateVersion7());
+        using var scope = fixture.ScopeFor(tenant);
+        var store = scope.ServiceProvider.GetRequiredService<GatewayReferenceStore>();
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var disk = await store.UpsertItemAsync(connection,
+            new("FIC-HDD-20T", "Fictional 20 TB hard disk", OpenEnum.Known("serial"), "EA", false, null,
+                IsInventoryItem: true), default);
+        await db.SaveChangesAsync();
+        var catalogueOnly = Guid.CreateVersion7();
+        scope.ServiceProvider.GetRequiredService<Yojana.Serialisation.Ports.InMemoryItemNamePort>()
+            .Register(new(catalogueOnly, "DEV-ONLY", "Development catalogue item"));
+
+        var names = await scope.ServiceProvider.GetRequiredService<IItemNamePort>()
+            .NamesAsync([disk, catalogueOnly], default);
+
+        Assert.Equal(new ItemLabel(disk, "FIC-HDD-20T", "Fictional 20 TB hard disk"), names[disk]);
+        Assert.Equal(new ItemLabel(catalogueOnly, "DEV-ONLY", "Development catalogue item"), names[catalogueOnly]);
+    }
+
     private (InboundMessage Message, IntegrationExceptionTask Task) SkippedAsUnsupported(TenantId tenant,
         Guid connection, string entity, string externalId, string messageType)
     {
