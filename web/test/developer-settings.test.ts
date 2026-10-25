@@ -83,7 +83,7 @@ test("developer API decodes valid client pages and refuses invalid shapes at the
   globalThis.fetch = (async () => new Response(JSON.stringify({ items: "not-an-array", next: null, summary: {} }), { status: 200 })) as typeof fetch;
   try { await assert.rejects(() => developerApi.clients(), (reason: unknown) => reason instanceof ApiError && reason.rule === unexpectedResponseRule); }
   finally { globalThis.fetch = original; }
-  assert.match(api, /import \{ apiParsed \} from "\.\.\/\.\.\/api\/client\.ts"/);
+  assert.match(api, /import \{ apiParsed, checkedBody \} from "\.\.\/\.\.\/api\/client\.ts"/);
   assert.doesNotMatch(api, /[^d]api(<[^>]*>)?\(/, "every Developer call is schema-checked (ADR-0019)");
 });
 

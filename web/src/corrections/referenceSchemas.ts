@@ -5,14 +5,14 @@ const nullableText = z.nullable(text);
 
 export const documentValue = z.object({ type: text, id: text });
 export type DocumentValue = z.infer<typeof documentValue>;
-const documentValueRequest = z.looseObject({ type: text, id: text });
+const documentValueRequest = z.object({ type: text, id: text });
 
 const itemReferenceLabel = z.object({ code: text, name: nullableText });
 const partyReferenceLabel = z.object({ code: text, name: nullableText, partyType: nullableText });
 const documentReferenceLabel = z.object({ number: text, status: nullableText, itemId: nullableText });
 const locationReferenceLabel = z.object({ code: text, name: nullableText, kind: nullableText });
 
-export const referenceNamesRequest = z.looseObject({
+export const referenceNamesRequest = z.object({
   items: z.array(text),
   parties: z.array(text),
   documents: z.array(documentValueRequest),

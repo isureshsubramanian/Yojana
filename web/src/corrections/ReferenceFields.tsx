@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
-import * as z from "zod/mini";
-import { apiParsed } from "../api/client.ts";
+import { apiParsed, checkedBody } from "../api/client.ts";
 import { units, type UnitDetail } from "../api/units";
 import { useSession } from "../session/session";
 import {
@@ -36,7 +35,7 @@ const stores = new Map<string, ReferenceStore>();
 function storeFor(tenant: string): ReferenceStore {
   let store = stores.get(tenant);
   if (!store) {
-    store = createReferenceStore((body) => apiParsed("/api/serialisation/reference-names", referenceNamesResponse, { method: "POST", body: z.parse(referenceNamesRequest, body) }));
+    store = createReferenceStore((body) => apiParsed("/api/serialisation/reference-names", referenceNamesResponse, { method: "POST", body: checkedBody(referenceNamesRequest, body) }));
     stores.set(tenant, store);
   }
   return store;

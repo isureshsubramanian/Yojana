@@ -1,5 +1,5 @@
 import * as z from "zod/mini";
-import { apiParsed, ApiError } from "../api/client.ts";
+import { ApiError, apiParsed, checkedBody, parseResponse } from "../api/client.ts";
 import { newCommandId, type SelectionSource } from "../api/units.ts";
 import {
   certificateDetailSchema, certificateListRowSchema, certificateRunResultSchema,
@@ -43,7 +43,7 @@ export const certificateApi = {
   validate: (id: string, body: unknown) => apiParsed(`/api/certificate-templates/${id}/validate`, templateValidationSchema, { method: "POST", body }),
   activate: (id: string, versionId: string) => apiParsed(`/api/certificate-templates/${id}/versions/${versionId}/activate`, certificateTemplateVersionSchema, { method: "POST", body: {} }),
   retire: (id: string, versionId: string) => apiParsed(`/api/certificate-templates/${id}/versions/${versionId}/retire`, certificateTemplateVersionSchema, { method: "POST", body: {} }),
-  preview: (id: string, versionId: string, sampleUnitId: string) => apiParsed(`/api/certificate-templates/${id}/versions/${versionId}/preview`, certificateTemplatePreviewSchema, { method: "POST", body: z.parse(sampleUnitRequestSchema, { sampleUnitId }) }),
+  preview: (id: string, versionId: string, sampleUnitId: string) => apiParsed(`/api/certificate-templates/${id}/versions/${versionId}/preview`, certificateTemplatePreviewSchema, { method: "POST", body: checkedBody(sampleUnitRequestSchema, { sampleUnitId }) }),
   labels: (signal?: AbortSignal) => apiParsed("/api/labels/templates?take=200", z.array(labelTemplateSummarySchema), { signal }),
   label: (id: string, signal?: AbortSignal) => apiParsed(`/api/labels/templates/${id}`, labelTemplateDetailSchema, { signal }),
   assets: (signal?: AbortSignal) => apiParsed("/api/tenant-assets/", z.array(tenantAssetSchema), { signal }),
@@ -63,15 +63,15 @@ export const certificateApi = {
         throw new ApiError(response.status, fallback);
       }
     }
-    return z.parse(tenantAssetSchema, await response.json());
+    return parseResponse("/api/tenant-assets/", tenantAssetSchema, await response.json());
   },
 };
 
 
 export const certificateIssueApi = {
-  resolve: (source: SelectionSource) => { const body = { commandId: newCommandId(), source }; return apiParsed("/api/selections/", resolveSelectionSetResultSchema, { method: "POST", body: z.parse(resolveSelectionRequestSchema, body) }); },
-  preview: (request: CertificateSelectionPreviewRequest, signal?: AbortSignal) => apiParsed("/api/certificates/selection/preview", certificateSelectionPreviewSchema, { method: "POST", body: z.parse(certificateSelectionPreviewRequestSchema, request), signal }),
-  issue: (request: IssueCertificateRequest) => apiParsed("/api/certificates/selection/issue", certificateRunResultSchema, { method: "POST", body: z.parse(issueCertificateRequestSchema, request) }),
+  resolve: (source: SelectionSource) => { const body = { commandId: newCommandId(), source }; return apiParsed("/api/selections/", resolveSelectionSetResultSchema, { method: "POST", body: checkedBody(resolveSelectionRequestSchema, body) }); },
+  preview: (request: CertificateSelectionPreviewRequest, signal?: AbortSignal) => apiParsed("/api/certificates/selection/preview", certificateSelectionPreviewSchema, { method: "POST", body: checkedBody(certificateSelectionPreviewRequestSchema, request), signal }),
+  issue: (request: IssueCertificateRequest) => apiParsed("/api/certificates/selection/issue", certificateRunResultSchema, { method: "POST", body: checkedBody(issueCertificateRequestSchema, request) }),
 };
 
 export function downloadArchive(result: CertificateRunResult): void {

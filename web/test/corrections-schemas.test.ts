@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import * as z from "zod/mini";
+import { checkedBody } from "../src/api/client.ts";
 import {
   correctionKpiReport,
   reassignAllocationRequest,
@@ -131,8 +132,8 @@ test("correction request schemas validate declared fields and retain extensions"
     note: null,
     requestExtension: true,
   };
-  assert.deepEqual(z.parse(reassignAllocationRequest, request), request);
-  assert.equal(z.safeParse(reassignAllocationRequest, { ...request, reason: 7 }).success, false);
+  assert.equal(checkedBody(reassignAllocationRequest, request), request);
+  assert.throws(() => checkedBody(reassignAllocationRequest, { ...request, reason: 7 } as unknown as typeof request));
 });
 
 test("workbench lineage schema mirrors the complete UnitDetail and lineage records", () => {

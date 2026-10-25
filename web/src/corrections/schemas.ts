@@ -1,5 +1,5 @@
 import * as z from "zod/mini";
-import { asBuiltRow, buildRecordRow, documentRef, documentRefRequest, episodeRow, historyRow, identifierRow, selectionSource, unitDetail } from "../api/units.ts";
+import { asBuiltRow, buildRecordRow, documentRef, episodeRow, historyRow, identifierRow, selectionSource, unitDetail } from "../api/units.ts";
 
 // Correction-screen wire contracts. Unit, identifier and document shapes come from api/units.ts (one copy of each
 // Serialisation record); the preview and refusal shapes below exist only on correction endpoints.
@@ -8,8 +8,9 @@ const number = z.number();
 const nullableText = z.nullable(text);
 const nullableNumber = z.nullable(number);
 
-export { asBuiltRow, buildRecordRow, documentRef, documentRefRequest, episodeRow, historyRow, identifierRow, unitDetail };
-export const documentRefInput = documentRefRequest;
+export { asBuiltRow, buildRecordRow, documentRef, episodeRow, historyRow, identifierRow, unitDetail };
+export const documentRefInput = documentRef;
+export const documentRefRequest = documentRef;
 export const selectionSourceInput = selectionSource;
 export const selectionSourceRequest = selectionSource;
 

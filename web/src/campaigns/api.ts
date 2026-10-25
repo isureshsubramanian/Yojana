@@ -1,5 +1,5 @@
 import * as z from "zod/mini";
-import { apiParsed } from "../api/client.ts";
+import { apiParsed, checkedBody } from "../api/client.ts";
 import { newCommandId, now } from "../api/units.ts";
 import {
   campaignCriterionKindSchema, campaignDraftSchema, campaignFunnelStepSchema, campaignListRowSchema,
@@ -45,12 +45,12 @@ function command(draft: CampaignDraft) {
 export const campaignApi = {
   list: (status: string | null, skip: number, take: number, signal?: AbortSignal) => apiParsed(`/api/campaigns/${query({ status, skip, take })}`, pageSchema(campaignListRowSchema), { signal }),
   detail: (id: string, signal?: AbortSignal) => apiParsed(`/api/campaigns/${id}`, campaignSchema, { signal }),
-  create: (draft: CampaignDraft) => { const body = { commandId: newCommandId(), ...command(draft) }; return apiParsed("/api/campaigns/", campaignResultSchema, { method: "POST", body: z.parse(campaignCommandSchema, body) }); },
-  update: (id: string, draft: CampaignDraft, expectedVersion: string) => { const body = { commandId: newCommandId(), campaignId: id, status: draft.status, expectedVersion, ...command(draft) }; return apiParsed(`/api/campaigns/${id}`, campaignResultSchema, { method: "PUT", body: z.parse(updateCampaignCommandSchema, body) }); },
-  preview: (id: string, skip: number, take: number, signal?: AbortSignal) => { const body = { campaignId: id, skip, take }; return apiParsed(`/api/campaigns/${id}/preview`, campaignPreviewSchema, { method: "POST", body: z.parse(previewCampaignSchema, body), signal }); },
+  create: (draft: CampaignDraft) => { const body = { commandId: newCommandId(), ...command(draft) }; return apiParsed("/api/campaigns/", campaignResultSchema, { method: "POST", body: checkedBody(campaignCommandSchema, body) }); },
+  update: (id: string, draft: CampaignDraft, expectedVersion: string) => { const body = { commandId: newCommandId(), campaignId: id, status: draft.status, expectedVersion, ...command(draft) }; return apiParsed(`/api/campaigns/${id}`, campaignResultSchema, { method: "PUT", body: checkedBody(updateCampaignCommandSchema, body) }); },
+  preview: (id: string, skip: number, take: number, signal?: AbortSignal) => { const body = { campaignId: id, skip, take }; return apiParsed(`/api/campaigns/${id}/preview`, campaignPreviewSchema, { method: "POST", body: checkedBody(previewCampaignSchema, body), signal }); },
   funnel: (id: string, signal?: AbortSignal) => apiParsed(`/api/campaigns/${id}/funnel`, z.array(campaignFunnelStepSchema), { signal }),
   match: (id: string, unitId: string, signal?: AbortSignal) => apiParsed(`/api/campaigns/${id}/units/${unitId}/match`, z.array(campaignMatchEvidenceSchema), { signal }),
-  select: (id: string) => { const body = { commandId: newCommandId(), campaignId: id, eventTime: now() }; return apiParsed(`/api/campaigns/${id}/select`, selectCampaignResultSchema, { method: "POST", body: z.parse(selectCampaignSchema, body) }); },
+  select: (id: string) => { const body = { commandId: newCommandId(), campaignId: id, eventTime: now() }; return apiParsed(`/api/campaigns/${id}/select`, selectCampaignResultSchema, { method: "POST", body: checkedBody(selectCampaignSchema, body) }); },
   units: (id: string, filters: Record<string, string | number | boolean | null | undefined>, signal?: AbortSignal) => apiParsed(`/api/campaigns/${id}/units${query(filters)}`, pageSchema(campaignUnitRowSchema), { signal }),
   unitsSummary: (id: string, signal?: AbortSignal) => apiParsed(`/api/campaigns/${id}/units/summary`, campaignUnitsSummarySchema, { signal }),
   exportUrl: (id: string) => `/api/campaigns/${id}/units/export`,

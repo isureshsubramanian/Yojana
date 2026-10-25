@@ -1,5 +1,5 @@
 import * as z from "zod/mini";
-import { apiParsed } from "../api/client.ts";
+import { apiParsed, checkedBody } from "../api/client.ts";
 import { catalogueSchema, packPreviewSchema, ruleContextSchema, ruleResolutionSchema, type RuleContext } from "./types.ts";
 
 const root = "/api/settings/jurisdictions";
@@ -16,7 +16,7 @@ export const jurisdictionApi = {
   saveRule: (body: unknown) => apiParsed(root + "/rules", jurisdictionRuleSavedSchema, { method: "POST", body }),
   closeRule: (id: string, body: unknown) => apiParsed(`${root}/rules/${id}/close`, jurisdictionRuleClosedSchema, { method: "POST", body }),
   packPreview: (id: string) => apiParsed(`${root}/packs/${id}/preview`, packPreviewSchema),
-  importPack: (id: string) => { const body = { commandId: crypto.randomUUID(), rulePackId: id }; return apiParsed(`${root}/packs/${id}/import`, rulePackImportedSchema, { method: "POST", body: z.parse(importPackRequestSchema, body) }); },
-  whatApplies: (kind: string, context: RuleContext) => { const body = { kind: kind || null, context }; return apiParsed(root + "/what-applies", z.object({ rules: z.array(ruleResolutionSchema) }), { method: "POST", body: z.parse(whatAppliesRequestSchema, body) }); },
+  importPack: (id: string) => { const body = { commandId: crypto.randomUUID(), rulePackId: id }; return apiParsed(`${root}/packs/${id}/import`, rulePackImportedSchema, { method: "POST", body: checkedBody(importPackRequestSchema, body) }); },
+  whatApplies: (kind: string, context: RuleContext) => { const body = { kind: kind || null, context }; return apiParsed(root + "/what-applies", z.object({ rules: z.array(ruleResolutionSchema) }), { method: "POST", body: checkedBody(whatAppliesRequestSchema, body) }); },
 };
 

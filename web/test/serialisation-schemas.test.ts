@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import * as z from "zod/mini";
+import { checkedBody } from "../src/api/client.ts";
 import { documentRef, pageOf, selectionSource } from "../src/api/units.ts";
 import { rmaListResult, warrantyReplacementDetail } from "../src/returns/types.ts";
 import { replacementLinkPage } from "../src/replacements/types.ts";
@@ -29,9 +30,10 @@ test("a document reference accepts a line or a null line, and a page carries its
   assert.equal(z.safeParse(page, { items: ["a"], skip: 0, take: 50 }).success, false);
 });
 
-test("a selection source passes fields the screen does not declare through to the server", () => {
-  const parsed = z.parse(selectionSource, { kind: "import_job", importJobId: id(9) });
-  assert.deepEqual(parsed, { kind: "import_job", importJobId: id(9) });
+test("a checked request body is sent as the caller built it, and a wrongly typed field is refused before sending", () => {
+  const source = { kind: "import_job", importJobId: id(9), document: { type: "delivery", id: id(1), line: null, revision: "v2" } };
+  assert.equal(checkedBody(selectionSource, source), source);
+  assert.throws(() => checkedBody(selectionSource, { kind: 4 } as unknown as typeof source));
 });
 
 test("the RMA list accepts the server's page and refuses one without rows", () => {
@@ -74,9 +76,9 @@ test("replacement, refurbishment and recovery pages refuse a wrongly typed total
   ] as const) assert.equal(z.safeParse(schema, body).success, false, name);
 });
 
-test("the recovery policy accepts only the rules the server accepts, and an answer keeps server-filled fields", () => {
+test("the recovery policy accepts only the rules the server accepts, and an answer is sent with the fields the server fills", () => {
   const policy = z.safeParse(recoveryPolicy, { wholeUnitLines: "any_part", campaignClaims: "no_recovery" });
   assert.equal(policy.success, false);
-  const answer = z.parse(recoveryAnswer, { commandId: id(13), approvedAmount: 120.5, eventTime: "2026-10-23T12:00:00Z", vendorReference: null, vendorNote: null, actorRef: "" });
-  assert.equal("actorRef" in answer, true);
+  const answer = { commandId: id(13), approvedAmount: 120.5, eventTime: "2026-10-23T12:00:00Z", vendorReference: null, vendorNote: null, actorRef: "" };
+  assert.equal(checkedBody(recoveryAnswer, answer), answer);
 });

@@ -48,8 +48,8 @@ export type CorrectionPreview = z.infer<typeof correctionPreview>;
 
 export const correctionKpiTarget = z.object({ rootCauseCategory: number, maximumPerThousand: number });
 export const correctionKpiTargetPolicy = z.object({ rootCauses: z.array(correctionKpiTarget) });
-export const correctionKpiTargetPolicyRequest = z.looseObject({
-  rootCauses: z.array(z.looseObject({ rootCauseCategory: number, maximumPerThousand: number })),
+export const correctionKpiTargetPolicyRequest = z.object({
+  rootCauses: z.array(z.object({ rootCauseCategory: number, maximumPerThousand: number })),
 });
 export const correctionKpiBaseline = z.object({
   status: text, historyDays: number, daysRemaining: number, startedOn: nullableText, targetsEffectiveOn: nullableText,
@@ -105,7 +105,7 @@ export const reassignAllocation = z.object({
   legalEntityId: z.optional(text),
   note: nullableText,
 });
-export const reassignAllocationRequest = z.looseObject({
+export const reassignAllocationRequest = z.object({
   commandId: text,
   fromProductionOrder: documentRefRequest,
   toProductionOrder: documentRefRequest,
@@ -137,7 +137,7 @@ export const mergeUnitsAlternative = z.object({
 export const previewMergeUnits = z.object({
   firstUnitId: text, secondUnitId: text, eventTime: text, survivorUnitId: nullableText,
 });
-export const previewMergeUnitsRequest = z.looseObject({
+export const previewMergeUnitsRequest = z.object({
   firstUnitId: text, secondUnitId: text, eventTime: text, survivorUnitId: nullableText,
 });
 export const mergeUnitsPreviewResult = z.object({
@@ -160,7 +160,7 @@ export const mergeUnits = z.object({
   vendorSerialValue: nullableText,
   note: nullableText,
 });
-export const mergeUnitsRequest = z.looseObject({
+export const mergeUnitsRequest = z.object({
   commandId: text,
   survivorUnitId: text,
   absorbedUnitId: text,
@@ -189,7 +189,7 @@ export type MergeUnits = z.infer<typeof mergeUnits>;
 export type MergeUnitsResult = z.infer<typeof mergeUnitsResult>;
 
 export const identifierAssignmentInput = z.object({ value: text, unitId: z.optional(nullableText) });
-const identifierAssignmentInputRequest = z.looseObject({ value: text, unitId: z.optional(nullableText) });
+const identifierAssignmentInputRequest = z.object({ value: text, unitId: z.optional(nullableText) });
 export const assignIdentifiers = z.object({
   commandId: text,
   productionOrder: documentRefInput,
@@ -203,7 +203,7 @@ export const assignIdentifiers = z.object({
   qualifier: nullableText,
   note: nullableText,
 });
-export const assignIdentifiersRequest = z.looseObject({
+export const assignIdentifiersRequest = z.object({
   commandId: text,
   productionOrder: documentRefRequest,
   mode: text,
@@ -281,13 +281,13 @@ export const workbenchChoice = z.object({
   standard: z.boolean(),
   fallback: z.boolean(),
 });
-const workbenchChoiceOptionRequest = z.looseObject({
+const workbenchChoiceOptionRequest = z.object({
   value: text, label: text, command: text, defaultReason: text, rootCause: number,
 });
-const workbenchNarrowingQuestionRequest = z.looseObject({
+const workbenchNarrowingQuestionRequest = z.object({
   key: text, prompt: text, options: z.array(workbenchChoiceOptionRequest),
 });
-const workbenchChoiceRequest = z.looseObject({
+const workbenchChoiceRequest = z.object({
   choice: text,
   label: text,
   area: text,
@@ -320,7 +320,7 @@ export const workbenchChoiceSettingsView = z.object({
 export const updateWorkbenchChoices = z.object({
   choices: z.array(workbenchChoice), unclassifiedAlertPercent: number,
 });
-export const updateWorkbenchChoicesRequest = z.looseObject({
+export const updateWorkbenchChoicesRequest = z.object({
   choices: z.array(workbenchChoiceRequest), unclassifiedAlertPercent: number,
 });
 export type WorkbenchChoiceOption = z.infer<typeof workbenchChoiceOption>;

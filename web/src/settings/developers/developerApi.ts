@@ -1,5 +1,5 @@
 import * as z from "zod/mini";
-import { apiParsed } from "../../api/client.ts";
+import { apiParsed, checkedBody } from "../../api/client.ts";
 
 // Settings › Developers API boundary (ADR-0019): every response is checked against its schema and every request body
 // before it is sent; the types below are derived from the schemas so a type cannot promise what nothing checks.
@@ -112,15 +112,15 @@ const webhookPath = (id: string) => `/api/developer/webhooks/${encodeURIComponen
 export const developerApi = {
   clients: (after?: string, signal?: AbortSignal) => apiParsed(`/api/developer/clients?${q({ after, limit: 50 })}`, apiClientPage, { signal }),
   client: (id: string, signal?: AbortSignal) => apiParsed(clientPath(id), apiClientView, { signal }),
-  createClient: (request: CreateApiClientRequest) => apiParsed("/api/developer/clients", apiClientCreated, { method: "POST", body: z.parse(createApiClientRequest, request) }),
-  updateClient: (id: string, request: { scopes: string[]; rateLimitPerMinute: number }) => apiParsed(clientPath(id), apiClientView, { method: "PUT", body: z.parse(updateApiClientRequest, request) }),
+  createClient: (request: CreateApiClientRequest) => apiParsed("/api/developer/clients", apiClientCreated, { method: "POST", body: checkedBody(createApiClientRequest, request) }),
+  updateClient: (id: string, request: { scopes: string[]; rateLimitPerMinute: number }) => apiParsed(clientPath(id), apiClientView, { method: "PUT", body: checkedBody(updateApiClientRequest, request) }),
   rotateClient: (id: string) => apiParsed(`${clientPath(id)}/rotate-secret`, apiClientSecretRotated, { method: "POST" }),
   revokeClient: (id: string) => apiParsed(`${clientPath(id)}/revoke`, apiClientView, { method: "POST" }),
   webhooks: (after?: string, signal?: AbortSignal) => apiParsed(`/api/developer/webhooks?${q({ after, take: 50 })}`, webhookPage, { signal }),
   webhook: (id: string, signal?: AbortSignal) => apiParsed(webhookPath(id), webhookSubscription, { signal }),
-  createWebhook: (request: WebhookRequest) => apiParsed("/api/developer/webhooks", webhookSecretResponse, { method: "POST", body: z.parse(webhookRequest, request) }),
+  createWebhook: (request: WebhookRequest) => apiParsed("/api/developer/webhooks", webhookSecretResponse, { method: "POST", body: checkedBody(webhookRequest, request) }),
   updateWebhook: async (id: string, request: WebhookRequest & { expectedVersion: string }) =>
-    (await apiParsed(webhookPath(id), webhookActionResponse, { method: "PUT", body: z.parse(webhookUpdateRequest, request) })).subscription,
+    (await apiParsed(webhookPath(id), webhookActionResponse, { method: "PUT", body: checkedBody(webhookUpdateRequest, request) })).subscription,
   webhookAction: async (id: string, action: "pause" | "resume" | "verify") =>
     (await apiParsed(`${webhookPath(id)}/${action}`, webhookActionResponse, { method: "POST" })).subscription,
   rotateWebhook: (id: string) => apiParsed(`${webhookPath(id)}/rotate-secret`, webhookSecretResponse, { method: "POST" }),

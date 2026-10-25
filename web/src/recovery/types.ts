@@ -42,7 +42,7 @@ export const recoveryNotRaisedRow = z.object({ customerClaimId: z.string(), cust
 export type RecoveryNotRaisedRow = z.infer<typeof recoveryNotRaisedRow>;
 export const recoveryNotRaisedReport = z.object({ days: z.number(), rows: z.array(recoveryNotRaisedRow) });
 export type RecoveryNotRaisedReport = z.infer<typeof recoveryNotRaisedReport>;
-export const recoveryAnswer = z.looseObject({ commandId: z.string(), approvedAmount: z.number(), eventTime: z.string(),
+export const recoveryAnswer = z.object({ commandId: z.string(), approvedAmount: z.number(), eventTime: z.string(),
   vendorReference: z.nullable(z.string()), vendorNote: z.nullable(z.string()) });
 export type RecoveryAnswer = z.infer<typeof recoveryAnswer>;
 export const recoveryAnswerResult = z.object({ recoveryClaimId: z.string(), status: z.string(),

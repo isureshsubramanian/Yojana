@@ -1,5 +1,5 @@
 import * as z from "zod/mini";
-import { apiParsed } from "../api/client.ts";
+import { apiParsed, checkedBody } from "../api/client.ts";
 import { humanise } from "../units/format.ts";
 
 const text = z.string();
@@ -43,7 +43,7 @@ export const coverItemsApi = {
     while (page.items.length > 0 && skip < page.total);
     return { ...page, items, skip: 0, take: items.length };
   },
-  saveCauses: (items: ClaimCause[], expectedVersion: string) => apiParsed("/api/claim-causes", causePageSchema, { method: "PUT", body: z.parse(updateCausesRequestSchema, { items, expectedVersion }) }),
+  saveCauses: (items: ClaimCause[], expectedVersion: string) => apiParsed("/api/claim-causes", causePageSchema, { method: "PUT", body: checkedBody(updateCausesRequestSchema, { items, expectedVersion }) }),
   items: (id: string, type = "", skip = 0, signal?: AbortSignal) => apiParsed(`/api/warranty-policies/versions/${id}/items?${new URLSearchParams({ type, skip: String(skip), take: "25" })}`, policyItemPageSchema, { signal }),
 };
 export const coverLabel = (c: ItemCover) => `${c.familyName} · ${c.policyName} v${c.policyVersion}`;

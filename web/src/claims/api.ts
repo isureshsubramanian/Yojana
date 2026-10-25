@@ -1,5 +1,5 @@
 import * as z from "zod/mini";
-import { apiParsed } from "../api/client.ts";
+import { apiParsed, checkedBody } from "../api/client.ts";
 import {
   claimAdjudicationPreviewSchema, claimCampaignOptionSchema, claimChangeResultSchema, claimDetailSchema,
   claimPageSchema, claimRiskDecisionSchema, claimRiskFlagDecisionResultSchema, claimRiskFlagPageSchema,
@@ -38,24 +38,24 @@ export const claimsApi = {
   detail: (claimId: string, signal?: AbortSignal) => apiParsed(`/api/claims/${claimId}`, claimDetailSchema, { signal }),
   preview: (claimId: string, signal?: AbortSignal) => apiParsed(`/api/claims/${claimId}/adjudication-preview`, claimAdjudicationPreviewSchema, { signal }),
   campaignOptions: (unitId: string, claimDate: string, signal?: AbortSignal) => apiParsed(`/api/claims/campaign-options${query({ unitId, claimDate })}`, z.array(claimCampaignOptionSchema), { signal }),
-  submit: (body: SubmitClaim) => apiParsed("/api/claims/", submitClaimResultSchema, { method: "POST", body: z.parse(submitClaimSchema, body) }),
-  adjudicate: (claimId: string, denialReason: string | null = null, denialNote: string | null = null) => { const body = { commandId: crypto.randomUUID(), claimId, eventTime: new Date().toISOString(), denialReason, denialNote }; return apiParsed(`/api/claims/${claimId}/adjudicate`, z.unknown(), { method: "POST", body: z.parse(adjudicateRequestSchema, body) }); },
-  requestEvidence: (claimId: string, note: string, expectedVersion: string) => { const body = { commandId: crypto.randomUUID(), claimId, note, eventTime: new Date().toISOString(), expectedVersion }; return apiParsed(`/api/claims/${claimId}/request-evidence`, claimChangeResultSchema, { method: "POST", body: z.parse(requestEvidenceSchema, body) }); },
-  settle: (claimId: string) => { const body = { commandId: crypto.randomUUID(), claimId, eventTime: new Date().toISOString() }; return apiParsed(`/api/claims/${claimId}/settle`, claimChangeResultSchema, { method: "POST", body: z.parse(claimActionSchema, body) }); },
-  close: (claimId: string) => { const body = { commandId: crypto.randomUUID(), claimId, eventTime: new Date().toISOString() }; return apiParsed(`/api/claims/${claimId}/close`, claimChangeResultSchema, { method: "POST", body: z.parse(claimActionSchema, body) }); },
+  submit: (body: SubmitClaim) => apiParsed("/api/claims/", submitClaimResultSchema, { method: "POST", body: checkedBody(submitClaimSchema, body) }),
+  adjudicate: (claimId: string, denialReason: string | null = null, denialNote: string | null = null) => { const body = { commandId: crypto.randomUUID(), claimId, eventTime: new Date().toISOString(), denialReason, denialNote }; return apiParsed(`/api/claims/${claimId}/adjudicate`, z.unknown(), { method: "POST", body: checkedBody(adjudicateRequestSchema, body) }); },
+  requestEvidence: (claimId: string, note: string, expectedVersion: string) => { const body = { commandId: crypto.randomUUID(), claimId, note, eventTime: new Date().toISOString(), expectedVersion }; return apiParsed(`/api/claims/${claimId}/request-evidence`, claimChangeResultSchema, { method: "POST", body: checkedBody(requestEvidenceSchema, body) }); },
+  settle: (claimId: string) => { const body = { commandId: crypto.randomUUID(), claimId, eventTime: new Date().toISOString() }; return apiParsed(`/api/claims/${claimId}/settle`, claimChangeResultSchema, { method: "POST", body: checkedBody(claimActionSchema, body) }); },
+  close: (claimId: string) => { const body = { commandId: crypto.randomUUID(), claimId, eventTime: new Date().toISOString() }; return apiParsed(`/api/claims/${claimId}/close`, claimChangeResultSchema, { method: "POST", body: checkedBody(claimActionSchema, body) }); },
   currency: (signal?: AbortSignal) => apiParsed("/api/tenant/currency", tenantCurrencySchema, { signal }),
   currencyCatalogue: (signal?: AbortSignal) => apiParsed("/api/tenant/currency/catalogue", z.array(currencyInfoSchema), { signal }),
-  saveCurrency: (currency: string) => apiParsed("/api/tenant/currency", tenantCurrencySchema, { method: "PUT", body: z.parse(currencyRequestSchema, { currency }) }),
+  saveCurrency: (currency: string) => apiParsed("/api/tenant/currency", tenantCurrencySchema, { method: "PUT", body: checkedBody(currencyRequestSchema, { currency }) }),
   currencyReport: (signal?: AbortSignal) => apiParsed("/api/tenant/currency/report", currencyUsageReportSchema, { signal }),
   coverageFamilies: (signal?: AbortSignal) => apiParsed("/api/warranty-reference/coverage-families", z.array(coverageFamilySchema), { signal }),
   riskRules: (signal?: AbortSignal) => apiParsed("/api/claims/risk-rules", claimRiskRulesPolicySchema, { signal }),
-  saveRiskRules: (body: ClaimRiskRulesPolicy) => apiParsed("/api/claims/risk-rules", claimRiskRulesPolicySchema, { method: "PUT", body: z.parse(claimRiskRulesPolicySchema, body) }),
+  saveRiskRules: (body: ClaimRiskRulesPolicy) => apiParsed("/api/claims/risk-rules", claimRiskRulesPolicySchema, { method: "PUT", body: checkedBody(claimRiskRulesPolicySchema, body) }),
   riskFlags: (filters: ClaimRiskFilters, signal?: AbortSignal) => apiParsed(`/api/claims/risk-flags${query({ ...filters })}`, claimRiskFlagPageSchema, { signal }),
   riskReview: (filters: ClaimRiskFilters, signal?: AbortSignal) => apiParsed(`/api/claims/risk-review${query({ ...filters })}`, claimRiskReviewPageSchema, { signal }),
   riskReviewSummary: (from: string, to: string, signal?: AbortSignal) => apiParsed(`/api/claims/risk-review/summary${query({ from, to })}`, claimRiskReviewSummarySchema, { signal }),
   claimRiskFlags: (claimId: string, signal?: AbortSignal) => apiParsed(`/api/claims/${claimId}/risk-flags`, z.array(claimRiskFlagRowSchema), { signal }),
   decideRiskFlag: (claimId: string, flagId: string, decision: ClaimRiskDecision, reason: string) =>
-    apiParsed(`/api/claims/${claimId}/risk-flags/${flagId}/decision`, claimRiskFlagDecisionResultSchema, { method: "POST", body: z.parse(riskDecisionRequestSchema, { decision, reason }) }),
+    apiParsed(`/api/claims/${claimId}/risk-flags/${flagId}/decision`, claimRiskFlagDecisionResultSchema, { method: "POST", body: checkedBody(riskDecisionRequestSchema, { decision, reason }) }),
   riskReport: (from: string, to: string, signal?: AbortSignal) => apiParsed(`/api/claims/risk-flags/report${query({ from, to })}`, z.array(claimRiskFlagReportRowSchema), { signal }),
 };
 

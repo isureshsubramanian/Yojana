@@ -77,13 +77,27 @@ type ApiInit = Parameters<typeof api>[1];
  * A mismatch throws an ApiError; the console names where the response differed, never a value it held.
  */
 export async function apiParsed<S extends z.ZodMiniType>(path: string, schema: S, init?: ApiInit): Promise<z.infer<S>> {
-  const value = await api<unknown>(path, init);
+  return parseResponse(path, schema, await api<unknown>(path, init));
+}
+
+/** The check `apiParsed` applies, for a response read some other way (a multipart upload, for example). */
+export function parseResponse<S extends z.ZodMiniType>(path: string, schema: S, value: unknown): z.infer<S> {
   const result = z.safeParse(schema, value);
   if (result.success) return result.data;
   const where = result.error.issues.map(issue => `${issue.path.map(String).join(".") || "(root)"} ${issue.code}`).join("; ");
   console.warn(`Unexpected response from ${path.split("?")[0]}: ${where}`);
   throw new ApiError(200, "The server sent an unexpected response. Reload the page and try again.",
     unexpectedResponseRule, null, unexpectedResponseRule);
+}
+
+/**
+ * A request body checked against its schema before it is sent (ADR-0019 Q4). The caller's object is sent as it is:
+ * the check never removes a field, so a field the schema does not declare still reaches the server, which stays the
+ * authority on every rule.
+ */
+export function checkedBody<S extends z.ZodMiniType>(schema: S, body: z.input<S>): z.input<S> {
+  z.parse(schema, body);
+  return body;
 }
 
 async function describe(response: Response): Promise<{ message: string; title: string | null; detail: string | null; rule: string | null; unblockingStep: string | null; changedBy: string | null; changedAt: string | null; reasons: readonly { code: string; message: string }[]; openRules: readonly string[]; blockers: readonly { kind: string; recordId: string | null; reference: string; status: string; detail: string }[] }> {

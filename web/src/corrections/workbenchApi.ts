@@ -1,7 +1,7 @@
 // The correction workbench's contract with /api/workbench (P3-T16, T16b). Shapes mirror Contracts/Workbench.cs and
 // SelectionSets.cs; the server owns every rule, so the screen only shows what these calls return.
 import * as z from "zod/mini";
-import { apiParsed } from "../api/client.ts";
+import { apiParsed, checkedBody } from "../api/client.ts";
 import {
   commandRefusal,
   correctionCertificatePreview,
@@ -40,7 +40,7 @@ export const workbenchEntry = z.object({
   document: z.optional(z.nullable(documentRefInput)),
   selectionId: z.optional(nullableText),
 });
-const workbenchEntryRequest = z.looseObject({
+const workbenchEntryRequest = z.object({
   kind: text,
   value: z.optional(nullableText),
   identifierType: z.optional(nullableText),
@@ -89,12 +89,12 @@ const workbenchAnswersResponse = z.object({
 export const workbenchAnswers = z.object({
   command: text, arguments: z.unknown(), narrowing: z.optional(z.nullable(z.record(text, text))),
 });
-const workbenchAnswersRequest = z.looseObject({
+const workbenchAnswersRequest = z.object({
   command: text, arguments: z.unknown(), narrowing: z.optional(z.nullable(z.record(text, text))),
 });
 const workbenchEvidenceRefResponse = z.object({ kind: text, ref: text, note: nullableText });
 export const workbenchEvidenceRef = z.object({ kind: text, ref: text, note: z.optional(nullableText) });
-const workbenchEvidenceRefRequest = z.looseObject({ kind: text, ref: text, note: z.optional(nullableText) });
+const workbenchEvidenceRefRequest = z.object({ kind: text, ref: text, note: z.optional(nullableText) });
 const workbenchTargetResponse = z.object({
   kind: text, unitId: nullableText, document: z.nullable(documentRef), selectionId: nullableText,
 });
@@ -104,7 +104,7 @@ export const workbenchTarget = z.object({
   document: z.optional(z.nullable(documentRefInput)),
   selectionId: z.optional(nullableText),
 });
-const workbenchTargetRequest = z.looseObject({
+const workbenchTargetRequest = z.object({
   kind: text,
   unitId: z.optional(nullableText),
   document: z.optional(z.nullable(documentRefRequest)),
@@ -119,7 +119,7 @@ export const workbenchPreviewRequest = z.object({
   note: z.optional(nullableText),
   evidence: z.optional(z.nullable(z.array(workbenchEvidenceRef))),
 });
-const workbenchPreviewRequestBody = z.looseObject({
+const workbenchPreviewRequestBody = z.object({
   commandId: text,
   choice: text,
   answers: workbenchAnswersRequest,
@@ -259,18 +259,18 @@ export type WorkbenchMergeHistory = z.infer<typeof workbenchMergeHistory>;
 export type WorkbenchCorrectionHistory = z.infer<typeof workbenchCorrectionHistory>;
 export type WorkbenchUnitLineage = z.infer<typeof workbenchUnitLineage>;
 
-const resolveWorkbenchEntry = z.looseObject({ resolutionId: text, entry: workbenchEntryRequest, actorRef: text });
-const fileUnclassifiedWorkbenchRequest = z.looseObject({
+const resolveWorkbenchEntry = z.object({ resolutionId: text, entry: workbenchEntryRequest, actorRef: text });
+const fileUnclassifiedWorkbenchRequest = z.object({
   target: workbenchTargetRequest, description: text, evidence: z.array(workbenchEvidenceRefRequest),
 });
-const approveWorkbenchRequest = z.looseObject({ note: nullableText });
-const rejectWorkbenchRequest = z.looseObject({ note: text });
+const approveWorkbenchRequest = z.object({ note: nullableText });
+const rejectWorkbenchRequest = z.object({ note: text });
 
 /** Request states the approver can still act on. */
 export const OPEN_STATUSES = ["awaiting_approval", "approved"];
 
 export const workbenchApi = {
-  resolve: (entry: WorkbenchEntry, signal?: AbortSignal): Promise<WorkbenchResolution> => apiParsed("/api/workbench/resolve", workbenchResolution, { method: "POST", body: z.parse(resolveWorkbenchEntry, { resolutionId: crypto.randomUUID(), entry, actorRef: "" }), signal }),
+  resolve: (entry: WorkbenchEntry, signal?: AbortSignal): Promise<WorkbenchResolution> => apiParsed("/api/workbench/resolve", workbenchResolution, { method: "POST", body: checkedBody(resolveWorkbenchEntry, { resolutionId: crypto.randomUUID(), entry, actorRef: "" }), signal }),
   lineage: (unitId: string, signal?: AbortSignal): Promise<WorkbenchUnitLineage> => apiParsed(`/api/workbench/units/${unitId}/lineage`, workbenchUnitLineage, { signal }),
   picker: (unitId: string | null, q: string, signal?: AbortSignal) => {
     const query = new URLSearchParams();
@@ -280,14 +280,14 @@ export const workbenchApi = {
   },
   choices: (signal?: AbortSignal): Promise<WorkbenchChoice[]> => apiParsed("/api/workbench/choices", z.array(workbenchChoice), { signal }),
   reasons: (command: string, signal?: AbortSignal): Promise<string[]> => apiParsed(`/api/workbench/routes/${encodeURIComponent(command)}/reasons`, z.array(text), { signal }),
-  preview: (request: WorkbenchPreviewRequest, signal?: AbortSignal): Promise<WorkbenchPreviewResult> => apiParsed("/api/workbench/preview", workbenchPreviewResult, { method: "POST", body: z.parse(workbenchPreviewRequestBody, request), signal }),
-  initiate: (requestId: string, request: WorkbenchPreviewRequest): Promise<WorkbenchRequestRow> => apiParsed(`/api/workbench/requests/${requestId}`, workbenchRequestRow, { method: "POST", body: z.parse(workbenchPreviewRequestBody, request) }),
+  preview: (request: WorkbenchPreviewRequest, signal?: AbortSignal): Promise<WorkbenchPreviewResult> => apiParsed("/api/workbench/preview", workbenchPreviewResult, { method: "POST", body: checkedBody(workbenchPreviewRequestBody, request), signal }),
+  initiate: (requestId: string, request: WorkbenchPreviewRequest): Promise<WorkbenchRequestRow> => apiParsed(`/api/workbench/requests/${requestId}`, workbenchRequestRow, { method: "POST", body: checkedBody(workbenchPreviewRequestBody, request) }),
   fileUnclassified: (requestId: string, target: WorkbenchTarget, description: string, evidence: WorkbenchEvidenceRef[]) =>
-    apiParsed(`/api/workbench/requests/${requestId}/unclassified`, workbenchRequestRow, { method: "POST", body: z.parse(fileUnclassifiedWorkbenchRequest, { target, description, evidence }) }),
+    apiParsed(`/api/workbench/requests/${requestId}/unclassified`, workbenchRequestRow, { method: "POST", body: checkedBody(fileUnclassifiedWorkbenchRequest, { target, description, evidence }) }),
   request: (requestId: string, signal?: AbortSignal): Promise<WorkbenchRequestRow> => apiParsed(`/api/workbench/requests/${requestId}`, workbenchRequestRow, { signal }),
   inbox: (skip: number, take: number, signal?: AbortSignal): Promise<WorkbenchRequestPage> => apiParsed(`/api/workbench/inbox?skip=${skip}&take=${take}`, workbenchRequestPage, { signal }),
-  approve: (requestId: string, note: string | null): Promise<WorkbenchRequestRow> => apiParsed(`/api/workbench/requests/${requestId}/approve`, workbenchRequestRow, { method: "POST", body: z.parse(approveWorkbenchRequest, { note }) }),
-  reject: (requestId: string, note: string): Promise<WorkbenchRequestRow> => apiParsed(`/api/workbench/requests/${requestId}/reject`, workbenchRequestRow, { method: "POST", body: z.parse(rejectWorkbenchRequest, { note }) }),
+  approve: (requestId: string, note: string | null): Promise<WorkbenchRequestRow> => apiParsed(`/api/workbench/requests/${requestId}/approve`, workbenchRequestRow, { method: "POST", body: checkedBody(approveWorkbenchRequest, { note }) }),
+  reject: (requestId: string, note: string): Promise<WorkbenchRequestRow> => apiParsed(`/api/workbench/requests/${requestId}/reject`, workbenchRequestRow, { method: "POST", body: checkedBody(rejectWorkbenchRequest, { note }) }),
   commit: (requestId: string): Promise<WorkbenchRequestRow> => apiParsed(`/api/workbench/requests/${requestId}/commit`, workbenchRequestRow, { method: "POST" }),
 };
 

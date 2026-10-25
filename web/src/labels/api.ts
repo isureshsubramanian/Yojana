@@ -1,5 +1,5 @@
 import * as z from "zod/mini";
-import { apiParsed } from "../api/client.ts";
+import { apiParsed, checkedBody } from "../api/client.ts";
 import { newCommandId, now } from "../api/units.ts";
 import {
   labelBatchPrintResultSchema, labelBindableFieldSchema, labelBindingSchema, labelPolicySchema, labelPrintJobPageSchema,
@@ -41,41 +41,41 @@ export const labelsApi = {
   template: (templateId: string, signal?: AbortSignal) => apiParsed(`/api/labels/templates/${templateId}`, labelTemplateDetailSchema, { signal }),
   bindableFields: (signal?: AbortSignal) => apiParsed("/api/labels/bindable-fields", z.array(labelBindableFieldSchema), { signal }),
   createTemplate: (name: string, appliesTo: string, appliesToValue: string) => { const body = { commandId: newCommandId(), name, appliesTo, appliesToValue }; return apiParsed("/api/labels/templates", createTemplateResultSchema, {
-    method: "POST", body: z.parse(createTemplateRequestSchema, body),
+    method: "POST", body: checkedBody(createTemplateRequestSchema, body),
   }); },
   saveDraft: (templateId: string, draft: SaveDraftInput) => { const body = { commandId: newCommandId(), ...draft }; return apiParsed(`/api/labels/templates/${templateId}/versions/draft`, saveDraftResultSchema, {
-    method: "POST", body: z.parse(saveDraftRequestSchema, body),
+    method: "POST", body: checkedBody(saveDraftRequestSchema, body),
   }); },
   preview: (versionId: string, sampleUnitId: string | null) => apiParsed(`/api/labels/versions/${versionId}/preview`, labelTemplatePreviewSchema, {
-    method: "POST", body: z.parse(previewRequestSchema, { sampleUnitId }),
+    method: "POST", body: checkedBody(previewRequestSchema, { sampleUnitId }),
   }),
   requestReview: (versionId: string) => lifecycle(versionId, "legal-review/request"),
   signReview: (versionId: string) => lifecycle(versionId, "legal-review/sign"),
   approve: (versionId: string) => lifecycle(versionId, "approve"),
   activate: (versionId: string) => apiParsed(`/api/labels/versions/${versionId}/activate`, versionChangedSchema, {
-    method: "POST", body: z.parse(activateRequestSchema, { commandId: newCommandId(), activatedAt: now() }),
+    method: "POST", body: checkedBody(activateRequestSchema, { commandId: newCommandId(), activatedAt: now() }),
   }),
   retire: (versionId: string) => apiParsed(`/api/labels/versions/${versionId}/retire`, versionChangedSchema, {
-    method: "POST", body: z.parse(retireRequestSchema, { commandId: newCommandId(), retiredAt: now() }),
+    method: "POST", body: checkedBody(retireRequestSchema, { commandId: newCommandId(), retiredAt: now() }),
   }),
   settings: (signal?: AbortSignal) => apiParsed("/api/labels/settings", labelPolicySchema, { signal }),
-  saveSettings: (policy: z.infer<typeof labelPolicySchema>) => apiParsed("/api/labels/settings", labelPolicySchema, { method: "PUT", body: z.parse(labelPolicySchema, policy) }),
+  saveSettings: (policy: z.infer<typeof labelPolicySchema>) => apiParsed("/api/labels/settings", labelPolicySchema, { method: "PUT", body: checkedBody(labelPolicySchema, policy) }),
   jobs: (params: { status?: string | undefined; find?: string | undefined; printer?: string | undefined; kind?: "manual" | "reprint" | "event" | undefined; from?: string | undefined; to?: string | undefined; skip?: number | undefined; take?: number | undefined }, signal?: AbortSignal) =>
     apiParsed(`/api/labels/print-jobs${query(params)}`, labelPrintJobPageSchema, { signal }),
   summary: (from: string, to: string, signal?: AbortSignal) => apiParsed(`/api/labels/print-jobs/summary${query({ from, to })}`, labelPrintJobSummarySchema, { signal }),
   printers: (from: string, to: string, signal?: AbortSignal) => apiParsed(`/api/labels/print-jobs/printers${query({ from, to })}`, z.array(text), { signal }),
   job: (jobId: string, signal?: AbortSignal) => apiParsed(`/api/labels/print-jobs/${jobId}`, labelPrintJobSchema, { signal }),
   print: (unitId: string, printerRef: string, templateId: string | null = null) => { const body = { commandId: newCommandId(), unitId, templateId, identifierId: null, printerRef, printAt: now() }; return apiParsed("/api/labels/print-jobs", labelPrintResultSchema, {
-    method: "POST", body: z.parse(printRequestSchema, body),
+    method: "POST", body: checkedBody(printRequestSchema, body),
   }); },
   printBatch: (serials: string[], printerRef: string, templateVersionId: string | null) => { const body = { commandId: newCommandId(), templateVersionId, printerRef, serials }; return apiParsed("/api/labels/print-jobs/batch", labelBatchPrintResultSchema, {
-    method: "POST", body: z.parse(batchPrintRequestSchema, body),
+    method: "POST", body: checkedBody(batchPrintRequestSchema, body),
   }); },
   reprint: (jobId: string, printerRef: string | null) => { const body = { commandId: newCommandId(), printerRef, reprintedAt: now() }; return apiParsed(`/api/labels/print-jobs/${jobId}/reprint`, labelPrintResultSchema, {
-    method: "POST", body: z.parse(reprintRequestSchema, body),
+    method: "POST", body: checkedBody(reprintRequestSchema, body),
   }); },
 };
 
 function lifecycle(versionId: string, action: string) {
-  return apiParsed(`/api/labels/versions/${versionId}/${action}`, versionChangedSchema, { method: "POST", body: z.parse(commandRequestSchema, { commandId: newCommandId() }) });
+  return apiParsed(`/api/labels/versions/${versionId}/${action}`, versionChangedSchema, { method: "POST", body: checkedBody(commandRequestSchema, { commandId: newCommandId() }) });
 }
