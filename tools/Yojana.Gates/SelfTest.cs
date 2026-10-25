@@ -144,11 +144,16 @@ public static class SelfTest
         var config = new BudgetConfig { DistDirectory = "web/dist", SourceDirectory = "web/src", ThemeModuleDirectory = "web/src/theme/", ForbiddenImports = ["styled-components"] };
         File.WriteAllText(Path.Combine(src, "Planted.tsx"), "import styled from \"styled-components\";\nexport const x = () => { document.documentElement.dataset.mode = \"dark\"; };\n");
         File.WriteAllText(Path.Combine(src, "theme", "mode.ts"), "export const set = () => { document.documentElement.dataset.mode = \"dark\"; };\n");
+        Directory.CreateDirectory(Path.Combine(src, "api"));
+        File.WriteAllText(Path.Combine(src, "api", "client.ts"), "export async function api<T>(path: string): Promise<T> { return (await fetch(path)).json() as T; }\nexport const apiParsed = (p: string) => api<unknown>(p);\n");
+        File.WriteAllText(Path.Combine(src, "PlantedApi.ts"), "export const a = () => api<Thing>(\"/api/things\");\nexport const b = () => api(\"/api/other\");\nexport const c = () => apiParsed(\"/api/ok\", thing);\nexport const d = () => client.api(\"/x\");\n");
         var planted = BudgetGate.Run(root, config);
         File.Delete(Path.Combine(src, "Planted.tsx"));
+        File.Delete(Path.Combine(src, "PlantedApi.ts"));
         var clean = BudgetGate.Run(root, config);
-        var ok = !planted.Passed && planted.Details.Count(d => d.StartsWith("RULE", StringComparison.Ordinal)) == 2 && clean.Passed;
-        return new GateResult("self-test client rules", ok, ok ? "a CSS-in-JS import and a theme attribute outside the theme module fail; the theme module itself passes" : "unexpected outcome",
+        var ok = !planted.Passed && planted.Details.Count(d => d.StartsWith("RULE", StringComparison.Ordinal)) == 4
+            && planted.Details.Count(d => d.Contains("calls api() unchecked", StringComparison.Ordinal)) == 2 && clean.Passed;
+        return new GateResult("self-test client rules", ok, ok ? "a CSS-in-JS import, a theme attribute outside the theme module and two unchecked api calls fail; the theme module, the API client, apiParsed and x.api pass" : "unexpected outcome",
             [$"planted: {planted.Summary}", $"clean: {clean.Summary}"]);
     }
 

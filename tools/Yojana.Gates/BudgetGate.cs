@@ -28,6 +28,10 @@ public sealed class BudgetConfig
     [JsonPropertyName("themeModuleDirectory")]
     public string ThemeModuleDirectory { get; set; } = "web/src/theme/";
 
+    /// <summary>The only client file that may call <c>api</c> unchecked; every other call goes through <c>apiParsed</c> (ADR-0019).</summary>
+    [JsonPropertyName("apiClientModule")]
+    public string ApiClientModule { get; set; } = "web/src/api/client.ts";
+
     public static BudgetConfig Load(string root)
     {
         var path = Path.Combine(root, "tools", "gates", "budgets.json");
@@ -38,7 +42,8 @@ public sealed class BudgetConfig
 /// <summary>
 /// MOD-02 performance rules: the gzipped size of what the shell's index.html loads before first paint
 /// (stylesheets, the entry script and its module preloads), plus two source rules from MOCKUP-PROCESS §4:
-/// no CSS-in-JS runtime and no theme-specific JavaScript outside the theme module.
+/// no CSS-in-JS runtime and no theme-specific JavaScript outside the theme module; and one from ADR-0019: no
+/// unchecked <c>api</c> call outside the API client, so every server reply is checked against a schema.
 /// </summary>
 public static partial class BudgetGate
 {
@@ -96,10 +101,12 @@ public static partial class BudgetGate
 
         var hits = 0;
         var themeDir = config.ThemeModuleDirectory.Replace('\\', '/').TrimEnd('/') + "/";
+        var apiClient = config.ApiClientModule.Replace('\\', '/');
         foreach (var file in Directory.EnumerateFiles(source, "*.ts*", SearchOption.AllDirectories))
         {
             var relative = Repo.Relative(root, file);
             var inThemeModule = relative.StartsWith(themeDir, StringComparison.OrdinalIgnoreCase);
+            var isApiClient = string.Equals(relative, apiClient, StringComparison.OrdinalIgnoreCase);
             var lineNumber = 0;
             foreach (var line in File.ReadLines(file))
             {
@@ -117,6 +124,12 @@ public static partial class BudgetGate
                 {
                     hits++;
                     details.Add($"RULE {relative}:{lineNumber}: touches the theme or mode attribute outside {themeDir}");
+                }
+
+                if (!isApiClient && UncheckedApiCall().IsMatch(line))
+                {
+                    hits++;
+                    details.Add($"RULE {relative}:{lineNumber}: calls api() unchecked; use apiParsed with a zod/mini schema (ADR-0019)");
                 }
             }
         }
@@ -153,4 +166,8 @@ public static partial class BudgetGate
 
     [GeneratedRegex(@"data-(theme|mode)\b|dataset\.(theme|mode)\b", RegexOptions.IgnoreCase)]
     private static partial Regex ThemeAttribute();
+
+    // `api(` or `api<T>(` as its own name: not apiParsed(, not x.api(, not myapi(.
+    [GeneratedRegex(@"(?<![\w.$])api(<[^()]*>)?\(")]
+    private static partial Regex UncheckedApiCall();
 }
