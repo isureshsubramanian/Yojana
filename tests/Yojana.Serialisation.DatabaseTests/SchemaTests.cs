@@ -369,6 +369,29 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
         EventId = TimeOrderedId.New(),
     };
 
+    [DatabaseFact]
+    public async Task Sortable_unit_range_gap_and_certificate_columns_have_tenant_led_indexes_with_unique_ties()
+    {
+        using var scope = fixture.ScopeFor(null);
+        var db = Db(scope);
+        var names = (await db.Database.SqlQueryRaw<string>($"""
+            SELECT i.name AS [Value]
+            FROM sys.indexes i
+            WHERE OBJECT_SCHEMA_NAME(i.object_id) = '{S}' AND i.name IN (
+              'ix_unit_current_tenant_id_item_id_unit_id',
+              'ix_unit_current_tenant_id_last_event_time_unit_id',
+              'ix_unit_current_tenant_id_lifecycle_status_unit_id',
+              'ix_serial_range_tenant_id_scheme_reserved_at_range_id',
+              'ix_serial_range_tenant_id_scheme_start_ordinal_range_id',
+              'ix_serial_range_tenant_id_scheme_status_range_id',
+              'ix_custody_episode_tenant_id_kind_party_type_valid_from_unit_id',
+              'ix_certificate_instance_tenant_id_issued_at_tracking_number',
+              'ix_certificate_instance_tenant_id_status_tracking_number')
+            """).ToListAsync()).ToHashSet(StringComparer.Ordinal);
+
+        Assert.Equal(9, names.Count);
+    }
+
     private static CustodyEpisode NewEpisode(TenantId tenant, Guid unit, string kind) => new()
     {
         TenantId = tenant,

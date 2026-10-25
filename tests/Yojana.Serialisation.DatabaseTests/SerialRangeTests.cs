@@ -6,6 +6,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Identity;
+using Yojana.Serialisation.Queries;
 
 namespace Yojana.Serialisation.DatabaseTests;
 
@@ -57,6 +58,15 @@ public sealed class SerialRangeTests(SerialisationHostFixture fixture)
         Assert.Equal(3, rows.Count);
         Assert.All(rows, r => Assert.Equal(r.Count, r.EndOrdinal - r.StartOrdinal + 1));
         Assert.All(rows, r => Assert.Equal(SerialRangeStatus.Reserved, r.Status));
+        var queries = scope.ServiceProvider.GetRequiredService<SerialRangeQueries>();
+        foreach (var sort in new[] { "range", "reserved", "status" })
+        foreach (var direction in new[] { "asc", "desc" })
+        {
+            var ids = new List<Guid>();
+            for (var skip = 0; skip < 3; skip++)
+                ids.Add(Assert.Single((await queries.ListAsync(scheme, null, sort, direction, skip, 1, CancellationToken.None)).Page.Items).RangeId);
+            Assert.Equal(3, ids.Distinct().Count());
+        }
     }
 
     [DatabaseFact]

@@ -9,12 +9,15 @@ import { useHandoff, useLegacyParam } from "../shell/handoff";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section, UnitLink } from "./common";
 import { fmtDate, humanise, parseDocumentParam, shortId, splitSerials } from "./format";
+import { useSession } from "../session/session";
+import { useReferenceNames } from "../corrections/ReferenceFields";
 
 const TAKE = 200;
 
 /** As-built completeness (P1 screen 5): one row per unit, one column per expected serialised slot; the policy decides, the screen shows. */
 export function Component() {
   const [params, setParams] = useSearchParams();
+  const session = useSession();
   const navigate = useNavigate();
   useLegacyParam("serials", "serials");
   const serialsParam = useHandoff().serials ?? "";
@@ -59,26 +62,27 @@ export function Component() {
     return slotFilter ? byFacet.filter((r) => r.slots.some((s) => s.slot === slotFilter && s.outcome !== "complete")) : byFacet;
   }, [result, facet, slotFilter]);
   const PAGE = 50;
-  const grid = { rows: rows.slice((page - 1) * PAGE, page * PAGE), total: rows.length, page, pageSize: PAGE, continuation: null };
+  const grid = { rows, total: rows.length, page, pageSize: PAGE, continuation: null };
   const slots = result?.slots ?? [];
+  const names = useReferenceNames({ items: rows.flatMap(row => [row.itemId, ...row.slots.map(slot => slot.capturedItemId)]) });
   const completeSerials = (result?.page.items ?? []).filter((r) => r.complete && r.serial).map((r) => r.serial!);
 
   const columns: GridColumn<CompletenessRow>[] = [
-    { key: "serial", label: "Serial", width: slots.length ? 16 : 40, render: (r) => <UnitLink unitId={r.unitId}>{r.serial ?? shortId(r.unitId)}</UnitLink> },
+    { key: "serial", label: "Serial", width: slots.length ? 16 : 40, sort: { key: "serial", value: r => r.serial }, render: (r) => <UnitLink unitId={r.unitId}>{r.serial ?? shortId(r.unitId)}</UnitLink> },
     ...slots.map((slot) => ({
-      key: `slot-${slot}`, label: slot, width: Math.max(10, Math.floor(66 / slots.length)),
+      key: `slot-${slot}`, label: slot, width: Math.max(10, Math.floor(66 / slots.length)), sort: { key: `slot-${slot}`, value: (r: CompletenessRow) => r.slots.find(x => x.slot === slot)?.outcome ?? "" },
       render: (r: CompletenessRow) => {
         const s = r.slots.find((x) => x.slot === slot);
         if (!s) return <span className="muted">—</span>;
         if (s.outcome === "complete") return <span className="serial">{s.capturedSerial ?? shortId(s.capturedUnitId)}</span>;
         if (s.outcome === "missing") return <span className="cell-bad" style={{ display: "block", margin: "0 -12px", padding: "0 12px" }}><StatusBadge tone="bad">Missing</StatusBadge></span>;
-        return <span className="cell-warn" style={{ display: "block", margin: "0 -12px", padding: "0 12px" }}><span className="serial">{s.capturedSerial ?? "?"}</span><span className="sub">{humanise(s.outcome)}{s.capturedItemId ? ` · item ${shortId(s.capturedItemId)}` : ""}</span></span>;
+        return <span className="cell-warn" style={{ display: "block", margin: "0 -12px", padding: "0 12px" }}><span className="serial">{s.capturedSerial ?? "?"}</span><span className="sub">{humanise(s.outcome)}{s.capturedItemId ? ` · ${names.item(s.capturedItemId)}` : ""}</span></span>;
       },
     })),
-    { key: "status", label: "Status", width: slots.length ? 18 : 42, render: (r) => r.complete ? <StatusBadge tone="ok">Complete</StatusBadge> : r.unexpected > 0 && r.missing === 0 ? <StatusBadge tone="warn">Unexpected{r.policy === "block" ? " · blocked" : ""}</StatusBadge> : <StatusBadge tone="bad">Missing {r.missing}{r.policy === "block" ? " · blocked" : " · warn"}</StatusBadge> },
+    { key: "status", label: "Status", width: slots.length ? 18 : 42, sort: { key: "status", value: r => r.complete ? "complete" : r.unexpected > 0 && r.missing === 0 ? "unexpected" : "missing" }, render: (r) => r.complete ? <StatusBadge tone="ok">Complete</StatusBadge> : r.unexpected > 0 && r.missing === 0 ? <StatusBadge tone="warn">Unexpected{r.policy === "block" ? " · blocked" : ""}</StatusBadge> : <StatusBadge tone="bad">Missing {r.missing}{r.policy === "block" ? " · blocked" : " · warn"}</StatusBadge> },
   ];
 
-  const rowClick = (r: CompletenessRow) => openDrawer({ eyebrow: `Selected unit · item ${shortId(r.itemId)}`, title: r.serial ?? shortId(r.unitId), mono: true }, (
+  const rowClick = (r: CompletenessRow) => openDrawer({ eyebrow: `Selected unit · ${names.item(r.itemId)}`, title: r.serial ?? shortId(r.unitId), mono: true }, (
     <>
       <h3>Slots · expected versus captured</h3>
       {r.slots.map((s, i) => (
@@ -132,7 +136,8 @@ export function Component() {
             <ErrorNote error={error} />
             <DataGrid columns={columns} page={grid} rowId={(r) => r.unitId} onPage={setPage} loading={loading} emptyText={result ? "No unit matches these filters." : "Enter serials to check."} viewportHeight={560}
               selection={{ selected, onChange: setSelected, label: (r) => r.serial ?? r.unitId }} onRowClick={(r) => { setActive(r.unitId); rowClick(r); }} activeRowId={active} describedBy="h-matrix"
-              footerNote="one row per unit, one column per expected serialised slot" />
+              gridId="unit-completeness" userId={session.user.id} defaultSort={{ key: "serial", dir: "asc" }} defaultPageSize={PAGE}
+              footer="One row per unit, one column per expected serialised slot" />
           </section>
           {result && result.unknown.length > 0 && <div className="note warn"><strong>{result.unknown.length} serials unknown:</strong>&nbsp;<span className="serial">{result.unknown.slice(0, 20).join(", ")}{result.unknown.length > 20 ? " …" : ""}</span></div>}
         </div>

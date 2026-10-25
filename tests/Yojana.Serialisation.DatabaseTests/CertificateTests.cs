@@ -397,6 +397,15 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
             var filtered = await queries.PageAsync(CertificateDocumentKind.ReleaseRecord, null, null,
                 correctedSerial[..6], null, null, 0, 20, CancellationToken.None);
             Assert.Contains(filtered.Items, row => row.UnitId == setup.UnitId);
+            foreach (var sort in new[] { "tracking_number", "issued", "status" })
+            foreach (var direction in new[] { "asc", "desc" })
+            {
+                var firstSorted = Assert.Single((await queries.PageAsync(CertificateDocumentKind.ReleaseRecord, null, null,
+                    null, null, null, 0, 1, CancellationToken.None, sort, direction)).Items);
+                var secondSorted = Assert.Single((await queries.PageAsync(CertificateDocumentKind.ReleaseRecord, null, null,
+                    null, null, null, 1, 1, CancellationToken.None, sort, direction)).Items);
+                Assert.NotEqual(firstSorted.CertificateId, secondSorted.CertificateId);
+            }
 
             var current = await db.Current.AsNoTracking().SingleAsync(row => row.UnitId == setup.UnitId);
             Assert.Equal(setup.LocationId, current.LocationId);

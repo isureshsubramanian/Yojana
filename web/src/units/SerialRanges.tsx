@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { ranges, toPage, newCommandId, now, type AllocateSerialRangeResult, type SerialRangeList, type SerialRangeRow, type SerialSchemeRow } from "../api/units";
+import { ranges, serialRangeList, toPage, newCommandId, now, type AllocateSerialRangeResult, type SerialRangeRow, type SerialSchemeRow } from "../api/units";
 import { LegalEntityPicker, useLegalEntities } from "../api/legalEntities";
-import { DataGrid, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
+import { DataGrid, Shortcut, StatusBadge, useGridQuery, useModEnter, type GridColumn } from "../components";
+import { useSession } from "../session/session";
 import { DocumentField, ItemField, useReferenceNames, type DocumentValue } from "../corrections/ReferenceFields";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
@@ -21,15 +22,12 @@ function rangeTone(status: string) { return status === "exhausted" ? "ok" : stat
 
 export function Component() {
   const { value: legalEntities } = useLegalEntities();
+  const session = useSession();
   const [legalEntityId, setLegalEntityId] = useState("");
   useEffect(() => { if (legalEntities?.defaultId) setLegalEntityId((current) => current || legalEntities.defaultId!); }, [legalEntities?.defaultId]);
   const [schemes, setSchemes] = useState<SerialSchemeRow[]>([]);
   const [scheme, setScheme] = useState("");
   const [status, setStatus] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-  const [list, setList] = useState<SerialRangeList | null>(null);
-  const person = usePeople(list?.page.items.map((r) => r.reservedBy) ?? []);
-  const [loading, setLoading] = useState(false);
   const [version, setVersion] = useState(0);
   const [quantity, setQuantity] = useState(500);
   const [allocatedTo, setAllocatedTo] = useState<DocumentValue | null>(null);
@@ -42,24 +40,20 @@ export function Component() {
   const [modelNumberRefusal, setModelNumberRefusal] = useState<ApiError | null>(null);
   const [result, setResult] = useState<AllocateSerialRangeResult | null>(null);
   const [active, setActive] = useState<string | null>(null);
-  const names = useReferenceNames({
-    items: [itemId, ...(list?.page.items.map((row) => row.itemId) ?? [])],
-    documents: [allocatedTo, ...(list?.page.items.map((row) => row.allocatedToDocumentId && row.allocatedToDocumentType ? { type: row.allocatedToDocumentType, id: row.allocatedToDocumentId } : null) ?? [])],
-  });
-
   useEffect(() => {
     const controller = new AbortController();
     ranges.schemes(controller.signal).then((s) => { setSchemes(s); setScheme((c) => c || s[0]?.code || ""); }).catch((e) => { if (!(e instanceof DOMException)) setError(e); });
     return () => controller.abort();
   }, []);
 
-  useEffect(() => {
-    if (!scheme) return;
-    const controller = new AbortController();
-    setLoading(true);
-    ranges.list(scheme, status, (page - 1) * PAGE, PAGE, controller.signal).then((l) => { setList(l); setLoading(false); }).catch((e) => { if (!(e instanceof DOMException)) { setError(e); setLoading(false); } });
-    return () => controller.abort();
-  }, [scheme, status, page, version]);
+  const filters = new URLSearchParams(); if (scheme) filters.set("scheme", scheme); if (status) filters.set("status", status);
+  const query = useGridQuery("/api/serial-ranges/", serialRangeList, { gridId: "serial-ranges", userId: session.user.id, defaultSort: { key: "reserved", dir: "desc" }, defaultSize: PAGE, params: filters, enabled: !!scheme, reloadKey: version, sortKeys: ["range", "reserved", "status"] });
+  const list = query.data;
+  const person = usePeople(list?.page.items.map((r) => r.reservedBy) ?? []);
+  const names = useReferenceNames({
+    items: [itemId, ...(list?.page.items.map((row) => row.itemId) ?? [])],
+    documents: [allocatedTo, ...(list?.page.items.map((row) => row.allocatedToDocumentId && row.allocatedToDocumentType ? { type: row.allocatedToDocumentType, id: row.allocatedToDocumentId } : null) ?? [])],
+  });
 
   const definition = schemes.find((s) => s.code === scheme);
   const ready = scheme && quantity > 0 && !!allocatedTo && GUID.test(allocatedTo.id) && (legalEntities?.entities.length !== 1 ? !!legalEntityId : true) && !busy;
@@ -75,12 +69,12 @@ export function Component() {
   useModEnter(() => void allocate(), !ready);
 
   const columns: GridColumn<SerialRangeRow>[] = [
-    { key: "range", label: "Range", width: 23, mono: true, render: (r) => r.randomised ? <>{shortId(r.rangeId)}<span className="sub">randomised list</span></> : <>{r.startValue}<span className="sub serial">→ {r.endValue}</span></> },
+    { key: "range", label: "Range", width: 23, mono: true, sort: { key: "range", defaultDir: "asc" }, render: (r) => r.randomised ? <>{shortId(r.rangeId)}<span className="sub">randomised list</span></> : <>{r.startValue}<span className="sub serial">→ {r.endValue}</span></> },
     { key: "qty", label: "Qty", width: 10, numeric: true, render: (r) => r.count.toLocaleString() },
     { key: "used", label: "Used", width: 10, numeric: true, render: (r) => r.commissionedCount ? r.commissionedCount.toLocaleString() : <span className="muted">—</span> },
     { key: "to", label: "Allocated to", width: 21, render: (r) => <><span className="primary">{r.allocatedToDocumentType && r.allocatedToDocumentId ? names.document({ type: r.allocatedToDocumentType, id: r.allocatedToDocumentId }) : "—"}</span><span className="sub">{r.itemId ? names.item(r.itemId) : "any item"}</span></> },
-    { key: "reserved", label: "Reserved", width: 16, render: (r) => <>{fmtDate(r.reservedAt)}<span className="sub">{person(r.reservedBy)}</span></> },
-    { key: "status", label: "Status", width: 20, render: (r) => <StatusBadge tone={rangeTone(r.status)}>{humanise(r.status)}</StatusBadge> },
+    { key: "reserved", label: "Reserved", width: 16, sort: { key: "reserved", defaultDir: "desc" }, render: (r) => <>{fmtDate(r.reservedAt)}<span className="sub">{person(r.reservedBy)}</span></> },
+    { key: "status", label: "Status", width: 20, sort: { key: "status", defaultDir: "asc" }, render: (r) => <StatusBadge tone={rangeTone(r.status)}>{humanise(r.status)}</StatusBadge> },
   ];
 
   const rowClick = (r: SerialRangeRow) => openDrawer({ eyebrow: `Selected range · ${humanise(r.status)}`, title: r.startValue ?? shortId(r.rangeId), mono: true }, (
@@ -113,7 +107,7 @@ export function Component() {
             <div className="card-body">
               <div className="form-grid">
                 {legalEntities && legalEntities.entities.length > 1 && <LegalEntityPicker id="range-legal-entity" label="Legal entity" value={legalEntityId} entities={legalEntities.entities} onChange={setLegalEntityId} hint="the company reserving this range" />}
-                <div className="field"><label htmlFor="a-scheme">Scheme</label><select id="a-scheme" className="select" value={scheme} onChange={(e) => { setScheme(e.target.value); setPage(1); }}>{schemes.map((s) => <option key={s.code} value={s.code}>{s.code} · {humanise(s.identifierType)} · {s.example}</option>)}</select></div>
+                <div className="field"><label htmlFor="a-scheme">Scheme</label><select id="a-scheme" className="select" value={scheme} onChange={(e) => setScheme(e.target.value)}>{schemes.map((s) => <option key={s.code} value={s.code}>{s.code} · {humanise(s.identifierType)} · {s.example}</option>)}</select></div>
                 <ItemField id="a-item" label="Item" value={itemId} onChange={setItemId} optional hint="Leave empty when the range may be used across items" />
                 <DocumentField id="a-document" label="Allocated to" types={["production_order"]} value={allocatedTo} onChange={setAllocatedTo} hint="Search by production-order number" />
                 <div className="field span">
@@ -143,11 +137,12 @@ export function Component() {
             <div className="card-header">
               <div className="toolbar" style={{ flex: 1 }}>
                 <span className="chip on">Scheme · {scheme || "…"}</span>
-                {STATUSES.map((s) => <button type="button" key={s} className={`chip${status === s ? " on" : ""}`} aria-pressed={status === s} onClick={() => { setStatus(status === s ? null : s); setPage(1); }}>{humanise(s)}</button>)}
+                {STATUSES.map((s) => <button type="button" key={s} className={`chip${status === s ? " on" : ""}`} aria-pressed={status === s} onClick={() => setStatus(status === s ? null : s)}>{humanise(s)}</button>)}
               </div>
               <span className="meta nowrap" id="h-ranges">Newest first</span>
             </div>
-            <DataGrid columns={columns} page={list ? toPage(list.page) : { rows: [], total: 0, page: 1, pageSize: PAGE, continuation: null }} rowId={(r) => r.rangeId} onPage={setPage} loading={loading} emptyText="No ranges in this scheme yet." viewportHeight={560} onRowClick={(r) => { setActive(r.rangeId); rowClick(r); }} activeRowId={active} describedBy="h-ranges" />
+            <DataGrid columns={columns} page={list ? { ...toPage(list.page), page: query.page, pageSize: query.pageSize } : { rows: [], total: 0, page: query.page, pageSize: query.pageSize, continuation: null }} rowId={(r) => r.rangeId} onPage={query.onPage} loading={query.loading} emptyText="No ranges in this scheme yet." viewportHeight={560} onRowClick={(r) => { setActive(r.rangeId); rowClick(r); }} activeRowId={active} describedBy="h-ranges"
+              gridId="serial-ranges" userId={session.user.id} sort={query.sort} defaultSort={{ key: "reserved", dir: "desc" }} onSort={query.onSort} pageSize={query.pageSize} defaultPageSize={PAGE} onPageSize={query.onPageSize} />
           </section>
         </div>
       </main>

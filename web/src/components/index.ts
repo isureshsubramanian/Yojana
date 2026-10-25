@@ -2,6 +2,10 @@
 export { ApprovalInbox } from "./ApprovalInbox";
 export { ActionDialog } from "./ActionDialog";
 export { DataGrid, type GridColumn } from "./DataGrid";
+export { PageSizeSelect } from "./PageSizeSelect";
+export { SortHeader } from "./SortHeader";
+export { useGridQuery, useGridState, resetGridQuery } from "./useGridQuery";
+export type { GridSort, SortDirection } from "./gridPreferences";
 export { CollapsibleCard } from "./CollapsibleCard";
 export { FindBar } from "./FindBar";
 export { FormActions } from "./FormActions";

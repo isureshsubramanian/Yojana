@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
@@ -10,6 +11,12 @@ public sealed class CertificateQueries(SerialisationDbContext db, ITenantContext
     IPartyNamePort partyNames, ICertificateRenderer renderer, ICertificateBundleRenderer bundleRenderer,
     CertificateTemplateEngine templateEngine)
 {
+    private static readonly SortedPage<Data.Entities.CertificateInstance, string> Pages = new("issued",
+        row => row.TrackingNumber,
+        new SortColumn<Data.Entities.CertificateInstance, string>("tracking_number", row => row.TrackingNumber),
+        new SortColumn<Data.Entities.CertificateInstance, DateTime>("issued", row => row.IssuedAt, SortDirection.Descending),
+        new SortColumn<Data.Entities.CertificateInstance, string>("status", row => row.Status));
+
     public async Task<CertificateRenderResult?> RenderAsync(Guid certificateId, CancellationToken cancellationToken)
     {
         var row = await db.CertificateInstances.AsNoTracking().FirstOrDefaultAsync(item => item.TenantId == tenant.TenantId
@@ -101,10 +108,10 @@ public sealed class CertificateQueries(SerialisationDbContext db, ITenantContext
     }
 
     public async Task<Page<CertificateListRow>> PageAsync(string? kind, string? formType, string? status, string? unitSerial,
-        DateTime? issuedFrom, DateTime? issuedTo, int skip, int take, CancellationToken cancellationToken)
+        DateTime? issuedFrom, DateTime? issuedTo, int skip, int take, CancellationToken cancellationToken,
+        string? sort = null, string? direction = null)
     {
-        take = Math.Clamp(take, 1, 200);
-        skip = Math.Max(0, skip);
+        var paging = Pages.Parse(sort, direction, take, skip: skip);
         var source = db.CertificateInstances.AsNoTracking().Where(row => row.TenantId == tenant.TenantId);
         if (!string.IsNullOrWhiteSpace(kind)) source = source.Where(row => row.DocumentKind == kind);
         if (!string.IsNullOrWhiteSpace(formType)) source = source.Where(row => row.FormType == formType);
@@ -117,10 +124,9 @@ public sealed class CertificateQueries(SerialisationDbContext db, ITenantContext
             source = source.Where(row => unitIds.Contains(row.UnitId));
         }
         var total = await source.CountAsync(cancellationToken);
-        var entities = await source.OrderByDescending(row => row.IssuedAt).ThenBy(row => row.TrackingNumber)
-            .Skip(skip).Take(take).ToListAsync(cancellationToken);
+        var entities = await paging.Apply(source).Take(paging.Take).ToListAsync(cancellationToken);
         var rows = await Rows(entities, cancellationToken);
-        return new Page<CertificateListRow>(rows, total, skip, take);
+        return new Page<CertificateListRow>(rows, total, paging.Skip, paging.Take);
     }
 
     private async Task<List<CertificateListRow>> Rows(IQueryable<Data.Entities.CertificateInstance> source, CancellationToken cancellationToken) =>

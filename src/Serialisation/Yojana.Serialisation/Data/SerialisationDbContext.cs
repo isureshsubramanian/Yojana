@@ -331,6 +331,9 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             // Overlap detection scans the scheme's block by ordinal (P1-T10) under an update lock on this index.
             b.HasIndex(r => new { r.TenantId, r.Scheme, r.Qualifier, r.StartOrdinal });
             b.HasIndex(r => new { r.TenantId, r.AllocatedToDocumentId });
+            b.HasIndex(r => new { r.TenantId, r.Scheme, r.StartOrdinal, r.RangeId });
+            b.HasIndex(r => new { r.TenantId, r.Scheme, r.ReservedAt, r.RangeId });
+            b.HasIndex(r => new { r.TenantId, r.Scheme, r.Status, r.RangeId });
         });
 
         modelBuilder.Entity<SerialRangeMember>(b =>
@@ -461,8 +464,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             // One open ownership row and one open custody row per unit.
             b.HasIndex(e => new { e.TenantId, e.UnitId, e.Kind }).IsUnique().HasFilter("[valid_to] IS NULL");
             b.HasIndex(e => new { e.TenantId, e.UnitId, e.ValidFrom });
-            b.HasIndex(e => new { e.TenantId, e.Kind, e.PartyType, e.ValidFrom })
-                .IncludeProperties(e => new { e.UnitId, e.EpisodeId, e.PartyRef, e.Source, e.OpeningDocumentType });
+            b.HasIndex(e => new { e.TenantId, e.Kind, e.PartyType, e.ValidFrom, e.UnitId })
+                .IncludeProperties(e => new { e.EpisodeId, e.PartyRef, e.Source, e.OpeningDocumentType });
             b.HasIndex(e => new { e.TenantId, e.PartyRef, e.Kind, e.ValidTo });
             b.HasIndex(e => new { e.TenantId, e.LocationId, e.ValidTo });
             b.HasIndex(e => new { e.TenantId, e.MergedFromUnitId }).HasFilter(MergedFromFilter);
@@ -524,6 +527,9 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(c => c.OverlayFlags).HasDefaultValue("[]");
             b.Property(c => c.RowVersion).IsRowVersion();
             b.HasIndex(c => new { c.TenantId, c.ItemId, c.LocationId, c.Disposition });
+            b.HasIndex(c => new { c.TenantId, c.ItemId, c.UnitId });
+            b.HasIndex(c => new { c.TenantId, c.LastEventTime, c.UnitId });
+            b.HasIndex(c => new { c.TenantId, c.LifecycleStatus, c.UnitId });
             b.HasIndex(c => new { c.TenantId, c.OwnerPartyRef });
             b.HasIndex(c => new { c.TenantId, c.CustodyPartyRef, c.CustodyKind });
         });
@@ -1714,6 +1720,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(row => new { row.TenantId, row.UnitId, row.DocumentKind, row.TriggeringEventId }).IsUnique();
             b.HasIndex(row => new { row.TenantId, row.DocumentKind, row.FormType, row.Status, row.IssuedAt });
             b.HasIndex(row => new { row.TenantId, row.UnitId, row.DocumentKind, row.IssuedAt });
+            b.HasIndex(row => new { row.TenantId, row.IssuedAt, row.TrackingNumber });
+            b.HasIndex(row => new { row.TenantId, row.Status, row.TrackingNumber });
             b.HasIndex(row => new { row.TenantId, row.SupersedesCertificateId });
             b.HasIndex(row => new { row.TenantId, row.MigrationLoadId, row.CertificateId })
                 .HasFilter("[migration_load_id] IS NOT NULL");

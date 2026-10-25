@@ -834,9 +834,15 @@ namespace Yojana.Serialisation.Data.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_certificate_instance_tenant_id_tracking_number");
 
+                    b.HasIndex("TenantId", "IssuedAt", "TrackingNumber")
+                        .HasDatabaseName("ix_certificate_instance_tenant_id_issued_at_tracking_number");
+
                     b.HasIndex("TenantId", "MigrationLoadId", "CertificateId")
                         .HasDatabaseName("ix_certificate_instance_tenant_id_migration_load_id_certificate_id")
                         .HasFilter("[migration_load_id] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "Status", "TrackingNumber")
+                        .HasDatabaseName("ix_certificate_instance_tenant_id_status_tracking_number");
 
                     b.HasIndex("TenantId", "UnitId", "DocumentKind", "IssuedAt")
                         .HasDatabaseName("ix_certificate_instance_tenant_id_unit_id_document_kind_issued_at");
@@ -2515,13 +2521,13 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "UnitId", "ValidFrom")
                         .HasDatabaseName("ix_custody_episode_tenant_id_unit_id_valid_from");
 
-                    b.HasIndex("TenantId", "Kind", "PartyType", "ValidFrom")
-                        .HasDatabaseName("ix_custody_episode_tenant_id_kind_party_type_valid_from");
-
-                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "Kind", "PartyType", "ValidFrom"), new[] { "UnitId", "EpisodeId", "PartyRef", "Source", "OpeningDocumentType" });
-
                     b.HasIndex("TenantId", "PartyRef", "Kind", "ValidTo")
                         .HasDatabaseName("ix_custody_episode_tenant_id_party_ref_kind_valid_to");
+
+                    b.HasIndex("TenantId", "Kind", "PartyType", "ValidFrom", "UnitId")
+                        .HasDatabaseName("ix_custody_episode_tenant_id_kind_party_type_valid_from_unit_id");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "Kind", "PartyType", "ValidFrom", "UnitId"), new[] { "EpisodeId", "PartyRef", "Source", "OpeningDocumentType" });
 
                     b.ToTable("custody_episode", "serialisation");
 
@@ -8585,6 +8591,15 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "Scheme", "Qualifier", "StartOrdinal")
                         .HasDatabaseName("ix_serial_range_tenant_id_scheme_qualifier_start_ordinal");
 
+                    b.HasIndex("TenantId", "Scheme", "ReservedAt", "RangeId")
+                        .HasDatabaseName("ix_serial_range_tenant_id_scheme_reserved_at_range_id");
+
+                    b.HasIndex("TenantId", "Scheme", "StartOrdinal", "RangeId")
+                        .HasDatabaseName("ix_serial_range_tenant_id_scheme_start_ordinal_range_id");
+
+                    b.HasIndex("TenantId", "Scheme", "Status", "RangeId")
+                        .HasDatabaseName("ix_serial_range_tenant_id_scheme_status_range_id");
+
                     b.ToTable("serial_range", "serialisation", t =>
                         {
                             t.HasCheckConstraint("ck_serial_range_bounds", "(start_ordinal IS NULL AND end_ordinal IS NULL) OR (start_ordinal <= end_ordinal AND end_ordinal - start_ordinal + 1 = count)");
@@ -9423,6 +9438,15 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.HasIndex("TenantId", "CustodyPartyRef", "CustodyKind")
                         .HasDatabaseName("ix_unit_current_tenant_id_custody_party_ref_custody_kind");
+
+                    b.HasIndex("TenantId", "ItemId", "UnitId")
+                        .HasDatabaseName("ix_unit_current_tenant_id_item_id_unit_id");
+
+                    b.HasIndex("TenantId", "LastEventTime", "UnitId")
+                        .HasDatabaseName("ix_unit_current_tenant_id_last_event_time_unit_id");
+
+                    b.HasIndex("TenantId", "LifecycleStatus", "UnitId")
+                        .HasDatabaseName("ix_unit_current_tenant_id_lifecycle_status_unit_id");
 
                     b.HasIndex("TenantId", "ItemId", "LocationId", "Disposition")
                         .HasDatabaseName("ix_unit_current_tenant_id_item_id_location_id_disposition");

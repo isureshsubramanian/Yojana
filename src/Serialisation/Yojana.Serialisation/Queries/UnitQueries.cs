@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Commands;
 using Yojana.Serialisation.Contracts;
@@ -78,12 +79,40 @@ public sealed class UnitQueries(SerialisationDbContext db, IIdentifierPolicySour
         public required string LifecycleStatus { get; init; }
     }
 
+    private sealed class UnitSearchProjection
+    {
+        public Guid IdentifierId { get; init; }
+        public Guid UnitId { get; init; }
+        public required string NormalisedValue { get; init; }
+        public required string SortTie { get; init; }
+        public required string RawValue { get; init; }
+        public required string Type { get; init; }
+        public required string Scheme { get; init; }
+        public DateTime? ValidTo { get; init; }
+        public Guid? SupersededByIdentifierId { get; init; }
+        public Guid ItemId { get; init; }
+        public Guid? ModelVersionId { get; init; }
+        public required string LifecycleStatus { get; init; }
+        public required string Disposition { get; init; }
+        public string? LocationKind { get; init; }
+        public Guid? LocationId { get; init; }
+        public Guid? OwnerPartyRef { get; init; }
+        public Guid? CustodyPartyRef { get; init; }
+        public DateTime LastEventTime { get; init; }
+    }
+
+    private static readonly SortedPage<UnitSearchProjection, string> SearchPages = new("identifier", row => row.SortTie,
+        new SortColumn<UnitSearchProjection, string>("identifier", row => row.NormalisedValue),
+        new SortColumn<UnitSearchProjection, DateTime>("last_event", row => row.LastEventTime, SortDirection.Descending),
+        new SortColumn<UnitSearchProjection, string>("status", row => row.LifecycleStatus));
+
     /// <summary>Prefix search over identifiers, joined to current state; a hit per identifier so the item column disambiguates (case 1).</summary>
     public async Task<UnitSearchResult> SearchAsync(UnitSearch search, CancellationToken cancellationToken)
     {
         var watch = Stopwatch.StartNew();
         var tenantId = tenant.TenantId;
-        var take = Math.Clamp(search.Take, 1, 500);
+        var paging = SearchPages.Parse(search.Sort, search.Direction, search.Take, search.Cursor, search.Skip);
+        var take = paging.Take;
         var prefixes = string.IsNullOrWhiteSpace(search.Prefix) ? [] : (search.IdentifierType is null ? LookupTypes : [search.IdentifierType]).Select(t => IdentifierNormaliser.Normalise(search.Prefix!, policies.For(t)).Value).Where(v => v.Length > 0).Distinct(StringComparer.Ordinal).ToList();
         var identifiers = db.Identifiers.AsNoTracking().Where(i => i.TenantId == tenantId);
         if (prefixes.Count == 1) { var p = prefixes[0]; identifiers = identifiers.Where(i => i.NormalisedValue.StartsWith(p)); }
@@ -93,20 +122,27 @@ public sealed class UnitQueries(SerialisationDbContext db, IIdentifierPolicySour
 
         var query = from i in identifiers
                     join c in db.Current.AsNoTracking() on new { i.TenantId, i.UnitId } equals new { c.TenantId, c.UnitId }
-                    select new { i, c };
-        if (search.ItemId is { } item) query = query.Where(x => x.c.ItemId == item);
-        if (search.LifecycleStatus is { } status) query = query.Where(x => x.c.LifecycleStatus == status);
-        if (search.OwnerPartyRef is { } owner) query = query.Where(x => x.c.OwnerPartyRef == owner);
-        if (search.LocationId is { } location) query = query.Where(x => x.c.LocationId == location);
-        if (search.Document is { } document) query = query.Where(x => db.Events.Any(e => e.TenantId == tenantId && e.DocumentType == document.Type && e.DocumentId == document.Id && e.UnitId == x.c.UnitId));
+                    select new UnitSearchProjection
+                    {
+                        IdentifierId = i.IdentifierId, UnitId = i.UnitId, NormalisedValue = i.NormalisedValue,
+                        SortTie = i.NormalisedValue + "|" + i.Type + "|" + i.UnitId.ToString(),
+                        RawValue = i.RawValue, Type = i.Type, Scheme = i.Scheme, ValidTo = i.ValidTo,
+                        SupersededByIdentifierId = i.SupersededByIdentifierId, ItemId = c.ItemId,
+                        ModelVersionId = c.ModelVersionId, LifecycleStatus = c.LifecycleStatus,
+                        Disposition = c.Disposition, LocationKind = c.LocationKind, LocationId = c.LocationId,
+                        OwnerPartyRef = c.OwnerPartyRef, CustodyPartyRef = c.CustodyPartyRef,
+                        LastEventTime = c.LastEventTime,
+                    };
+        if (search.ItemId is { } item) query = query.Where(x => x.ItemId == item);
+        if (search.LifecycleStatus is { } status) query = query.Where(x => x.LifecycleStatus == status);
+        if (search.OwnerPartyRef is { } owner) query = query.Where(x => x.OwnerPartyRef == owner);
+        if (search.LocationId is { } location) query = query.Where(x => x.LocationId == location);
+        if (search.Document is { } document) query = query.Where(x => db.Events.Any(e => e.TenantId == tenantId && e.DocumentType == document.Type && e.DocumentId == document.Id && e.UnitId == x.UnitId));
 
         // The extra row is the continuation signal. Do not replace this with Count/Distinct over the match set: at
         // benchmark scale those synchronous summaries each scan roughly a million identifier/current rows and hold a
         // pooled connection for tens of seconds. The screen deliberately reports a lower bound and a page sample.
-        var ordered = search.Sort == "last_event"
-            ? query.OrderByDescending(x => x.c.LastEventTime).ThenBy(x => x.i.NormalisedValue).ThenBy(x => x.i.Type).ThenBy(x => x.i.UnitId)
-            : query.OrderBy(x => x.i.NormalisedValue).ThenBy(x => x.i.Type).ThenBy(x => x.i.UnitId);
-        var bounded = await ordered.Skip(search.Skip).Take(take + 1).Select(x => new { x.i.UnitId, x.i.NormalisedValue, x.i.RawValue, x.i.Type, x.i.Scheme, x.i.ValidTo, x.i.SupersededByIdentifierId, x.c.ItemId, x.c.ModelVersionId, x.c.LifecycleStatus, x.c.Disposition, x.c.LocationKind, x.c.LocationId, x.c.OwnerPartyRef, x.c.CustodyPartyRef, x.c.LastEventTime }).ToListAsync(cancellationToken);
+        var bounded = await paging.Apply(query).Take(take + 1).ToListAsync(cancellationToken);
         var hasMore = bounded.Count > take;
         var rows = bounded.Take(take).ToList();
         var unitIds = rows.Select(r => r.UnitId).Distinct().ToList();
@@ -126,13 +162,14 @@ public sealed class UnitQueries(SerialisationDbContext db, IIdentifierPolicySour
         var resolvesTo = successors.Count == 0 ? new Dictionary<Guid, string>() : await db.Identifiers.AsNoTracking().Where(i => i.TenantId == tenantId && successors.Contains(i.IdentifierId)).ToDictionaryAsync(i => i.IdentifierId, i => i.NormalisedValue, cancellationToken);
         var page = rows.Select(r => new UnitSearchRow(r.UnitId, r.NormalisedValue, r.Type, r.Scheme, r.ValidTo == null, r.SupersededByIdentifierId is { } s && resolvesTo.TryGetValue(s, out var v) ? v : null, r.ItemId, r.ModelVersionId, r.LifecycleStatus, r.Disposition, r.LocationKind, r.LocationId, r.OwnerPartyRef, r.CustodyPartyRef, lastTypes.TryGetValue(r.UnitId, out var lt) ? lt : null, r.LastEventTime, r.RawValue)).ToList();
         watch.Stop();
-        var visited = search.Skip + page.Count;
+        var visited = paging.Skip + page.Count;
         var pagingTotal = visited + (hasMore ? 1 : 0);
         var sample = rows.Count > 0;
-        return new UnitSearchResult(new Page<UnitSearchRow>(page, pagingTotal, search.Skip, take), visited,
+        return new UnitSearchResult(new Page<UnitSearchRow>(page, pagingTotal, paging.Skip, take), visited,
             rows.Select(row => row.UnitId).Distinct().Count(), rows.Select(row => row.ItemId).Distinct().Count(),
             rows.Select(row => row.Type).Distinct().Count(), rows.Count(row => row.ValidTo != null),
-            watch.ElapsedMilliseconds, hasMore, hasMore, sample && (hasMore || search.Skip > 0));
+            watch.ElapsedMilliseconds, hasMore, hasMore, sample && (hasMore || paging.Skip > 0 || search.Cursor is not null),
+            hasMore ? paging.CursorFor(rows[^1]) : null);
     }
 
     public async Task<UnitDetail?> DetailAsync(Guid unitId, CancellationToken cancellationToken)

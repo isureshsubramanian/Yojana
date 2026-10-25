@@ -356,7 +356,7 @@ public static class CertificateSelectionOutcome
 
 public sealed record CertificateSelectionPreviewRequest(Guid SelectionId, string DocumentKind, string FormType,
     Guid IssuerEntityId, string Language, bool IncludeBundle = true, int Skip = 0, int Take = 50,
-    string? Find = null, string? Outcome = null);
+    string? Find = null, string? Outcome = null, string? Sort = null, string? Direction = null);
 
 public sealed record CertificateSelectionUnit(Guid UnitId, string? Serial, Guid? ItemId, string? ItemCode,
     string? ItemName, string? Revision, Guid? CertificateId, int? CertificateVersion, string? TrackingNumber,

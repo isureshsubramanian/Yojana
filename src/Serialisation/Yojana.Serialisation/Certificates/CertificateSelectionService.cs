@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Wolverine.Attributes;
 using Wolverine.EntityFrameworkCore;
 using Wolverine.Runtime;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Commands;
@@ -39,7 +40,12 @@ public sealed class CertificateSelectionService(
     CertificateRunOptions options,
     ICertificateRunChunkObserver chunks)
 {
-    private const int MaxPage = 500;
+    private const int EvaluationPage = 500;
+    private static readonly SortedPage<CertificateSelectionUnit, Guid> PreviewPages = new("outcome", row => row.UnitId,
+        new SortColumn<CertificateSelectionUnit, string>("outcome", row => (row.Outcome == CertificateSelectionOutcome.NotIssuable ? "0|" : row.Outcome == CertificateSelectionOutcome.ReprintCopy ? "1|" : "2|") + (row.Serial ?? "")),
+        new SortColumn<CertificateSelectionUnit, string>("serial", row => row.Serial ?? ""),
+        new SortColumn<CertificateSelectionUnit, string>("item", row => row.ItemCode ?? ""),
+        new SortColumn<CertificateSelectionUnit, string>("status", row => row.Outcome));
     internal const int ChunkSize = 100;
 
     public async Task<CertificateSelectionPreview> PreviewAsync(CertificateSelectionPreviewRequest request,
@@ -49,14 +55,11 @@ public sealed class CertificateSelectionService(
         if (request.IssuerEntityId == Guid.Empty)
             throw new CommandRefusedException("issuer_entity_required", "An issuing legal entity is required.");
         var all = await EvaluateAsync(request.SelectionId, request.DocumentKind, request.FormType, cancellationToken);
-        var ordered = all.OrderBy(row => row.Outcome == CertificateSelectionOutcome.NotIssuable ? 0 : row.Outcome == CertificateSelectionOutcome.ReprintCopy ? 1 : 2)
-            .ThenBy(row => row.Serial, StringComparer.Ordinal).ToList();
-        var filtered = ordered.Where(row => string.IsNullOrWhiteSpace(request.Outcome) || row.Outcome == request.Outcome)
+        var filtered = all.Where(row => string.IsNullOrWhiteSpace(request.Outcome) || row.Outcome == request.Outcome)
             .Where(row => string.IsNullOrWhiteSpace(request.Find) || Matches(row, request.Find)).ToList();
-        var skip = Math.Max(0, request.Skip);
-        var take = Math.Clamp(request.Take, 1, MaxPage);
+        var page = PreviewPages.Parse(request.Sort, request.Direction, request.Take, skip: request.Skip);
         return new CertificateSelectionPreview(request.SelectionId, Kpis(all, request.IncludeBundle),
-            filtered.Skip(skip).Take(take).ToList(), filtered.Count, skip, take);
+            page.Apply(filtered.AsQueryable()).Take(page.Take).ToList(), filtered.Count, page.Skip, page.Take);
     }
 
     public Task<CertificateRunResult> IssueAsync(IssueCertificate command, CancellationToken cancellationToken) =>
@@ -298,12 +301,12 @@ public sealed class CertificateSelectionService(
             throw new CommandRefusedException("selection_unknown", $"Selection {selectionId} does not exist.");
         await templates.EnsureStartersAsync(cancellationToken);
         var result = new List<CertificateSelectionUnit>();
-        for (var skip = 0; ; skip += MaxPage)
+        for (var skip = 0; ; skip += EvaluationPage)
         {
             var members = await db.SelectionSetMembers.AsNoTracking()
                 .Where(row => row.TenantId == tenantId && row.SelectionId == selectionId)
                 .OrderBy(row => row.Serial).ThenBy(row => row.UnitId)
-                .Skip(skip).Take(MaxPage).Select(row => new SelectionMember(row.UnitId, row.Serial))
+                .Skip(skip).Take(EvaluationPage).Select(row => new SelectionMember(row.UnitId, row.Serial))
                 .ToListAsync(cancellationToken);
             if (members.Count == 0) break;
             result.AddRange(await EvaluateBatchAsync(members, documentKind, formType, cancellationToken));
