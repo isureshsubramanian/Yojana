@@ -18,6 +18,9 @@ namespace Yojana.Platform.Tenancy;
 /// messages it is <see cref="Messaging.TenantEnvelopeMiddleware"/> registered before Wolverine's transaction
 /// policy (see PlatformSetup); for jobs it is <see cref="Scheduling.TenantJob"/> before the job body. A
 /// connection opened earlier carries no tenant and every tenant write on it is blocked by RLS.
+/// P14-B COUPLING (public API party): PublicApiAuthenticationHandler also sets the portal party before this
+/// interceptor opens a connection. Removing either side drops the public API's database defence-in-depth filter;
+/// the explicit ownership checks remain authoritative but must not be treated as a reason to separate the pair.
 /// </summary>
 public sealed class TenantSessionContextInterceptor(ITenantContext tenant) : DbConnectionInterceptor
 {

@@ -5,6 +5,8 @@ using Wolverine.EntityFrameworkCore;
 using Yojana.Integration;
 using Yojana.Knowledge;
 using Yojana.Developer;
+// P14-B
+using Yojana.Developer.Authentication;
 using Yojana.Platform;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Security;
@@ -25,6 +27,8 @@ using Yojana.Platform.Tenancy;
 using Yojana.Serialisation;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Ports;
+// P14-B
+using Yojana.Serialisation.PublicApi;
 using Yojana.Serialisation.TimeZones;
 using Yojana.Web;
 using Yojana.Web.Settings;
@@ -47,6 +51,8 @@ builder.AddSerialisationModule();
 builder.AddIntegrationModule();
 builder.AddKnowledgeModule();
 builder.AddDeveloperModule();
+// P14-B
+builder.AddSerialisationPublicApi();
 builder.Services.AddScoped<ScreenCommandLegalEntityFilter>();
 
 var app = builder.Build();
@@ -119,6 +125,9 @@ app.UseStaticFiles(new StaticFileOptions
         headers.CacheControl = ctx.File.Name == "index.html" ? "no-cache" : "public, max-age=31536000, immutable";
     },
 });
+// P14-B: API-client authentication must precede the rate limiter inside UseYojanaPlatform.
+app.UseMiddleware<Yojana.Developer.PublicApi.PublicApiErrorCodeMiddleware>();
+app.UseMiddleware<PublicApiPreAuthenticationMiddleware>();
 app.UseYojanaPlatform();
 app.UseSerialisationInteractiveReads();
 app.MapPresenceEndpoints();

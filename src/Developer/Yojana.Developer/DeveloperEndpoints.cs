@@ -1,5 +1,11 @@
 using Microsoft.AspNetCore.Builder;
+// P14-B
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Yojana.Developer.Authentication;
+using Yojana.Developer.Clients;
+using Yojana.Developer.OpenApi;
+using Yojana.Developer.PublicApi;
 using Yojana.Platform.Contracts.Security;
 
 namespace Yojana.Developer;
@@ -17,7 +23,12 @@ public static class DeveloperEndpoints
     public static IEndpointRouteBuilder MapDeveloperEndpoints(this IEndpointRouteBuilder app)
     {
         var screens = app.MapGroup(ScreensPrefix).RequireAuthorization(YojanaPolicy.TenantAdministrator);
-        _ = screens;
+        // P14-B
+        screens.MapApiClientEndpoints();
+        app.MapPublicApiEndpoints();
+        app.MapGet(PublicPrefix + "/openapi.json", PublicOpenApi.DocumentAsync)
+            .RequireAuthorization(PublicApiAuthentication.DocumentationPolicy)
+            .WithSummary("Download the public API v1 OpenAPI document.");
         return app;
     }
 }

@@ -50,6 +50,13 @@ namespace Yojana.Developer.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("revoked_at");
 
+                    b.Property<string>("Scopes")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(1000)")
+                        .HasColumnName("scopes");
+
                     b.HasKey("TenantId", "TokenHash")
                         .HasName("pk_api_access_token");
 

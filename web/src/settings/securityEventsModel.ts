@@ -7,6 +7,8 @@ export const securityEventKinds = [
   "second_step_enrolled", "second_step_removed", "recovery_codes_regenerated", "recovery_code_used",
   "passkey_added", "passkey_removed", "user_invited", "user_deactivated", "user_reactivated",
   "roles_changed", "settings_changed",
+  "api_token_issued", "api_token_refused", "api_client_created", "api_client_secret_rotated",
+  "api_client_revoked", "api_client_changed",
 ] as const;
 
 const labels: Record<string, string> = {
@@ -30,6 +32,12 @@ const labels: Record<string, string> = {
   user_reactivated: "User reactivated",
   roles_changed: "Roles changed",
   settings_changed: "Settings changed",
+  api_token_issued: "API token issued",
+  api_token_refused: "API token refused",
+  api_client_created: "API client created",
+  api_client_secret_rotated: "API client secret rotated",
+  api_client_revoked: "API client revoked",
+  api_client_changed: "API client changed",
 };
 
 export function securityEventLabel(kind: string): string {
@@ -63,7 +71,7 @@ export function securityEventReason(reason: string | null | undefined): string {
 
 export function securityEventTone(kind: string): Tone {
   if (kind === "sign_in_succeeded" || kind === "user_reactivated" || kind === "second_step_enrolled" || kind === "passkey_added") return "ok";
-  if (kind === "sign_in_failed" || kind === "locked_out" || kind === "user_deactivated") return "bad";
+  if (kind === "sign_in_failed" || kind === "locked_out" || kind === "user_deactivated" || kind === "api_token_refused") return "bad";
   if (kind === "second_step_removed" || kind === "passkey_removed" || kind === "security_stamp_rotated") return "warn";
   if (kind === "signed_out") return "neutral";
   return "info";

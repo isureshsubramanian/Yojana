@@ -13,6 +13,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Data.SqlClient;
 using Yojana.Integration;
 using Yojana.Developer;
+using Yojana.Developer.Authentication;
 using Yojana.Web.Settings;
 using Yojana.Platform;
 using Yojana.Platform.Contracts.Security;
@@ -24,6 +25,7 @@ using Yojana.Platform.Tenancy;
 using Yojana.Platform.Privacy;
 using Yojana.Serialisation;
 using Yojana.Serialisation.Imports;
+using Yojana.Serialisation.PublicApi;
 
 namespace Yojana.Developer.DatabaseTests;
 
@@ -62,8 +64,11 @@ public sealed class DeveloperHostFixture : IAsyncLifetime
         builder.AddSerialisationModule();
         builder.AddIntegrationModule();
         builder.AddDeveloperModule();
+        builder.AddSerialisationPublicApi();
         var app = builder.Build();
         app.UseApiProblemDetails();
+        app.UseMiddleware<Yojana.Developer.PublicApi.PublicApiErrorCodeMiddleware>();
+        app.UseMiddleware<PublicApiPreAuthenticationMiddleware>();
         app.UseYojanaPlatform();
         app.MapDeveloperEndpoints();
         app.MapYojanaPrivacyEndpoints();

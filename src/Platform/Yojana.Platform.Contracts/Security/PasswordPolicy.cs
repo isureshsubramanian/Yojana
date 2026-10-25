@@ -67,6 +67,12 @@ public static class SecurityEventKind
     public const string UserDeactivated = "user_deactivated";
     public const string UserReactivated = "user_reactivated";
     public const string RolesChanged = "roles_changed";
+    public const string ApiTokenIssued = "api_token_issued";
+    public const string ApiTokenRefused = "api_token_refused";
+    public const string ApiClientCreated = "api_client_created";
+    public const string ApiClientSecretRotated = "api_client_secret_rotated";
+    public const string ApiClientRevoked = "api_client_revoked";
+    public const string ApiClientChanged = "api_client_changed";
     /// <summary>A tenant administrator changed a security or company setting; the reason lists the changed keys.</summary>
     public const string SettingsChanged = "settings_changed";
 
@@ -76,7 +82,8 @@ public static class SecurityEventKind
         PasswordResetRequested, PasswordResetCompleted, AdminPasswordReset, SecondStepEnrolled,
         SecondStepRemoved, RecoveryCodesRegenerated, RecoveryCodeUsed, PasskeyAdded, PasskeyRemoved,
         UserInvited, UserDeactivated,
-        UserReactivated, RolesChanged, SettingsChanged,
+        UserReactivated, RolesChanged, SettingsChanged, ApiTokenIssued, ApiTokenRefused, ApiClientCreated,
+        ApiClientSecretRotated, ApiClientRevoked, ApiClientChanged,
     };
 }
 

@@ -50,6 +50,7 @@ public sealed class DeveloperDbContext(DbContextOptions<DeveloperDbContext> opti
             b.ToTable("api_access_token");
             b.HasKey(x => new { x.TenantId, x.TokenHash });
             b.Property(x => x.TokenHash).HasMaxLength(32);
+            b.Property(x => x.Scopes).HasMaxLength(1000).IsUnicode(false);
             b.HasIndex(x => new { x.TenantId, x.ClientId, x.ExpiresAt });
             b.HasIndex(x => new { x.TenantId, x.ExpiresAt });
         });
