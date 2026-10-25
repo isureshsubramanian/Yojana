@@ -69,6 +69,19 @@ public sealed class UnitQueryTests(SerialisationHostFixture fixture)
         Assert.Equal(14, page3.Identifiers); // 12 internal (one superseded, one corrected successor = 13) + 1 vendor
         Assert.False(page3.HasMore);
         Assert.Equal(14, page3.Page.Total);
+        foreach (var sort in new[] { "identifier", "last_event", "status" })
+        foreach (var direction in new[] { "asc", "desc" })
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            string? cursor = null;
+            do
+            {
+                var sorted = await queries.SearchAsync(new UnitSearch($"{p}-0", Sort: sort, Take: 3, Direction: direction, Cursor: cursor), CancellationToken.None);
+                Assert.All(sorted.Page.Items, row => Assert.True(seen.Add($"{row.UnitId}:{row.IdentifierType}:{row.Identifier}:{row.Open}"), $"duplicate row for {sort} {direction}"));
+                cursor = sorted.Continuation;
+            } while (cursor is not null);
+            Assert.Equal(14, seen.Count);
+        }
         var released = await queries.SearchAsync(new UnitSearch($"{p}-0", LifecycleStatus: LifecycleStatus.Released, ItemId: vx), CancellationToken.None); // the purchased unit is released too
         Assert.Single(released.Page.Items);
         var openOnly = await queries.SearchAsync(new UnitSearch($"{p}-0", IncludeSuperseded: false, ItemId: vx), CancellationToken.None);

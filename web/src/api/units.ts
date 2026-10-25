@@ -33,13 +33,13 @@ const unitSearchRow = z.object({
   modelVersionId: nullableText, lifecycleStatus: text, disposition: text, locationKind: nullableText, locationId: nullableText,
   ownerPartyRef: nullableText, custodyPartyRef: nullableText, lastEventType: nullableText, lastEventTime: text, rawValue: nullableText,
 });
-const unitSearchResult = z.object({
+export const unitSearchResult = z.object({
   page: pageOf(unitSearchRow), identifiers: count, units: count, items: count, identifierTypes: count, superseded: count,
-  servedInMilliseconds: count, hasMore: flag, totalIsLowerBound: flag, summaryIsSample: flag,
+  servedInMilliseconds: count, hasMore: flag, totalIsLowerBound: flag, summaryIsSample: flag, continuation: nullableText,
 });
 export type UnitSearchRow = z.infer<typeof unitSearchRow>;
 export type UnitSearchResult = z.infer<typeof unitSearchResult>;
-export interface UnitSearchParams { q?: string | undefined; type?: string | undefined; status?: string | undefined; superseded?: boolean | undefined; document?: string | undefined; sort?: string | undefined; skip?: number | undefined; take?: number | undefined }
+export interface UnitSearchParams { q?: string | undefined; type?: string | undefined; status?: string | undefined; superseded?: boolean | undefined; document?: string | undefined; sort?: string | undefined; dir?: string | undefined; cursor?: string | undefined; skip?: number | undefined; take?: number | undefined }
 
 export const identifierRow = z.object({
   identifierId: text, type: text, scheme: text, rawValue: text, normalisedValue: text, scopeKey: text, issuerPartyRef: nullableText,
@@ -125,7 +125,7 @@ const serialRangeRow = z.object({
   randomised: flag, allocatedToDocumentType: nullableText, allocatedToDocumentId: nullableText, itemId: nullableText,
   reservedAt: text, reservedBy: text, note: nullableText,
 });
-const serialRangeList = z.object({ page: pageOf(serialRangeRow), scheme: text, ranges: count, serialsIssued: count, nextFree: nullableText });
+export const serialRangeList = z.object({ page: pageOf(serialRangeRow), scheme: text, ranges: count, serialsIssued: count, nextFree: nullableText });
 const allocateSerialRange = z.object({
   commandId: text, scheme: text, quantity: count, allocatedTo: documentRef, eventTime: text, legalEntityId: z.optional(text),
   start: maybe(text), randomised: z.optional(flag), itemId: maybe(text), note: maybe(text), confirmedNotModelNumber: z.optional(flag),

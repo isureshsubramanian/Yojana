@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { units, toPage, type UnitSearchResult, type UnitSearchRow } from "../api/units";
-import { DataGrid, ScanInput, StatusBadge, type GridColumn } from "../components";
+import { units, unitSearchResult, type UnitSearchRow } from "../api/units";
+import { DataGrid, ScanInput, StatusBadge, useGridQuery, type GridColumn } from "../components";
 import { isUrlScanFormat } from "../components/scan";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
+import { useSession } from "../session/session";
 import { ErrorNote, Kv, Section, UnitLink } from "./common";
+import { useReferenceNames } from "../corrections/ReferenceFields";
 import { documentLabel, fmtDateTime, humanise, matchSpan, parseDocumentParam, sentence, shortId, statusLabel, statusTone } from "./format";
 
 const PAGE = 50;
@@ -29,12 +31,10 @@ export function Component() {
   const status = params.get("status") ?? "";
   const superseded = params.get("superseded") !== "no";
   const document = params.get("document") ?? "";
-  const page = Math.max(1, Number(params.get("page") ?? "1"));
+  const session = useSession();
   const docRef = useMemo(() => parseDocumentParam(document), [document]);
 
-  const [result, setResult] = useState<UnitSearchResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<unknown>(null);
+  const [commandError, setCommandError] = useState<unknown>(null);
   const [resolution, setResolution] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [scan, setScan] = useState(q);
@@ -43,27 +43,29 @@ export function Component() {
   const set = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(params);
     for (const [k, v] of Object.entries(patch)) { if (v === null || v === "") next.delete(k); else next.set(k, v); }
-    if (!("page" in patch)) next.delete("page");
     setParams(next);
   };
 
-  useEffect(() => {
-    if (!q && !docRef && !type && !status) { setResult(null); return; }
-    const controller = new AbortController();
-    setLoading(true);
-    setError(null);
-    units.search({ q: q || undefined, type: type || undefined, status: status || undefined, superseded, document: docRef ? `${docRef.type}:${docRef.id}` : undefined, skip: (page - 1) * PAGE, take: PAGE }, controller.signal)
-      .then((r) => { setResult(r); setLoading(false); })
-      .catch((e) => { if (!(e instanceof DOMException && e.name === "AbortError")) { setError(e); setLoading(false); } });
-    return () => controller.abort();
-  }, [q, type, status, superseded, docRef, page]);
+  const filters = useMemo(() => {
+    const value = new URLSearchParams();
+    if (q) value.set("q", q); if (type) value.set("type", type); if (status) value.set("status", status);
+    value.set("superseded", String(superseded)); if (docRef) value.set("document", `${docRef.type}:${docRef.id}`);
+    return value;
+  }, [q, type, status, superseded, docRef]);
+  const query = useGridQuery("/api/units/search", unitSearchResult, {
+    gridId: "units-search", userId: session.user.id, defaultSort: { key: "identifier", dir: "asc" }, defaultSize: PAGE,
+    params: filters, paging: "cursor", sortKeys: ["identifier", "status", "last_event"], enabled: !!q || !!docRef || !!type || !!status,
+    pageFacts: value => ({ continuation: value.continuation }),
+  });
+  const result = query.data;
+  const names = useReferenceNames({ items: result?.page.items.map(row => row.itemId) ?? [], parties: result?.page.items.flatMap(row => [row.ownerPartyRef, row.custodyPartyRef]) ?? [], locations: result?.page.items.map(row => row.locationId) ?? [] });
 
   /** Scan-first: the exact lookup runs before any listing; one hit opens the unit. */
   const submit = async (value: string) => {
-    setError(null);
+    setCommandError(null);
     try {
       const parsed = await units.scan(value);
-      if (isUrlScanFormat(parsed.format)) { setError(new Error("This is a web address, not a serial")); return; }
+      if (isUrlScanFormat(parsed.format)) { setCommandError(new Error("This is a web address, not a serial")); return; }
       const lookup = await units.lookup(value, type || undefined);
       setResolution(lookup.resolution);
       if ((lookup.resolution === "exact" || lookup.resolution === "superseded") && lookup.hits.length === 1) {
@@ -72,23 +74,23 @@ export function Component() {
       }
       set({ q: value });
     } catch (e) {
-      setError(e);
+      setCommandError(e);
     }
   };
 
   const columns: GridColumn<UnitSearchRow>[] = [
-    { key: "identifier", label: "Identifier", width: 17, render: (r) => <UnitLink unitId={r.unitId}><Highlight value={r.rawValue ?? r.identifier} q={q} /></UnitLink> },
+    { key: "identifier", label: "Identifier", width: 17, sort: { key: "identifier", defaultDir: "asc" }, render: (r) => <UnitLink unitId={r.unitId}><Highlight value={r.rawValue ?? r.identifier} q={q} /></UnitLink> },
     { key: "type", label: "Type · scheme", width: 15, render: (r) => <>{r.identifierType}<span className="sub">{r.open ? `scheme ${r.scheme}` : `superseded${r.resolvesTo ? ` · resolves to ${r.resolvesTo}` : ""}`}</span></> },
-    { key: "item", label: "Item", width: 14, render: (r) => <><span className="primary">{shortId(r.itemId)}</span><span className="sub">{r.modelVersionId ? `model ${shortId(r.modelVersionId)}` : "item id"}</span></> },
-    { key: "status", label: "Status", width: 13, render: (r) => r.open ? <StatusBadge tone={statusTone(r.lifecycleStatus)}>{statusLabel(r.lifecycleStatus)}</StatusBadge> : <StatusBadge tone="neutral">Superseded</StatusBadge> },
-    { key: "custody", label: "Custody · owner", width: 23, render: (r) => <>{humanise(r.locationKind) || <span className="muted">—</span>}<span className="sub">{r.ownerPartyRef ? `owner ${shortId(r.ownerPartyRef)}` : "no owner recorded"}{r.custodyPartyRef ? ` · with ${shortId(r.custodyPartyRef)}` : ""}</span></> },
-    { key: "last", label: "Last event", width: 18, render: (r) => <>{r.lastEventType ?? "—"}<span className="sub">{fmtDateTime(r.lastEventTime)}</span></> },
+    { key: "item", label: "Item", width: 14, render: (r) => <><span className="primary">{names.item(r.itemId)}</span><span className="sub">{r.modelVersionId ? "assigned model version" : "item"}</span></> },
+    { key: "status", label: "Status", width: 13, sort: { key: "status", defaultDir: "asc" }, render: (r) => r.open ? <StatusBadge tone={statusTone(r.lifecycleStatus)}>{statusLabel(r.lifecycleStatus)}</StatusBadge> : <StatusBadge tone="neutral">Superseded</StatusBadge> },
+    { key: "custody", label: "Custody · owner", width: 23, render: (r) => <>{humanise(r.locationKind) || <span className="muted">—</span>}<span className="sub">{r.ownerPartyRef ? `owner ${names.party(r.ownerPartyRef)}` : "no owner recorded"}{r.custodyPartyRef ? ` · with ${names.party(r.custodyPartyRef)}` : ""}</span></> },
+    { key: "last", label: "Last event", width: 18, sort: { key: "last_event", defaultDir: "desc" }, render: (r) => <>{r.lastEventType ?? "—"}<span className="sub">{fmtDateTime(r.lastEventTime)}</span></> },
   ];
 
-  const rowClick = (r: UnitSearchRow) => openDrawer({ eyebrow: `Selected unit · item ${shortId(r.itemId)}`, title: r.rawValue ?? r.identifier, mono: true }, (
+  const rowClick = (r: UnitSearchRow) => openDrawer({ eyebrow: `Selected unit · ${names.item(r.itemId)}`, title: r.rawValue ?? r.identifier, mono: true }, (
     <>
       <h3>Current state</h3>
-      <Kv rows={[["Lifecycle", statusLabel(r.lifecycleStatus)], ["Disposition", humanise(r.disposition)], ["Custody", humanise(r.locationKind) || "—"], ["Location", r.locationId ? shortId(r.locationId) : "—"], ["Owner", r.ownerPartyRef ? shortId(r.ownerPartyRef) : "—"], ["Identifier", `${r.identifierType} · ${r.scheme}`], ["Open", r.open ? "yes" : `no · resolves to ${r.resolvesTo ?? "—"}`], ["Last event", `${r.lastEventType ?? "—"} · ${fmtDateTime(r.lastEventTime)}`]]} />
+      <Kv rows={[["Lifecycle", statusLabel(r.lifecycleStatus)], ["Disposition", humanise(r.disposition)], ["Custody", humanise(r.locationKind) || "—"], ["Location", r.locationId ? names.location(r.locationId) : "—"], ["Owner", r.ownerPartyRef ? names.party(r.ownerPartyRef) : "—"], ["Identifier", `${r.identifierType} · ${r.scheme}`], ["Open", r.open ? "yes" : `no · resolves to ${r.resolvesTo ?? "—"}`], ["Last event", `${r.lastEventType ?? "—"} · ${fmtDateTime(r.lastEventTime)}`]]} />
       <div className="act"><Link className="btn primary block" to={`/units/${r.unitId}`}>Open unit</Link><Link className="btn block" to={`/units/${r.unitId}#correct`}>Correct identifier…</Link></div>
     </>
   ));
@@ -96,7 +98,7 @@ export function Component() {
   const rowId = (r: UnitSearchRow) => `${r.unitId}:${r.identifierType}:${r.identifier}`;
   const [active, setActive] = useState<string | null>(null);
   const selectedSerials = result ? result.page.items.filter((r) => selected.has(rowId(r))).map((r) => r.rawValue ?? r.identifier) : [];
-  const grid = result ? toPage(result.page) : { rows: [], total: 0, page: 1, pageSize: PAGE, continuation: null };
+  const grid = result ? { rows: result.page.items, total: (query.page - 1) * query.pageSize + result.page.items.length + (result.hasMore ? 1 : 0), page: query.page, pageSize: query.pageSize, continuation: result.continuation, totalIsExact: !result.totalIsLowerBound, hasMore: result.hasMore } : { rows: [], total: 0, page: 1, pageSize: query.pageSize, continuation: null };
   const resultCount = result ? `${result.identifiers.toLocaleString()}${result.totalIsLowerBound ? "+" : ""}` : "";
 
   return (
@@ -131,7 +133,7 @@ export function Component() {
                 <span className="grow" />
                 <span className="hint" id="lookup-help">An exact identifier opens the unit directly, including a superseded one. A prefix lists matches, paged on the server.</span>
               </div>
-              <ErrorNote error={error} />
+              <ErrorNote error={commandError ?? query.error} />
             </div>
           </section>
 
@@ -143,7 +145,9 @@ export function Component() {
               </h2>
               <span className="meta nowrap">{result ? `Served in ${result.servedInMilliseconds} ms` : "Sorted by identifier"}</span>
             </div>
-            <DataGrid columns={columns} page={grid} rowId={rowId} onPage={(p) => set({ page: String(p) })} loading={loading} viewportHeight={560}
+            <DataGrid columns={columns} page={grid} rowId={rowId} onPage={query.onPage} loading={query.loading} viewportHeight={560}
+              gridId="units-search" userId={session.user.id} sort={query.sort} defaultSort={{ key: "identifier", dir: "asc" }} onSort={query.onSort}
+              pageSize={query.pageSize} defaultPageSize={PAGE} onPageSize={query.onPageSize}
               footerNote={result?.totalIsLowerBound ? `${resultCount} results; more available` : undefined}
               emptyText={q || docRef ? "No identifier starts with that." : "Scan or type an identifier to begin."}
               selection={{ selected, onChange: setSelected, label: (r) => r.rawValue ?? r.identifier }}

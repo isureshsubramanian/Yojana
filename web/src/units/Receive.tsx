@@ -13,6 +13,7 @@ import { outcomeTone, pct, sentence, serialFromScan, splitSerials } from "./form
 import { isModelNumberRefusal, ModelNumberConfirmation } from "./ModelNumberConfirmation";
 import type { ApiError } from "../api/client";
 import { ItemField } from "../corrections/ReferenceFields";
+import { useSession } from "../session/session";
 
 interface Captured { n: number; raw: string; serial: string; vendor: string | null; lot: string | null; scan: ScanResult | null; source: "scan" | "typed" | "list"; at: string; errors: string[]; result?: CommissionLineResult | undefined }
 
@@ -23,6 +24,7 @@ const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Receive and commission (P1 screen 3): scan-first capture, GS1 parsing on the server, vendor serial pairing, one set-based commit. */
 export function Component() {
   const actor = useActor();
+  const session = useSession();
   const { value: legalEntities } = useLegalEntities();
   const [legalEntityId, setLegalEntityId] = useState("");
   useEffect(() => { if (legalEntities?.defaultId) setLegalEntityId((current) => current || legalEntities.defaultId!); }, [legalEntities?.defaultId]);
@@ -91,7 +93,7 @@ export function Component() {
   const decide = rows.filter((r) => r.errors.length > 0 || (vendorRequired && !r.vendor));
   const shown = facet === "valid" ? valid : facet === "decide" ? decide : rows;
   const PAGE = 50;
-  const grid = { rows: shown.slice((page - 1) * PAGE, page * PAGE), total: shown.length, page, pageSize: PAGE, continuation: null };
+  const grid = { rows: shown, total: shown.length, page, pageSize: PAGE, continuation: null };
   const ready = GUID.test(itemId) && (valid.length + pending) > 0 && (legalEntities?.entities.length !== 1 ? !!legalEntityId : true) && !busy;
 
   const commit = async (modelNumberConfirmationReason?: string) => {
@@ -113,11 +115,11 @@ export function Component() {
   useModEnter(() => void commit(), !ready);
 
   const columns: GridColumn<Captured>[] = [
-    { key: "n", label: "#", width: 8, numeric: true, muted: true, render: (r) => r.n },
-    { key: "serial", label: "Internal", width: 22, mono: true, render: (r) => r.serial },
-    { key: "vendor", label: "Vendor", width: 20, mono: true, render: (r) => r.vendor ?? <span className="muted">—</span> },
-    { key: "lot", label: "Lot", width: 14, render: (r) => r.lot ?? <span className="muted">—</span> },
-    { key: "validation", label: "Validation", width: 36, render: (r) => r.result
+    { key: "n", label: "#", width: 8, numeric: true, muted: true, sort: { key: "capture", defaultDir: "desc", value: r => r.n }, render: (r) => r.n },
+    { key: "serial", label: "Internal", width: 22, mono: true, sort: { key: "serial", value: r => r.serial }, render: (r) => r.serial },
+    { key: "vendor", label: "Vendor", width: 20, mono: true, sort: { key: "vendor", value: r => r.vendor }, render: (r) => r.vendor ?? <span className="muted">—</span> },
+    { key: "lot", label: "Lot", width: 14, sort: { key: "lot", value: r => r.lot }, render: (r) => r.lot ?? <span className="muted">—</span> },
+    { key: "validation", label: "Validation", width: 36, sort: { key: "validation", value: r => r.result?.outcome ?? (r.errors.length ? "refused" : vendorRequired && !r.vendor ? "pending" : "valid") }, render: (r) => r.result
       ? <StatusBadge tone={outcomeTone(r.result.outcome)}>{r.result.outcome}{r.result.reasons.length ? ` · ${r.result.reasons.join(", ")}` : ""}</StatusBadge>
       : r.errors.length ? <StatusBadge tone="bad">{r.errors.join(" · ")}</StatusBadge>
       : vendorRequired && !r.vendor ? <StatusBadge tone="warn">Valid · vendor serial pending</StatusBadge>
@@ -219,7 +221,8 @@ export function Component() {
               <span className="grow" />
               <span className="status">Newest first</span>
             </div>
-            <DataGrid dense columns={columns} page={grid} rowId={(r) => String(r.n)} onPage={setPage} emptyText="Nothing captured yet. Scan a label or paste a list." viewportHeight={560} onRowClick={rowClick} />
+            <DataGrid dense columns={columns} page={grid} rowId={(r) => String(r.n)} onPage={setPage} emptyText="Nothing captured yet. Scan a label or paste a list." viewportHeight={560} onRowClick={rowClick}
+              gridId="receive-captured" userId={session.user.id} defaultSort={{ key: "capture", dir: "desc" }} defaultPageSize={PAGE} footer={`${shown.length.toLocaleString()} captured rows`} />
           </section>
         </div>
       </main>

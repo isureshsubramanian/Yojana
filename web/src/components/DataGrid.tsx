@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Pager } from "./Pager";
+import { PageSizeSelect } from "./PageSizeSelect";
+import { SortHeader } from "./SortHeader";
+import { gridPreferenceKey, nextGridSort, readGridPreference, writeGridPreference, type GridSort, type SortDirection } from "./gridPreferences";
 import { rowRange } from "./paging";
 import type { PageResult } from "./types";
 import { windowRows } from "./windowing";
@@ -16,6 +19,8 @@ export interface GridColumn<TRow> {
   mono?: boolean;
   /** Visually quiet column. */
   muted?: boolean;
+  /** Declares a sortable column. Complete-list grids also supply its comparable browser value. */
+  sort?: { key: string; defaultDir?: SortDirection; value?: (row: TRow) => string | number | boolean | null };
 }
 
 export interface DataGridProps<TRow> {
@@ -41,6 +46,16 @@ export interface DataGridProps<TRow> {
   onRowClick?: ((row: TRow) => void) | undefined;
   /** The row the drawer currently shows, highlighted. */
   activeRowId?: string | null | undefined;
+  /** Stable screen-and-grid id used for per-user browser preferences. */
+  gridId?: string;
+  userId?: string;
+  sort?: GridSort;
+  defaultSort?: GridSort;
+  onSort?: (sort: GridSort) => void;
+  pageSize?: number;
+  defaultPageSize?: number;
+  pageSizeOptions?: readonly number[];
+  onPageSize?: (size: number) => void;
 }
 
 const ROW_HEIGHT = 44;
@@ -51,22 +66,51 @@ const DENSE_ROW_HEIGHT = 36;
  * never asks for "all". Rows beyond the viewport are windowed so even a 500-row page keeps the DOM small.
  * Selection is reported outward as ids; paging facts come from the page result.
  */
-export function DataGrid<TRow>({ columns, page, rowId, onPage, selection, dense, isHit, viewportHeight = 640, footerNote, footer, emptyText = "Nothing matches.", loading, describedBy, onRowClick, activeRowId }: DataGridProps<TRow>) {
+export function DataGrid<TRow>({ columns, page, rowId, onPage, selection, dense, isHit, viewportHeight = 640, footerNote, footer, emptyText = "Nothing matches.", loading, describedBy, onRowClick, activeRowId,
+  gridId, userId, sort, defaultSort, onSort, pageSize, defaultPageSize = page.pageSize, pageSizeOptions, onPageSize }: DataGridProps<TRow>) {
   const rowHeight = dense ? DENSE_ROW_HEIGHT : ROW_HEIGHT;
   const viewport = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
-  useEffect(() => { viewport.current?.scrollTo({ top: 0 }); setScrollTop(0); }, [page.page, page.rows]);
-  const win = windowRows(page.rows.length, rowHeight, scrollTop, viewportHeight);
-  const slice = page.rows.slice(win.start, win.end);
+  const firstSort = columns.find(column => column.sort)?.sort;
+  const declaredDefault = defaultSort ?? (firstSort ? { key: firstSort.key, dir: firstSort.defaultDir ?? ("asc" as const) } : { key: "", dir: "asc" as const });
+  const preferenceKey = gridId && userId ? gridPreferenceKey(userId, gridId) : null;
+  const [localPreference, setLocalPreference] = useState(() => readGridPreference(preferenceKey ?? "", {
+    sort: declaredDefault,
+    pageSize: defaultPageSize,
+  }, preferenceKey && typeof window !== "undefined" ? window.localStorage : null));
+  const activeSort = sort ?? localPreference.sort;
+  const effectivePageSize = pageSize ?? localPreference.pageSize;
+  const completeList = footer !== undefined && !!gridId;
+  const [completePage, setCompletePage] = useState(1);
+  const screenDefault = declaredDefault.key ? declaredDefault : activeSort;
+  const setSort = (next: GridSort) => {
+    setCompletePage(1);
+    if (onSort) onSort(next);
+    else {
+      const preference = { ...localPreference, sort: next }; setLocalPreference(preference);
+      if (preferenceKey) writeGridPreference(preferenceKey, preference, typeof window === "undefined" ? null : window.localStorage);
+    }
+  };
+  const visibleRows = useMemo(() => {
+    if (footer === undefined || !activeSort.key) return page.rows;
+    const column = columns.find(candidate => candidate.sort?.key === activeSort.key);
+    if (!column?.sort?.value) return page.rows;
+    const value = column.sort.value;
+    return [...page.rows].sort((left, right) => compare(value(left), value(right)) * (activeSort.dir === "asc" ? 1 : -1));
+  }, [activeSort, columns, footer, page.rows]);
+  const displayedRows = completeList ? visibleRows.slice((completePage - 1) * effectivePageSize, completePage * effectivePageSize) : visibleRows;
+  useEffect(() => { viewport.current?.scrollTo({ top: 0 }); setScrollTop(0); }, [completePage, page.page, visibleRows]);
+  const win = windowRows(displayedRows.length, rowHeight, scrollTop, viewportHeight);
+  const slice = displayedRows.slice(win.start, win.end);
   const range = rowRange(page.page, page.pageSize, page.total);
   const continuationPaged = page.totalIsExact === false;
 
-  const allOnPage = selection && page.rows.length > 0 && page.rows.every((r) => selection.selected.has(rowId(r)));
-  const someOnPage = selection && !allOnPage && page.rows.some((r) => selection.selected.has(rowId(r)));
+  const allOnPage = selection && displayedRows.length > 0 && displayedRows.every((r) => selection.selected.has(rowId(r)));
+  const someOnPage = selection && !allOnPage && displayedRows.some((r) => selection.selected.has(rowId(r)));
   const togglePage = () => {
     if (!selection) return;
     const next = new Set(selection.selected);
-    for (const r of page.rows) { if (allOnPage) next.delete(rowId(r)); else next.add(rowId(r)); }
+    for (const r of displayedRows) { if (allOnPage) next.delete(rowId(r)); else next.add(rowId(r)); }
     selection.onChange(next);
   };
   const toggle = (id: string) => {
@@ -91,7 +135,10 @@ export function DataGrid<TRow>({ columns, page, rowId, onPage, selection, dense,
                   <input type="checkbox" aria-label="Select page" checked={!!allOnPage} ref={(el) => { if (el) el.indeterminate = !!someOnPage; }} onChange={togglePage} />
                 </th>
               )}
-              {columns.map((c) => <th key={c.key} className={c.numeric ? "num" : undefined}>{c.label}</th>)}
+              {columns.map((c) => <th key={c.key} className={c.numeric ? "num" : undefined}
+                aria-sort={c.sort ? activeSort.key === c.sort.key ? activeSort.dir === "asc" ? "ascending" : "descending" : "none" : undefined}>
+                {c.sort ? <SortHeader label={c.label} column={c.sort} sort={activeSort} screenDefault={screenDefault} onSort={setSort} /> : c.label}
+              </th>)}
             </tr>
           </thead>
           <tbody>
@@ -119,15 +166,26 @@ export function DataGrid<TRow>({ columns, page, rowId, onPage, selection, dense,
           </tbody>
         </table>
       </div>
-      {footer !== undefined ? <div className="card-footer">{footer}</div> : <div className="card-footer">
+      {footer !== undefined ? <div className="card-footer"><span>{footer}</span>{(onPageSize || gridId) && <span className="grid-page-controls"><PageSizeSelect value={effectivePageSize} defaultSize={defaultPageSize} options={pageSizeOptions}
+        onChange={size => { setCompletePage(1); if (onPageSize) onPageSize(size); else { const preference = { ...localPreference, pageSize: size }; setLocalPreference(preference); if (preferenceKey) writeGridPreference(preferenceKey, preference, typeof window === "undefined" ? null : window.localStorage); } }} />
+        {completeList && <Pager page={completePage} pageSize={effectivePageSize} total={visibleRows.length} onPage={(next) => { setCompletePage(next); onPage(next); }} />}</span>}</div> : <div className="card-footer">
         <span>
           {footerNote && <>{footerNote} · </>}
           Rows {range.from.toLocaleString()}–{range.to.toLocaleString()}{continuationPaged ? page.hasMore ? " · more match" : "" : <> of <strong>{page.total.toLocaleString()}</strong></>}
           {selection && selection.selected.size > 0 && <> · {selection.selected.size.toLocaleString()} selected</>}
         </span>
-        <Pager page={page.page} pageSize={page.pageSize} total={page.total} onPage={onPage}
-          showPageCount={!continuationPaged} hasNext={continuationPaged ? page.hasMore : undefined} showMore={continuationPaged} />
+        <span className="grid-page-controls">{onPageSize && <PageSizeSelect value={pageSize ?? page.pageSize} defaultSize={defaultPageSize} options={pageSizeOptions} onChange={onPageSize} />}
+          <Pager page={page.page} pageSize={page.pageSize} total={page.total} onPage={onPage}
+            showPageCount={!continuationPaged} hasNext={continuationPaged ? page.hasMore : undefined} showMore={continuationPaged} /></span>
       </div>}
     </>
   );
+}
+
+function compare(left: string | number | boolean | null, right: string | number | boolean | null): number {
+  if (left === right) return 0;
+  if (left === null) return -1;
+  if (right === null) return 1;
+  if (typeof left === "number" && typeof right === "number") return left - right;
+  return String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: "base" });
 }

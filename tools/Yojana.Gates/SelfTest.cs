@@ -22,6 +22,7 @@ public static class SelfTest
             results.Add(BudgetPlanted(temp.FullName));
             results.Add(NpmPlanted(temp.FullName));
             results.Add(ClientRulesPlanted(temp.FullName));
+            results.Add(GridRulesPlanted(temp.FullName));
         }
         finally
         {
@@ -29,6 +30,22 @@ public static class SelfTest
         }
 
         return results;
+    }
+
+    private static GateResult GridRulesPlanted(string temp)
+    {
+        var root = Directory.CreateDirectory(Path.Combine(temp, "grid")).FullName;
+        var web = Directory.CreateDirectory(Path.Combine(root, "web", "src")).FullName;
+        var plantedPath = Path.Combine(web, "Planted.tsx");
+        File.WriteAllText(plantedPath, "export const x = <DataGrid columns={[]} page={p} />;\n");
+        var planted = GridMigrationGate.Evaluate(root, new HashSet<string>(), new HashSet<string>());
+        var baseline = GridMigrationGate.Evaluate(root, new HashSet<string> { "web/src/Planted.tsx" }, new HashSet<string>());
+        File.WriteAllText(plantedPath, "useGridQuery(path, schema, options); export const x = <DataGrid columns={[]} page={p} />;\n");
+        var stale = GridMigrationGate.Evaluate(root, new HashSet<string> { "web/src/Planted.tsx" }, new HashSet<string>());
+        var clean = GridMigrationGate.Evaluate(root, new HashSet<string>(), new HashSet<string>());
+        var ok = !planted.Passed && baseline.Passed && !stale.Passed && clean.Passed;
+        return new GateResult("self-test grid migration", ok, ok ? "a new local paging copy fails, a baseline entry passes, and a migrated entry must leave the baseline" : "unexpected outcome",
+            [$"planted: {planted.Summary}", $"baseline: {baseline.Summary}", $"stale: {stale.Summary}", $"clean: {clean.Summary}"]);
     }
 
     private static GateResult LicencePlanted(string temp)

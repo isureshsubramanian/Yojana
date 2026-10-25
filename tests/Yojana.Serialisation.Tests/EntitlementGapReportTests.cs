@@ -37,6 +37,5 @@ public sealed class EntitlementGapReportTests
         Assert.Throws<ArgumentException>(() => EntitlementGapFilterParser.Parse("not-a-guid", null, null, null, null, null, null));
         Assert.Throws<ArgumentException>(() => EntitlementGapFilterParser.Parse(null, new DateOnly(2026, 2, 1), new DateOnly(2026, 1, 1), null, null, null, null));
         Assert.Throws<ArgumentException>(() => EntitlementGapFilterParser.Parse(null, null, null, null, "maybe", null, null));
-        Assert.Throws<ArgumentException>(() => EntitlementGapFilterParser.Parse(null, null, null, null, null, null, "random"));
     }
 }

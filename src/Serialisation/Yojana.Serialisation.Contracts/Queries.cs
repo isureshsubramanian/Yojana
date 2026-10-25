@@ -27,7 +27,7 @@ public sealed record LookupResult(string Query, string Resolution, IReadOnlyList
 public sealed record LookupHit(Guid UnitId, Guid IdentifierId, string IdentifierType, string Scheme, string NormalisedValue, string RawValue, bool Open, Guid? SupersededByIdentifierId, string? ResolvesTo, Guid? ItemId, string LifecycleStatus);
 
 /// <summary>Filters of the prefix search; every filter is optional and the result is server-paged.</summary>
-public sealed record UnitSearch(string? Prefix, string? IdentifierType = null, Guid? ItemId = null, string? LifecycleStatus = null, Guid? OwnerPartyRef = null, Guid? LocationId = null, bool IncludeSuperseded = true, string Sort = "identifier", int Skip = 0, int Take = 50, DocumentRef? Document = null);
+public sealed record UnitSearch(string? Prefix, string? IdentifierType = null, Guid? ItemId = null, string? LifecycleStatus = null, Guid? OwnerPartyRef = null, Guid? LocationId = null, bool IncludeSuperseded = true, string Sort = "identifier", int Skip = 0, int Take = 50, DocumentRef? Document = null, string? Direction = null, string? Cursor = null);
 
 /// <summary>One matching identifier row; <c>Identifier</c> is the normalised value the match ran on, <c>RawValue</c> the string as printed on the label (what screens show).</summary>
 public sealed record UnitSearchRow(Guid UnitId, string Identifier, string IdentifierType, string Scheme, bool Open, string? ResolvesTo, Guid ItemId, Guid? ModelVersionId, string LifecycleStatus, string Disposition, string? LocationKind, Guid? LocationId, Guid? OwnerPartyRef, Guid? CustodyPartyRef, string? LastEventType, DateTime LastEventTime, string? RawValue = null);
@@ -39,7 +39,7 @@ public sealed record UnitSearchRow(Guid UnitId, string Identifier, string Identi
 /// </summary>
 public sealed record UnitSearchResult(Page<UnitSearchRow> Page, int Identifiers, int Units, int Items, int IdentifierTypes,
     int Superseded, long ServedInMilliseconds, bool HasMore = false, bool TotalIsLowerBound = false,
-    bool SummaryIsSample = false);
+    bool SummaryIsSample = false, string? Continuation = null);
 
 public sealed record IdentifierRow(Guid IdentifierId, string Type, string Scheme, string RawValue, string NormalisedValue, string ScopeKey, Guid? IssuerPartyRef, string? Qualifier, DateTime ValidFrom, DateTime? ValidTo, Guid? SupersededByIdentifierId, Guid? SupersedesIdentifierId, string? CorrectionReason, string ActorRef);
 

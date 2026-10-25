@@ -225,14 +225,17 @@ public static class SerialisationEndpoints
         var units = app.MapGroup("/api/units").RequireAuthorization(YojanaPolicy.TenantMember);
         units.MapGet("/lookup", async (string q, string? type, UnitQueries queries, CancellationToken ct) =>
             string.IsNullOrWhiteSpace(q) ? ApiProblem("query_required", "q is required.") : Results.Ok(await queries.LookupAsync(q.Trim(), type, ct)));
-        units.MapGet("/search", async (string? q, string? type, Guid? item, string? status, Guid? owner, Guid? location, bool? superseded, string? sort, int? skip, int? take, string? document, UnitQueries queries, CancellationToken ct) =>
-            Results.Ok(await queries.SearchAsync(new UnitSearch(q, type, item, status, owner, location, superseded ?? true, sort ?? "identifier", Math.Max(0, skip ?? 0), take ?? 50, ParseDocument(document)), ct)));
+        units.MapGet("/search", async (string? q, string? type, Guid? item, string? status, Guid? owner, Guid? location, bool? superseded, string? sort, string? dir, string? cursor, int? skip, int? take, string? document, UnitQueries queries, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await queries.SearchAsync(new UnitSearch(q, type, item, status, owner, location, superseded ?? true, sort ?? "identifier", Math.Max(0, skip ?? 0), take ?? 50, ParseDocument(document), dir, cursor), ct)); }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
+        });
         units.MapGet("/search/export", (string? q, string? type, Guid? item, string? status, Guid? owner,
-            Guid? location, bool? superseded, string? sort, string? document, string? format, HttpContext http,
+            Guid? location, bool? superseded, string? sort, string? dir, string? document, string? format, HttpContext http,
             UnitQueries queries, ITabularExporter exporter, CancellationToken ct) => ListExport<UnitSearchRow>(format,
                 "units", http, exporter, ExistingListExports.OffsetPages<UnitSearchRow>(async (skip, take, token) =>
                     (await queries.SearchAsync(new UnitSearch(q, type, item, status, owner, location,
-                        superseded ?? true, sort ?? "identifier", skip, take, ParseDocument(document)), token)).Page.Items, ct)));
+                        superseded ?? true, sort ?? "identifier", skip, take, ParseDocument(document), dir), token)).Page.Items, ct)));
         units.MapGet("/{unitId:guid}", async (Guid unitId, UnitQueries queries, CancellationToken ct) =>
             await queries.DetailAsync(unitId, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
         units.MapGet("/{unitId:guid}/history", async (Guid unitId, int? skip, int? take, UnitQueries queries, CancellationToken ct) =>
@@ -530,12 +533,15 @@ public static class SerialisationEndpoints
 
         var ranges = app.MapGroup("/api/serial-ranges").RequireAuthorization(YojanaPolicy.TenantMember);
         ranges.MapGet("/schemes", (SerialRangeQueries queries) => Results.Ok(queries.Schemes()));
-        ranges.MapGet("/", async (string scheme, string? status, int? skip, int? take, SerialRangeQueries queries, CancellationToken ct) =>
-            Results.Ok(await queries.ListAsync(scheme, status, Math.Max(0, skip ?? 0), take ?? 50, ct)));
-        ranges.MapGet("/export", (string scheme, string? status, string? format, HttpContext http,
+        ranges.MapGet("/", async (string scheme, string? status, string? sort, string? dir, int? skip, int? take, SerialRangeQueries queries, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await queries.ListAsync(scheme, status, sort, dir, Math.Max(0, skip ?? 0), take ?? 50, ct)); }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
+        });
+        ranges.MapGet("/export", (string scheme, string? status, string? sort, string? dir, string? format, HttpContext http,
             SerialRangeQueries queries, ITabularExporter exporter, CancellationToken ct) => ListExport<SerialRangeRow>(
                 format, "serial-ranges", http, exporter, ExistingListExports.OffsetPages<SerialRangeRow>(async (skip, take, token) =>
-                    (await queries.ListAsync(scheme, status, skip, take, token)).Page.Items, ct)));
+                    (await queries.ListAsync(scheme, status, sort, dir, skip, take, token)).Page.Items, ct)));
         ranges.MapPost("/", (AllocateSerialRange command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<AllocateSerialRangeResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
 
         // Global search (MOD-13): the palette's endpoint; the tier is back office until the portal (P7) adds its principal.
@@ -1061,27 +1067,29 @@ public static class SerialisationEndpoints
         entitlements.MapGet("/requirements/check", async (string documentType, Guid documentId, EntitlementRequirementQueries queries, CancellationToken ct) =>
             Results.Ok(await queries.CheckAsync(documentType, documentId, ct)));
         entitlements.MapGet("/gap-report", async (string? items, DateOnly? saleFrom, DateOnly? saleTo, string? channels, string? dropShip,
-            string? requirementStatus, string? sort, int? skip, int? take, EntitlementGapQueries queries, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            string? requirementStatus, string? sort, string? dir, int? skip, int? take, EntitlementGapQueries queries, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
         {
             try
             {
-                var filters = EntitlementGapFilterParser.Parse(items, saleFrom, saleTo, channels, dropShip, requirementStatus, sort);
+                var filters = EntitlementGapFilterParser.Parse(items, saleFrom, saleTo, channels, dropShip, requirementStatus, sort, dir);
                 await bus.InvokeAsync<EntitlementGapRunResult>(new RunEntitlementGapReport(Guid.NewGuid(), EntitlementGapTrigger.OnDemand, filters),
                     new DeliveryOptions { TenantId = tenant.TenantId.ToString() }, ct);
                 return Results.Ok(await queries.PageAsync(filters, skip ?? 0, take ?? 50, ct));
             }
             catch (ArgumentException ex) { return ApiProblem("filters_invalid", ex.Message); }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
         });
         entitlements.MapGet("/gap-report/runs/latest", async (EntitlementGapQueries queries, CancellationToken ct) =>
             await queries.LastRunAsync(ct) is { } run ? Results.Ok(run) : Results.NotFound());
         entitlements.MapGet("/gap-report/export", async (string? items, DateOnly? saleFrom, DateOnly? saleTo, string? channels, string? dropShip,
-            string? requirementStatus, string? sort, string? format, HttpContext http, EntitlementGapQueries queries,
+            string? requirementStatus, string? sort, string? dir, string? format, HttpContext http, EntitlementGapQueries queries,
             IItemNamePort itemNames, IPartyNamePort partyNames, IMessageBus bus, ITenantContext tenant,
             ITabularExporter exporter, CancellationToken ct) =>
         {
             EntitlementGapFilters filters;
-            try { filters = EntitlementGapFilterParser.Parse(items, saleFrom, saleTo, channels, dropShip, requirementStatus, sort); }
+            try { filters = EntitlementGapFilterParser.Parse(items, saleFrom, saleTo, channels, dropShip, requirementStatus, sort, dir); }
             catch (ArgumentException ex) { return ApiProblem("filters_invalid", ex.Message); }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
             await bus.InvokeAsync<EntitlementGapRunResult>(new RunEntitlementGapReport(Guid.NewGuid(), EntitlementGapTrigger.OnDemand, filters),
                 new DeliveryOptions { TenantId = tenant.TenantId.ToString() }, ct);
             return DirectExport(format, "entitlement-gap-report", http, exporter,
@@ -1347,14 +1355,17 @@ public static class SerialisationEndpoints
             }
         }).RequireAuthorization(YojanaPolicy.TenantAdministrator);
         certificates.MapGet("/", async (string? kind, string? formType, string? status, string? unitSerial,
-            DateTime? issuedFrom, DateTime? issuedTo, int? skip, int? take, CertificateQueries queries, CancellationToken ct) =>
-            Results.Ok(await queries.PageAsync(kind, formType, status, unitSerial, issuedFrom, issuedTo,
-                skip ?? 0, take ?? 50, ct)));
+            DateTime? issuedFrom, DateTime? issuedTo, string? sort, string? dir, int? skip, int? take, CertificateQueries queries, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await queries.PageAsync(kind, formType, status, unitSerial, issuedFrom, issuedTo,
+                skip ?? 0, take ?? 50, ct, sort, dir)); }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
+        });
         certificates.MapGet("/export", (string? kind, string? formType, string? status, string? unitSerial,
-            DateTime? issuedFrom, DateTime? issuedTo, string? format, HttpContext http, CertificateQueries queries,
+            DateTime? issuedFrom, DateTime? issuedTo, string? sort, string? dir, string? format, HttpContext http, CertificateQueries queries,
             ITabularExporter exporter, CancellationToken ct) => ListExport<CertificateListRow>(format, "certificates",
                 http, exporter, ExistingListExports.OffsetPages<CertificateListRow>(async (skip, take, token) =>
-                    (await queries.PageAsync(kind, formType, status, unitSerial, issuedFrom, issuedTo, skip, take, token)).Items, ct)));
+                    (await queries.PageAsync(kind, formType, status, unitSerial, issuedFrom, issuedTo, skip, take, token, sort, dir)).Items, ct)));
         certificates.MapGet("/{certificateId:guid}", async (Guid certificateId, CertificateQueries queries, CancellationToken ct) =>
             await queries.DetailAsync(certificateId, ct) is { } certificate ? Results.Ok(certificate) : Results.NotFound());
         certificates.MapGet("/{certificateId:guid}/rendered", async (Guid certificateId, CertificateQueries queries, CancellationToken ct) =>

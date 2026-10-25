@@ -49,9 +49,20 @@ public sealed class EntitlementGapReportDatabaseTests(SerialisationHostFixture f
             var onlyDrop = await queries.PageAsync(new(ItemIds: [item], SaleFrom: new DateOnly(2026, 5, 1), SaleTo: new DateOnly(2026, 5, 31),
                 Channels: [EpisodeSource.CarrierPod], DropShip: EntitlementGapDropShip.Only), 0, 1, CancellationToken.None);
             Assert.Equal(drop, Assert.Single(onlyDrop.Rows).UnitId);
-            var first = await queries.PageAsync(new(Sort: "sale_date_asc"), 0, 1, CancellationToken.None);
-            var second = await queries.PageAsync(new(Sort: "sale_date_asc"), 1, 1, CancellationToken.None);
+            var first = await queries.PageAsync(new(Sort: "sale_date", Direction: "asc"), 0, 1, CancellationToken.None);
+            var second = await queries.PageAsync(new(Sort: "sale_date", Direction: "asc"), 1, 1, CancellationToken.None);
             Assert.Equal(3, first.Total); Assert.Equal(3, second.Total); Assert.NotEqual(first.Rows[0].UnitId, second.Rows[0].UnitId);
+            foreach (var sort in new[] { "sale_date", "serial", "channel" })
+            foreach (var direction in new[] { "asc", "desc" })
+            {
+                var ids = new List<Guid>();
+                for (var skip = 0; skip < 3; skip++)
+                {
+                    var sorted = await queries.PageAsync(new(Sort: sort, Direction: direction), skip, 1, CancellationToken.None);
+                    ids.Add(Assert.Single(sorted.Rows).UnitId);
+                }
+                Assert.Equal(3, ids.Distinct().Count());
+            }
 
             var run = await RunEntitlementGapReportHandler.Handle(new RunEntitlementGapReport(Guid.NewGuid(), EntitlementGapTrigger.MigrationLoad, new()),
                 queries, scope.ServiceProvider.GetRequiredService<SerialisationDbContext>(),

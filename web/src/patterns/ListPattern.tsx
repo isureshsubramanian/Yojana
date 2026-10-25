@@ -1,25 +1,27 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { DataGrid, KpiStrip, ScanInput, StatusBadge, openSearch, type GridColumn } from "../components";
+import { DataGrid, KpiStrip, ScanInput, StatusBadge, openSearch, useGridState, type GridColumn } from "../components";
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { unitKpis, unitsPage, type UnitRow } from "./fixtures";
 import { Rail } from "../shell/Drawer";
+import { useSession } from "../session/session";
 
 const columns: GridColumn<UnitRow>[] = [
-  { key: "serial", label: "Serial", width: 15, render: (r) => <Link className="serial" to="/patterns/detail">{r.serial}</Link> },
-  { key: "item", label: "Item", width: 15, render: (r) => <><span className="primary">{r.item}</span><span className="sub">{r.itemName}</span></> },
-  { key: "status", label: "Status", width: 14, render: (r) => <StatusBadge tone={r.tone}>{r.status}</StatusBadge> },
+  { key: "serial", label: "Serial", width: 15, sort: { key: "serial" }, render: (r) => <Link className="serial" to="/patterns/detail">{r.serial}</Link> },
+  { key: "item", label: "Item", width: 15, sort: { key: "item" }, render: (r) => <><span className="primary">{r.item}</span><span className="sub">{r.itemName}</span></> },
+  { key: "status", label: "Status", width: 14, sort: { key: "status" }, render: (r) => <StatusBadge tone={r.tone}>{r.status}</StatusBadge> },
   { key: "custody", label: "Custody · owner", width: 21, render: (r) => <>{r.custody}<span className="sub">{r.custodySub}</span></> },
   { key: "warranty", label: "Warranty", width: 12, numeric: true, render: (r) => r.warrantyEnd ?? <span className="muted">—</span> },
-  { key: "last", label: "Last event", width: 18, render: (r) => <>{r.lastEvent}<span className="sub">{r.lastEventAt}</span></> },
+  { key: "last", label: "Last event", width: 18, sort: { key: "last_event", defaultDir: "desc" }, render: (r) => <>{r.lastEvent}<span className="sub">{r.lastEventAt}</span></> },
 ];
 
 /** List pattern: KPI strip, scan-first toolbar, server-paged grid with visible totals, selection rail. */
 export function Component() {
-  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const data = unitsPage(page);
+  const session = useSession();
+  const grid = useGridState("patterns-units", session.user.id, { key: "last_event", dir: "desc" }, 50);
+  const data = unitsPage(grid.page, grid.pageSize);
   return (
     <>
       <main className="content" id="main" tabIndex={-1}>
@@ -42,7 +44,9 @@ export function Component() {
               </div>
               <span className="meta nowrap" id="h-units">Sorted by last event</span>
             </div>
-            <DataGrid columns={columns} page={data} rowId={(r) => r.id} onPage={setPage} selection={{ selected, onChange: setSelected, label: (r) => r.serial }} viewportHeight={560} />
+            <DataGrid columns={columns} page={data} rowId={(r) => r.id} onPage={grid.onPage} selection={{ selected, onChange: setSelected, label: (r) => r.serial }} viewportHeight={560}
+              gridId="patterns-units" userId={session.user.id} sort={grid.sort} defaultSort={{ key: "last_event", dir: "desc" }} onSort={grid.onSort}
+              pageSize={grid.pageSize} defaultPageSize={50} onPageSize={grid.onPageSize} footerNote={`Sorted by ${grid.sort.key.replace("_", " ")}`} />
           </section>
         </div>
       </main>

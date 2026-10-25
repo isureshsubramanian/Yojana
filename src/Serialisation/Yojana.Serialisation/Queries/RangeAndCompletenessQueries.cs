@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Commands;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Identity;
 
 namespace Yojana.Serialisation.Queries;
@@ -10,16 +12,22 @@ namespace Yojana.Serialisation.Queries;
 /// <summary>Serial ranges of a scheme for the allocation screen, server-paged, newest first.</summary>
 public sealed class SerialRangeQueries(SerialisationDbContext db, ISerialSchemeSource schemes, ITenantContext tenant)
 {
+    private static readonly SortedPage<SerialRange, Guid> Pages = new("reserved", row => row.RangeId,
+        new SortColumn<SerialRange, long>("range", row => row.StartOrdinal ?? long.MinValue),
+        new SortColumn<SerialRange, DateTime>("reserved", row => row.ReservedAt, SortDirection.Descending),
+        new SortColumn<SerialRange, string>("status", row => row.Status));
+
     public IReadOnlyList<SerialSchemeRow> Schemes() => schemes.All().Select(s => new SerialSchemeRow(s.Code, s.IdentifierType, s.Prefix, s.BlockFormat, s.Separator, s.CounterDigits, s.Format(s.BlockFor(DateTime.UtcNow), 1))).ToList();
 
-    public async Task<SerialRangeList> ListAsync(string scheme, string? status, int skip, int take, CancellationToken cancellationToken)
+    public async Task<SerialRangeList> ListAsync(string scheme, string? status, string? sort, string? direction,
+        int skip, int take, CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
-        take = Math.Clamp(take, 1, 200);
+        var paging = Pages.Parse(sort, direction, take, skip: skip);
         var query = db.SerialRanges.AsNoTracking().Where(r => r.TenantId == tenantId && r.Scheme == scheme);
         if (status is not null) query = query.Where(r => r.Status == status);
         var total = await query.CountAsync(cancellationToken);
-        var rows = await query.OrderByDescending(r => r.ReservedAt).Skip(skip).Take(take)
+        var rows = await paging.Apply(query).Take(paging.Take)
             .Select(r => new SerialRangeRow(r.RangeId, r.Scheme, r.StartValue, r.EndValue, r.Count, r.CommissionedCount, r.Status, r.RandomisedListRef != null, r.AllocatedToDocumentType, r.AllocatedToDocumentId, r.ItemId, r.ReservedAt, r.ReservedBy, r.Note)).ToListAsync(cancellationToken);
         var all = db.SerialRanges.AsNoTracking().Where(r => r.TenantId == tenantId && r.Scheme == scheme);
         var issued = await all.SumAsync(r => (long)r.Count, cancellationToken);
@@ -34,7 +42,7 @@ public sealed class SerialRangeQueries(SerialisationDbContext db, ISerialSchemeS
             nextFree = definition.FormatOrdinal(maxEnd is { } e ? e + 1 : blockStart);
         }
 
-        return new SerialRangeList(new Page<SerialRangeRow>(rows, total, skip, take), scheme, await all.CountAsync(cancellationToken), issued, nextFree);
+        return new SerialRangeList(new Page<SerialRangeRow>(rows, total, paging.Skip, paging.Take), scheme, await all.CountAsync(cancellationToken), issued, nextFree);
     }
 }
 

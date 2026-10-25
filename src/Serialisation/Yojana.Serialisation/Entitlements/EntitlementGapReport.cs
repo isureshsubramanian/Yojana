@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
@@ -13,10 +14,8 @@ namespace Yojana.Serialisation.Entitlements;
 
 public static class EntitlementGapFilterParser
 {
-    private static readonly HashSet<string> Sorts = ["sale_date_desc", "sale_date_asc", "item", "serial", "channel"];
-
     public static EntitlementGapFilters Parse(string? items, DateOnly? saleFrom, DateOnly? saleTo, string? channels,
-        string? dropShip, string? requirementStatuses, string? sort)
+        string? dropShip, string? requirementStatuses, string? sort, string? direction = null)
     {
         var itemIds = Split(items).Select(value => Guid.TryParse(value, out var id) ? id : throw new ArgumentException($"'{value}' is not an item id.", nameof(items))).Distinct().ToList();
         var channelList = Split(channels).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -25,9 +24,8 @@ public static class EntitlementGapFilterParser
         if (drop is not (EntitlementGapDropShip.Include or EntitlementGapDropShip.Only or EntitlementGapDropShip.Exclude))
             throw new ArgumentException("dropShip must be include, only or exclude.", nameof(dropShip));
         if (saleFrom > saleTo) throw new ArgumentException("saleFrom must not be after saleTo.", nameof(saleFrom));
-        var order = string.IsNullOrWhiteSpace(sort) ? "sale_date_desc" : sort.Trim().ToLowerInvariant();
-        if (!Sorts.Contains(order)) throw new ArgumentException($"Sort '{sort}' is not known.", nameof(sort));
-        return new(itemIds, saleFrom, saleTo, channelList, drop, statuses, order);
+        return new(itemIds, saleFrom, saleTo, channelList, drop, statuses,
+            string.IsNullOrWhiteSpace(sort) ? "sale_date" : sort.Trim().ToLowerInvariant(), direction ?? "desc");
     }
 
     private static string[] Split(string? value) => (value ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
@@ -68,24 +66,21 @@ public sealed class EntitlementGapQueries(SerialisationDbContext db, ITenantCont
         public string? MissingInput { get; init; }
     }
 
+    private static readonly SortedPage<Gap, Guid> Pages = new("sale_date", row => row.UnitId,
+        new SortColumn<Gap, DateTime>("sale_date", row => row.SaleDate, SortDirection.Descending),
+        new SortColumn<Gap, string>("serial", row => row.Serial ?? ""),
+        new SortColumn<Gap, string>("channel", row => row.Channel));
+
     public async Task<EntitlementGapPage> PageAsync(EntitlementGapFilters filters, int skip, int take, CancellationToken cancellationToken)
     {
-        skip = Math.Max(0, skip); take = Math.Clamp(take, 1, 500);
+        var paging = Pages.Parse(filters.Sort, filters.Direction, take, skip: skip);
         var query = ApplyFilters(Query(), filters);
         // Two statements: the count, then the page. Both are set-based; there is no per-unit query.
         var total = await query.CountAsync(cancellationToken);
-        IOrderedQueryable<Gap> ordered = filters.Sort switch
-        {
-            "sale_date_asc" => query.OrderBy(x => x.SaleDate).ThenBy(x => x.UnitId),
-            "item" => query.OrderBy(x => x.ItemId).ThenByDescending(x => x.SaleDate).ThenBy(x => x.UnitId),
-            "serial" => query.OrderBy(x => x.Serial).ThenBy(x => x.UnitId),
-            "channel" => query.OrderBy(x => x.Channel).ThenByDescending(x => x.SaleDate).ThenBy(x => x.UnitId),
-            _ => query.OrderByDescending(x => x.SaleDate).ThenBy(x => x.UnitId),
-        };
-        var page = await ordered.Skip(skip).Take(take).ToListAsync(cancellationToken);
+        var page = await paging.Apply(query).Take(paging.Take).ToListAsync(cancellationToken);
         var rows = page.Select(x => new EntitlementGapRow(x.UnitId, x.Serial, x.ItemId, x.SaleDate,
             x.CustomerPartyRef, x.Channel, x.DropShip, x.RequirementStatus, x.MissingInput)).ToList();
-        return new(rows, total, skip, take);
+        return new(rows, total, paging.Skip, paging.Take);
     }
 
     public async Task<IReadOnlyList<EntitlementGapCount>> CountsAsync(EntitlementGapFilters filters, CancellationToken cancellationToken) =>

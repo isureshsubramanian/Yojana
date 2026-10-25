@@ -21,7 +21,8 @@ public sealed record EntitlementGapFilters(
     IReadOnlyList<string>? Channels = null,
     string DropShip = EntitlementGapDropShip.Include,
     IReadOnlyList<string>? RequirementStatuses = null,
-    string Sort = "sale_date_desc");
+    string Sort = "sale_date",
+    string Direction = "desc");
 
 public sealed record EntitlementGapRow(Guid UnitId, string? PrimarySerial, Guid ItemId, DateTime SaleDate,
     Guid CustomerPartyRef, string Channel, bool DropShip, string? RequirementStatus, string? MissingInput);

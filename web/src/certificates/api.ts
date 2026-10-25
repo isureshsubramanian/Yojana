@@ -30,9 +30,10 @@ const saveDraftResultSchema = z.object({ version: z.nullable(certificateTemplate
 const certificateTemplatePreviewSchema = z.object({ bytes: text, mediaType: text, validation: templateValidationSchema });
 const sampleUnitRequestSchema = z.object({ sampleUnitId: text });
 const problemSchema = z.object({ detail: z.optional(text), title: z.optional(text), rule: z.optional(text) });
+export const certificateListPageSchema = pageSchema(certificateListRowSchema);
 
 export const certificateApi = {
-  list: (params: URLSearchParams, signal?: AbortSignal) => apiParsed(`/api/certificates/?${params}`, pageSchema(certificateListRowSchema), { signal }),
+  list: (params: URLSearchParams, signal?: AbortSignal) => apiParsed(`/api/certificates/?${params}`, certificateListPageSchema, { signal }),
   detail: (id: string, signal?: AbortSignal) => apiParsed(`/api/certificates/${id}`, certificateDetailSchema, { signal }),
   chain: (unitId: string, signal?: AbortSignal) => apiParsed(`/api/certificates/units/${unitId}/versions`, certificateVersionChainSchema, { signal }),
   templates: (signal?: AbortSignal) => apiParsed("/api/certificate-templates/", z.array(certificateTemplateSummarySchema), { signal }),

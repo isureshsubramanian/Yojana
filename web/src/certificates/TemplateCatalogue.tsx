@@ -5,6 +5,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import type { PageResult } from "../components/types";
 import { useTenantTime } from "../components/tenantTime";
 import { usePeople } from "../people/people";
+import { useSession } from "../session/session";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { Rail } from "../shell/Drawer";
 import { openDrawer, updateDrawer } from "../shell/drawerStore";
@@ -17,6 +18,7 @@ import "./certificates.css";
 
 export function Component() {
   const tenantTime = useTenantTime();
+  const session = useSession();
   const [certificates, setCertificates] = useState<CertificateTemplateSummary[]>([]);
   const [labels, setLabels] = useState<LabelTemplateSummary[]>([]);
   const [tab, setTab] = useState<"all" | "certificates" | "labels">("all");
@@ -35,20 +37,20 @@ export function Component() {
   }, []);
 
   const certificateColumns = useMemo<GridColumn<CertificateTemplateSummary>[]>(() => [
-    { key: "name", label: "Template", width: 30, render: (row) => <>{row.name}<span className="sub">{row.builtIn ? "built-in starter · copy to customise" : row.code}</span></> },
-    { key: "document", label: "Document", width: 18, render: (row) => <>{humanise(row.documentKind)}<span className="sub">{formLabel(row.formType)}</span></> },
-    { key: "version", label: "Version", width: 10, render: (row) => `v${row.latestVersion}` },
-    { key: "effective", label: "Effective", width: 18, render: (row) => row.effectiveFrom ? <>since {tenantTime.date(row.effectiveFrom)}{row.effectiveTo && <span className="sub">to {tenantTime.date(row.effectiveTo)}</span>}</> : <span className="muted">not active</span> },
-    { key: "approval", label: "Approval", width: 14, render: (row) => <StatusBadge tone={statusTone(row.latestStatus)}>{humanise(row.latestStatus)}</StatusBadge> },
-    { key: "issued", label: "Issued with it", width: 10, numeric: true, render: (row) => row.issuedCount.toLocaleString() },
+    { key: "name", label: "Template", width: 30, sort: { key: "name", value: row => row.name }, render: (row) => <>{row.name}<span className="sub">{row.builtIn ? "built-in starter · copy to customise" : row.code}</span></> },
+    { key: "document", label: "Document", width: 18, sort: { key: "document", value: row => `${row.documentKind}:${row.name}` }, render: (row) => <>{humanise(row.documentKind)}<span className="sub">{formLabel(row.formType)}</span></> },
+    { key: "version", label: "Version", width: 10, sort: { key: "version", defaultDir: "desc", value: row => row.latestVersion }, render: (row) => `v${row.latestVersion}` },
+    { key: "effective", label: "Effective", width: 18, sort: { key: "effective", defaultDir: "desc", value: row => row.effectiveFrom }, render: (row) => row.effectiveFrom ? <>since {tenantTime.date(row.effectiveFrom)}{row.effectiveTo && <span className="sub">to {tenantTime.date(row.effectiveTo)}</span>}</> : <span className="muted">not active</span> },
+    { key: "approval", label: "Approval", width: 14, sort: { key: "approval", value: row => row.latestStatus }, render: (row) => <StatusBadge tone={statusTone(row.latestStatus)}>{humanise(row.latestStatus)}</StatusBadge> },
+    { key: "issued", label: "Issued with it", width: 10, numeric: true, sort: { key: "issued", defaultDir: "desc", value: row => row.issuedCount }, render: (row) => row.issuedCount.toLocaleString() },
   ], [tenantTime]);
   const labelColumns = useMemo<GridColumn<LabelTemplateSummary>[]>(() => [
-    { key: "name", label: "Template", width: 30, render: (row) => <>{row.name}<span className="sub">{humanise(row.appliesTo)} · {row.appliesTo === "item_family" ? itemFamilies.name(row.appliesToValue) : humanise(row.appliesToValue)}</span></> },
-    { key: "layout", label: "Applies to", width: 18, render: (row) => row.appliesTo === "item_family" ? itemFamilies.name(row.appliesToValue) : humanise(row.appliesToValue) },
-    { key: "version", label: "Version", width: 10, render: (row) => row.activeVersion ? `v${row.activeVersion} · active` : row.latestVersion ? `v${row.latestVersion}` : "—" },
-    { key: "effective", label: "Effective", width: 18, render: (row) => row.effectiveFrom ? <>since {tenantTime.date(row.effectiveFrom)}{row.effectiveTo && <span className="sub">to {tenantTime.date(row.effectiveTo)}</span>}</> : <span className="muted">not active</span> },
-    { key: "review", label: "Legal review", width: 14, render: (row) => row.activeVersion ? <StatusBadge tone="ok">Active</StatusBadge> : <StatusBadge tone={row.legalReview && !row.legalReviewedBy ? "warn" : statusTone(row.latestStatus)}>{row.legalReview ? row.legalReviewedBy ? "Signed" : "Needed" : "Not needed"}</StatusBadge> },
-    { key: "printed", label: "Printed with it", width: 10, numeric: true, render: (row) => row.printedCount.toLocaleString() },
+    { key: "name", label: "Template", width: 30, sort: { key: "name", value: row => row.name }, render: (row) => <>{row.name}<span className="sub">{humanise(row.appliesTo)} · {row.appliesTo === "item_family" ? itemFamilies.name(row.appliesToValue) : humanise(row.appliesToValue)}</span></> },
+    { key: "layout", label: "Applies to", width: 18, sort: { key: "applies_to", value: row => `${row.appliesTo}:${row.appliesToValue}` }, render: (row) => row.appliesTo === "item_family" ? itemFamilies.name(row.appliesToValue) : humanise(row.appliesToValue) },
+    { key: "version", label: "Version", width: 10, sort: { key: "version", defaultDir: "desc", value: row => row.activeVersion ?? row.latestVersion ?? 0 }, render: (row) => row.activeVersion ? `v${row.activeVersion} · active` : row.latestVersion ? `v${row.latestVersion}` : "—" },
+    { key: "effective", label: "Effective", width: 18, sort: { key: "effective", defaultDir: "desc", value: row => row.effectiveFrom }, render: (row) => row.effectiveFrom ? <>since {tenantTime.date(row.effectiveFrom)}{row.effectiveTo && <span className="sub">to {tenantTime.date(row.effectiveTo)}</span>}</> : <span className="muted">not active</span> },
+    { key: "review", label: "Legal review", width: 14, sort: { key: "review", value: row => row.latestStatus }, render: (row) => row.activeVersion ? <StatusBadge tone="ok">Active</StatusBadge> : <StatusBadge tone={row.legalReview && !row.legalReviewedBy ? "warn" : statusTone(row.latestStatus)}>{row.legalReview ? row.legalReviewedBy ? "Signed" : "Needed" : "Not needed"}</StatusBadge> },
+    { key: "printed", label: "Printed with it", width: 10, numeric: true, sort: { key: "printed", defaultDir: "desc", value: row => row.printedCount }, render: (row) => row.printedCount.toLocaleString() },
   ], [itemFamilies, tenantTime]);
   const certPage: PageResult<CertificateTemplateSummary> = { rows: certificates, total: certificates.length, page: 1, pageSize: Math.max(1, certificates.length), continuation: null };
   const labelPage: PageResult<LabelTemplateSummary> = { rows: labels, total: labels.length, page: 1, pageSize: Math.max(1, labels.length), continuation: null };
@@ -87,10 +89,10 @@ export function Component() {
         </div>
         <ErrorNote error={error} />
         {tab !== "labels" && <section className="card" aria-labelledby="certificate-templates-heading"><div className="card-header"><h2 id="certificate-templates-heading">Certificates</h2><span className="meta">one engine · form-specific layouts</span></div>
-          <DataGrid columns={certificateColumns} page={certPage} rowId={(row) => `certificate:${row.templateId}`} onPage={() => undefined} onRowClick={openCertificate} activeRowId={active} emptyText="No certificate templates." />
+          <DataGrid columns={certificateColumns} page={certPage} rowId={(row) => `certificate:${row.templateId}`} onPage={() => undefined} onRowClick={openCertificate} activeRowId={active} emptyText="No certificate templates." gridId="certificate-templates" userId={session.user.id} defaultSort={{ key: "document", dir: "asc" }} footer="Complete template catalogue" />
         </section>}
         {tab !== "certificates" && <section className="card" aria-labelledby="label-templates-heading"><div className="card-header"><h2 id="label-templates-heading">Labels</h2><span className="meta">read-only here · edit in the label designer</span></div>
-          <DataGrid columns={labelColumns} page={labelPage} rowId={(row) => `label:${row.templateId}`} onPage={() => undefined} onRowClick={openLabel} activeRowId={active} emptyText="No label templates." />
+          <DataGrid columns={labelColumns} page={labelPage} rowId={(row) => `label:${row.templateId}`} onPage={() => undefined} onRowClick={openLabel} activeRowId={active} emptyText="No label templates." gridId="label-templates" userId={session.user.id} defaultSort={{ key: "name", dir: "asc" }} footer="Complete template catalogue" />
         </section>}
       </div>
     </main>
