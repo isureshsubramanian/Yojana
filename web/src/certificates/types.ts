@@ -20,7 +20,8 @@ export const certificateReprintSchema = z.object({ reprintId: text, version: cou
 export type CertificateReprint = z.infer<typeof certificateReprintSchema>;
 export const brandingSnapshotSchema = z.object({ profile: text, displayName: nullableText, mark: nullableText, logoAssetId: nullableText, logoSha256: nullableText, logoMediaType: nullableText });
 export type BrandingSnapshot = z.infer<typeof brandingSnapshotSchema>;
-export const certificateDetailSchema = z.extend(certificateListRowSchema, {
+// The detail record has no issuedBy (only list rows carry it), so it is left out rather than required.
+export const certificateDetailSchema = z.extend(z.omit(certificateListRowSchema, { issuedBy: true }), {
   templateVersionId: text, asBuiltRevisionId: nullableText, payload: jsonObject, payloadHash: text,
   supersedesCertificateId: nullableText, supersedeReason: nullableText, triggeringEventId: text,
   issuer: z.object({ name: text, registrationCode: nullableText, address: nullableText }),

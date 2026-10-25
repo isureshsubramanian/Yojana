@@ -8,6 +8,7 @@ import { rmaListResult, warrantyReplacementDetail } from "../src/returns/types.t
 import { replacementLinkPage } from "../src/replacements/types.ts";
 import { refurbishmentWorkOrderPage } from "../src/refurbishments/types.ts";
 import { recoveryAnswer, recoveryPolicy } from "../src/recovery/types.ts";
+import { certificateDetailSchema } from "../src/certificates/types.ts";
 
 // ADR-0019 batch 2: the Serialisation screens' schemas accept the shapes the C# records write (nullable → null, every
 // field present) and refuse a response that lacks a field the screen reads. Values are demo-format, not real data.
@@ -81,4 +82,17 @@ test("the recovery policy accepts only the rules the server accepts, and an answ
   assert.equal(policy.success, false);
   const answer = { commandId: id(13), approvedAmount: 120.5, eventTime: "2026-10-23T12:00:00Z", vendorReference: null, vendorNote: null, actorRef: "" };
   assert.equal(checkedBody(recoveryAnswer, answer), answer);
+});
+
+test("a certificate detail parses without issuedBy, which only list rows carry (found on the dev app)", () => {
+  const detail = {
+    certificateId: id(20), unitId: id(6), itemId: id(7), primarySerial: "SRV-R760-000812", documentKind: "warranty_certificate",
+    formType: "warranty", version: 1, trackingNumber: "WC-2026-000318", status: "issued", issuedAt: "2026-10-22T10:00:00Z",
+    issuedAtDisplay: "22 Oct 2026, 10:00", provenance: "issued_on_release", templateVersionId: id(21), asBuiltRevisionId: null,
+    payload: { serial: "SRV-R760-000812" }, payloadHash: "sha256:00", supersedesCertificateId: null, supersedeReason: null,
+    triggeringEventId: id(22), issuer: { name: "Demo Hardware Ltd", registrationCode: null, address: null }, owner: null,
+    branding: { profile: "default", displayName: null, mark: null, logoAssetId: null, logoSha256: null, logoMediaType: null },
+    language: "en-GB", unknowns: [], evidence: [], signatures: [], reprints: [], redaction: null,
+  };
+  assert.equal(z.parse(certificateDetailSchema, detail).trackingNumber, "WC-2026-000318");
 });
