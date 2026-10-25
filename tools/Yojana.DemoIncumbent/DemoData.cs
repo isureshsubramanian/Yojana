@@ -35,6 +35,17 @@ internal static class DemoData
         new("YD-3DPRINT", "Aster Forge 3D printer"),
         new("YD-KIT-ACC", "Server installation accessory kit", false),
         new("YD-CABLE", "Fibre patch cable", false),
+        new("YD-RAIL", "Rail kit, tool-less", false),
+        new("YD-PWR-CBL", "Power cable C13-C14, 2 m", false),
+    ];
+
+    /// <summary>
+    /// The twin chassis bill of materials: serialised parts and, for the full-BOM certificate (ADR-0020 Q7), two
+    /// non-serialised ones, so one serial-managed parent carries a mixed BOM.
+    /// </summary>
+    public static IReadOnlyList<(string ItemCode, int Quantity)> TwinChassisBom { get; } =
+    [
+        ("YD-NODE-TWIN", 2), ("YD-NVME", 4), ("YD-HDD", 2), ("YD-PSU", 2), ("YD-RAIL", 1), ("YD-PWR-CBL", 2),
     ];
 
     public static IReadOnlyList<DemoPartner> Partners { get; } =

@@ -94,9 +94,13 @@ internal sealed class ServiceLayerClient : IAsyncDisposable
         return new(key, numberField is null ? null : Scalar(document.RootElement, numberField));
     }
 
-    public async Task PatchAsync(string path, object body, CancellationToken cancellationToken)
+    public async Task PatchAsync(string path, object body, CancellationToken cancellationToken,
+        bool replaceCollections = false)
     {
-        using var response = await client.PatchAsync(Absolute(path), Content(body), cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Patch, Absolute(path)) { Content = Content(body) };
+        // Without this header a PATCH merges child lines; with it the sent lines become the whole collection.
+        if (replaceCollections) request.Headers.Add("B1S-ReplaceCollectionsOnPatch", "true");
+        using var response = await client.SendAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, "PATCH " + path, cancellationToken);
     }
 

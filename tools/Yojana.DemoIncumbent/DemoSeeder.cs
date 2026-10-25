@@ -268,11 +268,25 @@ internal sealed partial class DemoSeeder(ServiceLayerClient client)
             unsupported.Add($"{code}: the supported API does not expose bills of material");
             return;
         }
+        var lines = DemoData.TwinChassisBom
+            .Select(line => new { ItemCode = line.ItemCode, Quantity = line.Quantity, Warehouse = context.Warehouse })
+            .ToArray();
         var found = await client.FindOneAsync("ProductTrees",
-            "TreeCode eq " + ServiceLayerClient.Quote(code), cancellationToken, "TreeCode");
+            "TreeCode eq " + ServiceLayerClient.Quote(code), cancellationToken, "TreeCode,ProductTreeLines");
         if (found is not null)
         {
-            TrackExisting("ProductTrees", code, null, [], existing);
+            var present = found.Value.TryGetProperty("ProductTreeLines", out var current)
+                ? current.EnumerateArray().Select(line => line.GetProperty("ItemCode").GetString()).ToHashSet()
+                : [];
+            if (DemoData.TwinChassisBom.All(line => present.Contains(line.ItemCode)))
+            {
+                TrackExisting("ProductTrees", code, null, [], existing);
+                return;
+            }
+            // A tree seeded before the full-BOM lines existed: send the whole line list so the result is exact.
+            await client.PatchAsync("ProductTrees(" + ServiceLayerClient.Quote(code) + ")",
+                new { ProductTreeLines = lines }, cancellationToken, replaceCollections: true);
+            TrackCreated("ProductTrees", code + " (lines added)", null, [], created);
             return;
         }
         await client.PostAsync("ProductTrees", new
@@ -281,13 +295,7 @@ internal sealed partial class DemoSeeder(ServiceLayerClient client)
             TreeType = "iProductionTree",
             Quantity = 1,
             Warehouse = context.Warehouse,
-            ProductTreeLines = new[]
-            {
-                new { ItemCode = "YD-NODE-TWIN", Quantity = 2, Warehouse = context.Warehouse },
-                new { ItemCode = "YD-NVME", Quantity = 4, Warehouse = context.Warehouse },
-                new { ItemCode = "YD-HDD", Quantity = 2, Warehouse = context.Warehouse },
-                new { ItemCode = "YD-PSU", Quantity = 2, Warehouse = context.Warehouse },
-            },
+            ProductTreeLines = lines,
         }, "TreeCode", null, cancellationToken);
         TrackCreated("ProductTrees", code, null, [], created);
     }
