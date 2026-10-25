@@ -1,0 +1,47 @@
+.developer-split, .developer-doc-split { display: grid; grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); gap: var(--gap); align-items: start; }
+.developer-doc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gap); }
+.developer-copy, .developer-secret { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.developer-copy > span, .developer-secret code { min-width: 0; overflow-wrap: anywhere; }
+.developer-secret { padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.developer-secret code { flex: 1; }
+.developer-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.developer-checks { display: grid; gap: 8px; }
+.developer-event-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-height: 290px; overflow: auto; padding: 2px; }
+.developer-event-picker small { display: block; color: var(--text-3); margin-top: 2px; }
+.developer-retention .card-body { padding-block: 12px; }
+.developer-inline-form { display: flex; align-items: end; justify-content: space-between; gap: 24px; }
+.developer-inline-form .field { width: min(420px, 100%); }
+.developer-inline-form .form-actions { position: static; margin: 0; padding: 0; border: 0; background: none; }
+.developer-input-suffix { display: flex; align-items: center; gap: 8px; }
+.developer-input-suffix .input { width: 130px; }
+.developer-break { overflow-wrap: anywhere; }
+.developer-delivery-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.developer-delivery-filters .field.compact { margin: 0; width: auto; }
+.developer-delivery-filters .select { min-width: 220px; }
+.developer-delivery-filters input[type="date"] { width: 150px; }
+.developer-code { margin: 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text-1); font: 12px/1.55 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.developer-code-scroll { max-height: 520px; overflow: auto; white-space: pre; }
+.developer-tabs button { appearance: none; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-2); padding: 10px 12px; font: inherit; cursor: pointer; }
+.developer-tabs button[aria-current="page"] { color: var(--accent); border-bottom-color: var(--accent); }
+.developer-scope-list { list-style: none; margin: 0; padding: 0; }
+.developer-scope-list li { display: grid; grid-template-columns: minmax(170px, .7fr) 1.3fr; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.developer-scope-list li:last-child { border-bottom: 0; }
+.developer-operation .card-header h2 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.developer-operation .card-header code { overflow-wrap: anywhere; }
+.developer-steps { margin: 0; padding-left: 22px; line-height: 1.65; }
+.developer-catalogue { display: grid; grid-template-columns: minmax(250px, .8fr) minmax(0, 2.2fr); gap: var(--gap); align-items: start; }
+.developer-event-list { max-height: 700px; overflow: auto; }
+.developer-event-list button { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border: 0; border-bottom: 1px solid var(--rule); background: transparent; color: var(--text-1); text-align: left; cursor: pointer; }
+.developer-event-list button[aria-pressed="true"] { background: var(--row-selected); color: var(--accent); }
+.row-actions { display: flex; justify-content: flex-end; gap: 4px; }
+
+@media (max-width: 1100px) {
+  .developer-event-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .developer-doc-split, .developer-split { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .developer-doc-grid, .developer-catalogue { grid-template-columns: 1fr; }
+  .developer-event-picker { grid-template-columns: 1fr; }
+  .developer-inline-form { align-items: stretch; flex-direction: column; }
+  .developer-delivery-filters .segmented { overflow-x: auto; max-width: 100%; }
+}

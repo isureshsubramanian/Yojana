@@ -11,4 +11,6 @@ public sealed record ApiClientView(string Id, string Name, IReadOnlyList<string>
     string? RevokedBy, DateTime? LastUsedAt);
 public sealed record ApiClientCreated(ApiClientView Client, string Secret);
 public sealed record ApiClientSecretRotated(string ClientId, string Secret, DateTime PreviousSecretExpiresAt);
-public sealed record ApiClientPage(IReadOnlyList<ApiClientView> Items, string? Next);
+public sealed record ApiClientSummary(int Active, int Sandbox, int Revoked, int SecretsOlderThanOneYear,
+    DateTime? LastUsedAt);
+public sealed record ApiClientPage(IReadOnlyList<ApiClientView> Items, string? Next, ApiClientSummary Summary);

@@ -9,6 +9,7 @@ using Yojana.Developer.PublicApi;
 using System.Security.Claims;
 using Yojana.Developer.Contracts;
 using Yojana.Developer.Delivery;
+using Yojana.Developer.Events;
 using Yojana.Developer.Webhooks;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Security;
@@ -27,15 +28,22 @@ public static class DeveloperEndpoints
 
     public static IEndpointRouteBuilder MapDeveloperEndpoints(this IEndpointRouteBuilder app)
     {
-        var screens = app.MapGroup(ScreensPrefix).RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        var screens = app.MapGroup(ScreensPrefix).RequireAuthorization(YojanaPolicy.TenantAdministrator)
+            .AddEndpointFilter<DeveloperCommandRefusalFilter>();
         // P14-B
         screens.MapApiClientEndpoints();
+        screens.MapGet("/catalogue", () => Results.Ok(PublicEventCatalogue.Read()));
         app.MapPublicApiEndpoints();
         app.MapGet(PublicPrefix + "/openapi.json", PublicOpenApi.DocumentAsync)
             .RequireAuthorization(PublicApiAuthentication.DocumentationPolicy)
             .WithSummary("Download the public API v1 OpenAPI document.");
         // P14-A: tenant-administrator webhook management and delivery log API.
         var webhooks = screens.MapGroup("/webhooks");
+        webhooks.MapGet("/settings", (DeveloperWebhookSettingsService service, CancellationToken ct) =>
+            service.GetAsync(ct));
+        webhooks.MapPut("/settings", (UpdateWebhookSettingsRequest request, ClaimsPrincipal user,
+            HttpContext http, DeveloperWebhookSettingsService service, CancellationToken ct) =>
+            service.UpdateAsync(request, Actor(user), Request(http), ct));
         webhooks.MapGet("/", (string? after, int? take, WebhookSubscriptionService service,
             CancellationToken ct) => service.ListAsync(after, take, ct));
         webhooks.MapGet("/{id:guid}", async (Guid id, WebhookSubscriptionService service,
