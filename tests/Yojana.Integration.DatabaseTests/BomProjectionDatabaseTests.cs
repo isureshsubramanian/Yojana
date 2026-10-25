@@ -8,8 +8,10 @@ using Yojana.Integration.Connectors.CX02;
 using Yojana.Integration.Connectors.CX04;
 using Yojana.Integration.Contracts;
 using Yojana.Integration.Data;
+using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Gateway;
 using Yojana.Serialisation.Certificates;
+using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.DatabaseTests;
@@ -163,6 +165,61 @@ public sealed class BomProjectionDatabaseTests(IntegrationHostFixture fixture)
                         ? ReleaseRecordBomContent.SerialisedOnly : ReleaseRecordBomContent.FullBom), default));
             Assert.Equal("full_bom_needs_erp_bom", exception.Rule);
         }
+    }
+
+    [DatabaseFact]
+    public async Task Backfill_gives_an_older_cx01_connection_the_bom_capability_and_retranslates_trees_skipped_as_unsupported()
+    {
+        // Found 2026-10-26 on the first live read: the connection predated P7-T15, had no BomUpserted capability,
+        // and every tree was completed as unsupported. Other messages and other connectors are left alone.
+        var tenant = await fixture.NewTenantAsync("bomcap");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.CreateVersion7());
+        var other = await fixture.AddConnectionAsync(tenant, Guid.CreateVersion7(), Cx02Capabilities.ConnectorCode);
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        await db.ConnectionCapabilities.Where(row => row.ConnectionId == connection
+            && row.CanonicalMessage == nameof(BomUpserted)).ExecuteDeleteAsync();
+        var tree = SkippedAsUnsupported(tenant, connection, "ProductTrees", "YD-SRV-2U", nameof(BomUpserted));
+        var item = SkippedAsUnsupported(tenant, connection, "Items", "YD-CPU-32C", nameof(ItemUpserted));
+        db.InboundMessages.AddRange(tree.Message, item.Message);
+        db.ExceptionTasks.AddRange(tree.Task, item.Task);
+        await db.SaveChangesAsync();
+
+        await db.Database.ExecuteSqlRawAsync(Migrations.P7T15BomCapabilityBackfill.BackfillSql);
+        await db.Database.ExecuteSqlRawAsync(Migrations.P7T15BomCapabilityBackfill.BackfillSql);
+
+        var capabilities = await db.ConnectionCapabilities.AsNoTracking()
+            .Where(row => row.CanonicalMessage == nameof(BomUpserted))
+            .ToDictionaryAsync(row => row.ConnectionId, row => row.SupportLevel);
+        Assert.Equal(CapabilitySupport.Native, capabilities[connection]);
+        Assert.Equal(CapabilitySupport.Unsupported, capabilities[other]);
+        var messages = await db.InboundMessages.AsNoTracking().ToDictionaryAsync(row => row.InboundMessageId);
+        Assert.Equal(InboundTranslationStatus.Pending, messages[tree.Message.InboundMessageId].TranslationStatus);
+        Assert.Null(messages[tree.Message.InboundMessageId].TranslatedAt);
+        Assert.Equal(InboundTranslationStatus.Completed, messages[item.Message.InboundMessageId].TranslationStatus);
+        Assert.Equal([item.Message.InboundMessageId],
+            await db.ExceptionTasks.AsNoTracking().Select(row => row.InboundMessageId).ToListAsync());
+    }
+
+    private (InboundMessage Message, IntegrationExceptionTask Task) SkippedAsUnsupported(TenantId tenant,
+        Guid connection, string entity, string externalId, string messageType)
+    {
+        var at = fixture.Clock.UtcNow.AddHours(-1);
+        var message = new InboundMessage
+        {
+            TenantId = tenant, InboundMessageId = Guid.CreateVersion7(), MessageId = Guid.CreateVersion7(),
+            ConnectionId = connection, ConnectorCode = "CX01", ErpEntity = entity, ErpExternalId = externalId,
+            ErpChangeMarker = "hash", MarkerKind = "content_hash", ContractVersion = "1.0", MessageType = messageType,
+            CaptureMode = "poll", RawPayload = "{}", CanonicalMessage = "{}", OccurredAt = at, ObservedAt = at,
+            AcceptedAt = at, IsLatest = true, TranslationStatus = InboundTranslationStatus.Completed, TranslatedAt = at,
+        };
+        return (message, new IntegrationExceptionTask
+        {
+            TenantId = tenant, ExceptionTaskId = Guid.CreateVersion7(), ConnectionId = connection,
+            InboundMessageId = message.InboundMessageId, Kind = "unsupported_inbound",
+            SubjectRef = $"{entity}:{externalId}", Detail = $"{messageType} is unsupported by this connection.",
+            Status = "open", CreatedAt = at,
+        });
     }
 
     private static BomUpserted Bom(string parent, DateTimeOffset at, params BomUpsertedLine[] lines) =>
