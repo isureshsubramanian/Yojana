@@ -19,6 +19,8 @@ export interface Page<T> { items: T[]; total: number; skip: number; take: number
 export const pageOf = <T extends z.ZodMiniType>(item: T) => z.object({ items: z.array(item), total: count, skip: count, take: count });
 export const documentRef = z.object({ type: text, id: text, line: maybe(count) });
 export type DocumentRef = z.infer<typeof documentRef>;
+/** The same shape inside a request body: fields a caller adds are passed on. */
+export const documentRefRequest = z.looseObject(documentRef.def.shape);
 
 const lookupHit = z.object({
   unitId: text, identifierId: text, identifierType: text, scheme: text, normalisedValue: text, rawValue: text, open: flag,
@@ -41,28 +43,28 @@ export type UnitSearchRow = z.infer<typeof unitSearchRow>;
 export type UnitSearchResult = z.infer<typeof unitSearchResult>;
 export interface UnitSearchParams { q?: string | undefined; type?: string | undefined; status?: string | undefined; superseded?: boolean | undefined; document?: string | undefined; sort?: string | undefined; skip?: number | undefined; take?: number | undefined }
 
-const identifierRow = z.object({
+export const identifierRow = z.object({
   identifierId: text, type: text, scheme: text, rawValue: text, normalisedValue: text, scopeKey: text, issuerPartyRef: nullableText,
   qualifier: nullableText, validFrom: text, validTo: nullableText, supersededByIdentifierId: nullableText,
   supersedesIdentifierId: nullableText, correctionReason: nullableText, actorRef: text,
 });
-const episodeRow = z.object({
+export const episodeRow = z.object({
   episodeId: text, kind: text, partyRef: nullableText, partyType: nullableText, locationId: nullableText, locationKind: nullableText,
   reason: nullableText, source: nullableText, confidence: nullableText, validFrom: text, validTo: nullableText,
   openingDocument: z.nullable(documentRef), closingDocument: z.nullable(documentRef), customerPoRef: nullableText,
   customerItemRef: nullableText, dueBack: nullableText,
 });
-const asBuiltRow = z.object({
+export const asBuiltRow = z.object({
   linkId: text, slot: nullableText, relation: text, childUnitId: nullableText, childSerial: nullableText, childItemId: nullableText,
   childLotId: nullableText, quantity: nullableCount, releaseStatus: nullableText, throughPhantomItemId: nullableText,
   installedAt: text, removedAt: nullableText,
 });
-const historyRow = z.object({
+export const historyRow = z.object({
   eventId: text, seq: count, eventType: text, eventTime: text, recordedTime: text, bizStep: nullableText, disposition: nullableText,
   locationId: nullableText, actorRef: text, document: z.nullable(documentRef), attributes: nullableText,
 });
-const buildRecordRow = z.object({ buildRecordId: text, version: count, releasedAt: text, payloadHash: text, releaseSignatureRef: nullableText });
-const unitDetail = z.object({
+export const buildRecordRow = z.object({ buildRecordId: text, version: count, releasedAt: text, payloadHash: text, releaseSignatureRef: nullableText });
+export const unitDetail = z.object({
   unitId: text, lifecycleStatus: text, origin: text, serialisationPoint: text, retentionClass: text, historyDepth: text,
   lotId: nullableText, expiryDate: nullableText, derivedFromUnitId: nullableText, mergedIntoUnitId: nullableText, itemId: text,
   modelVersionId: nullableText, disposition: text, conditionGrade: nullableText, locationId: nullableText, locationKind: nullableText,
@@ -91,7 +93,7 @@ const identifierInput = z.looseObject({ type: text, rawValue: text, issuerPartyR
 const commissionLine = z.looseObject({ identifiers: z.array(identifierInput), clientReference: maybe(text), lotId: maybe(text), expiryDate: maybe(text) });
 const commissionUnits = z.looseObject({
   commandId: text, itemId: text, origin: text, lines: z.array(commissionLine), eventTime: text, legalEntityId: z.optional(text),
-  document: maybe(documentRef), locationId: maybe(text), locationKind: maybe(text), source: maybe(text),
+  document: maybe(documentRefRequest), locationId: maybe(text), locationKind: maybe(text), source: maybe(text),
   skipInvalidLines: z.optional(flag), brandIsOurs: maybe(flag), confirmedNotModelNumber: z.optional(flag),
   modelNumberConfirmationReason: maybe(text),
 });
@@ -127,7 +129,7 @@ const serialRangeRow = z.object({
 });
 const serialRangeList = z.object({ page: pageOf(serialRangeRow), scheme: text, ranges: count, serialsIssued: count, nextFree: nullableText });
 const allocateSerialRange = z.looseObject({
-  commandId: text, scheme: text, quantity: count, allocatedTo: documentRef, eventTime: text, legalEntityId: z.optional(text),
+  commandId: text, scheme: text, quantity: count, allocatedTo: documentRefRequest, eventTime: text, legalEntityId: z.optional(text),
   start: maybe(text), randomised: z.optional(flag), itemId: maybe(text), note: maybe(text), confirmedNotModelNumber: z.optional(flag),
   modelNumberConfirmationReason: maybe(text),
 });
@@ -141,7 +143,7 @@ export type SerialRangeList = z.infer<typeof serialRangeList>;
 export type AllocateSerialRange = z.infer<typeof allocateSerialRange>;
 export type AllocateSerialRangeResult = z.infer<typeof allocateSerialRangeResult>;
 
-const completenessQuery = z.looseObject({ serials: maybe(texts), selectionId: maybe(text), document: maybe(documentRef), effectiveAt: maybe(text), skip: z.optional(count), take: z.optional(count) });
+const completenessQuery = z.looseObject({ serials: maybe(texts), selectionId: maybe(text), document: maybe(documentRefRequest), effectiveAt: maybe(text), skip: z.optional(count), take: z.optional(count) });
 const completenessSlot = z.object({
   slot: text, expectedItemCode: text, expectedItemId: text, outcome: text, capturedSerial: nullableText, capturedUnitId: nullableText,
   capturedItemId: nullableText,
@@ -160,12 +162,12 @@ export type CompletenessRow = z.infer<typeof completenessRow>;
 export type CompletenessResult = z.infer<typeof completenessResult>;
 
 export const selectionSource = z.looseObject({
-  kind: text, document: maybe(documentRef), partyRef: maybe(text), itemId: maybe(text), from: maybe(text), to: maybe(text),
+  kind: text, document: maybe(documentRefRequest), partyRef: maybe(text), itemId: maybe(text), from: maybe(text), to: maybe(text),
   eventType: maybe(text), serials: maybe(texts), scheme: maybe(text), rangeStart: maybe(text), rangeEnd: maybe(text),
 });
 const resolveSelectionSetResult = z.object({ selectionId: text, resolved: count, unknown: texts, rejected: texts, source: selectionSource });
 const bulkOperationArguments = z.looseObject({
-  eventTime: text, actorRef: text, legalEntityId: z.optional(text), sourceDocument: documentRef, reason: maybe(text), note: maybe(text),
+  eventTime: text, actorRef: text, legalEntityId: z.optional(text), sourceDocument: documentRefRequest, reason: maybe(text), note: maybe(text),
   extra: maybe(z.record(text, text)),
 });
 const unitOutcome = z.object({ unitId: text, serial: nullableText, outcome: text, reason: nullableText, detail: nullableText });
