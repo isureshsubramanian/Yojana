@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router";
-import { ApiError } from "../api/client";
-import { api } from "../api/client";
+import * as z from "zod/mini";
+import { apiParsed, ApiError } from "../api/client";
 import type { Session } from "../api/types";
 import { PasswordRules, usePasswordRules } from "../security/PasswordRules";
 import { BareFrame } from "../shell/Frame";
@@ -30,7 +30,7 @@ export function Component() {
   }, [token]);
   useEffect(() => {
     if (!invitation?.accountExists) return;
-    void api<Session>("/api/auth/me").then(() => setSignedIn(true)).catch(() => setSignedIn(false));
+    void apiParsed("/api/auth/me", z.unknown()).then(() => setSignedIn(true)).catch(() => setSignedIn(false));
   }, [invitation]);
 
   const choosePassword = async (event: FormEvent) => {

@@ -65,7 +65,7 @@ test("password hints follow the company's rules and tick as each one is met", ()
 });
 
 test("the rules read posts its token in the body and every set-password screen uses it", () => {
-  assert.match(api, /"\/api\/auth\/password-rules", \{ method: "POST", body: whose/);
+  assert.match(api, /"\/api\/auth\/password-rules", passwordRuleSet, \{ method: "POST", body: whose/);
   assert.match(reset, /usePasswordRules\(token \? \{ reset: token \}/);
   assert.match(source("pages/AcceptInvitation.tsx"), /usePasswordRules\(token \? \{ invitation: token \}/);
   assert.match(source("security/PasswordChangeForm.tsx"), /usePasswordRules\(\{\}\)/);

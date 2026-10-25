@@ -1,7 +1,7 @@
 import { Link, useLoaderData } from "react-router";
 import { useEffect, useState } from "react";
-import { api } from "../api/client";
-import type { Overview, OverviewCell, OverviewPanel, RailSection } from "../api/types";
+import { apiParsed } from "../api/client";
+import { overview, type Overview, type OverviewCell, type OverviewPanel, type RailSection } from "../api/types";
 import { useSession } from "../session/session";
 import { Icon } from "../shell/Icons";
 import { KpiStrip, ScanInput, Shortcut, openSearch } from "../components";
@@ -14,7 +14,7 @@ import type { ErpChangeMyWorkView } from "../integration/erpChangeTypes";
 import { useLegalEntities } from "../api/legalEntities";
 
 export function loader({ request }: { request: Request }) {
-  return api<Overview>("/api/shell/overview", { signal: request.signal });
+  return apiParsed("/api/shell/overview", overview, { signal: request.signal });
 }
 
 function greeting(date: Date): string {

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { api } from "../api/client";
+import * as z from "zod/mini";
+import { apiParsed } from "../api/client";
 import { useSession } from "../session/session";
 import { tenantZoneAbbreviation } from "./tenantTimeFormat";
 
-interface TenantTimeZoneResponse { tenantTimeZone: string | null }
+// Only the zone is read here; the settings screen checks the rest of this reply with its own schema.
+const tenantTimeZoneResponse = z.object({ tenantTimeZone: z.nullable(z.string()) });
 
 const zones = new Map<string, string>();
 
@@ -16,7 +18,7 @@ export function useTenantTime(): TenantTimeFormatter {
     const cached = zones.get(tenant);
     if (cached) { setZone(cached); return; }
     const controller = new AbortController();
-    api<TenantTimeZoneResponse>("/api/settings/time-zone", { signal: controller.signal })
+    apiParsed("/api/settings/time-zone", tenantTimeZoneResponse, { signal: controller.signal })
       .then((result) => { const next = result.tenantTimeZone ?? "UTC"; zones.set(tenant, next); setZone(next); })
       .catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setZone("UTC"); });
     return () => controller.abort();

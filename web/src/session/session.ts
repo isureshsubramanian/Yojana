@@ -1,6 +1,6 @@
 import { redirect, useRouteLoaderData } from "react-router";
-import { api, ApiError } from "../api/client";
-import type { Session } from "../api/types";
+import { apiParsed, ApiError } from "../api/client";
+import { session as sessionSchema, type Session } from "../api/types";
 
 export const ROOT_ROUTE_ID = "root";
 
@@ -9,7 +9,7 @@ export async function requireSession({ request }: { request: Request }): Promise
   const url = new URL(request.url);
   let session: Session;
   try {
-    session = await api<Session>("/api/auth/me", { signal: request.signal });
+    session = await apiParsed("/api/auth/me", sessionSchema, { signal: request.signal });
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
       const next = url.pathname === "/" ? "" : `?next=${encodeURIComponent(url.pathname + url.search)}`;

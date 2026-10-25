@@ -1,6 +1,7 @@
 import { useState, type KeyboardEvent } from "react";
 import { useNavigate, useRevalidator } from "react-router";
-import { api } from "../api/client";
+import * as z from "zod/mini";
+import { apiParsed } from "../api/client";
 import { Shortcut } from "../components/Shortcut";
 import { initials, roleLabel, useSession } from "../session/session";
 import { BareFrame } from "../shell/Frame";
@@ -17,7 +18,7 @@ export function Component() {
     setBusy(true);
     setError(null);
     try {
-      await api("/api/auth/select-tenant", { method: "POST", body: { tenantCode: code } });
+      await apiParsed("/api/auth/select-tenant", z.unknown(), { method: "POST", body: { tenantCode: code } });
       await revalidator.revalidate();
       navigate("/", { replace: true });
     } catch {

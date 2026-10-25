@@ -1,5 +1,6 @@
 import { createElement, Fragment, useEffect, useRef, useState } from "react";
-import { api } from "../api/client";
+import * as z from "zod/mini";
+import { apiParsed } from "../api/client";
 import { usePeople } from "../people/people";
 import { createPresenceHeartbeat, PresenceChipList } from "./presenceCore";
 import type { PresenceClient, PresenceEnvironment, PresenceHeartbeat, PresenceMode, PresenceUser } from "./presenceCore";
@@ -7,7 +8,9 @@ import type { PresenceClient, PresenceEnvironment, PresenceHeartbeat, PresenceMo
 export type { PresenceMode, PresenceUser } from "./presenceCore";
 export { PresenceChipList, createPresenceHeartbeat } from "./presenceCore";
 
-interface PresenceResponse { users: PresenceUser[] }
+// The annotation keeps the schema and presenceCore's PresenceUser in step.
+const presenceUser: z.ZodMiniType<PresenceUser> = z.object({ userId: z.string(), mode: z.enum(["viewing", "editing"]), since: z.string() });
+const presenceResponse = z.object({ users: z.array(presenceUser) });
 
 function listen(target: Document | Window, event: string, callback: () => void): () => void {
   target.addEventListener(event, callback);
@@ -25,7 +28,7 @@ const browserEnvironment: PresenceEnvironment = {
 
 const presenceClient: PresenceClient = {
   async heartbeat(documentType, documentId, mode) {
-    return (await api<PresenceResponse>("/api/presence/heartbeat", {
+    return (await apiParsed("/api/presence/heartbeat", presenceResponse, {
       method: "POST", body: { documentType, documentId, mode },
     })).users;
   },

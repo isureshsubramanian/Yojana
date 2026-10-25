@@ -16,11 +16,11 @@ export function toBase64Url(buffer: ArrayBuffer): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-type Descriptor = { type: "public-key"; id: string; transports?: string[] };
-export interface CreationOptionsJson { challenge: string; user: { id: string; name: string; displayName: string }; excludeCredentials?: Descriptor[]; [key: string]: unknown }
-export interface RequestOptionsJson { challenge: string; allowCredentials?: Descriptor[]; [key: string]: unknown }
+type Descriptor = { type: "public-key"; id: string; transports?: string[] | undefined };
+export interface CreationOptionsJson { challenge: string; user: { id: string; name: string; displayName: string }; excludeCredentials?: Descriptor[] | null | undefined; [key: string]: unknown }
+export interface RequestOptionsJson { challenge: string; allowCredentials?: Descriptor[] | null | undefined; [key: string]: unknown }
 
-const descriptors = (list: Descriptor[] | undefined) => (list ?? []).map((item) => ({ ...item, id: fromBase64Url(item.id) })) as PublicKeyCredentialDescriptor[];
+const descriptors = (list: Descriptor[] | null | undefined) => (list ?? []).map((item) => ({ ...item, id: fromBase64Url(item.id) })) as PublicKeyCredentialDescriptor[];
 
 export function creationOptions(json: CreationOptionsJson): PublicKeyCredentialCreationOptions {
   return { ...json, challenge: fromBase64Url(json.challenge), user: { ...json.user, id: fromBase64Url(json.user.id) }, excludeCredentials: descriptors(json.excludeCredentials) } as unknown as PublicKeyCredentialCreationOptions;

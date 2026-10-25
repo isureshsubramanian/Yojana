@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useRouteLoaderData } from "react-router";
-import { api } from "../api/client";
+import * as z from "zod/mini";
+import { apiParsed } from "../api/client";
 import type { Session } from "../api/types";
 import { ROOT_ROUTE_ID, initials, roleLabel } from "../session/session";
 import { ModeMenuItems } from "../theme/ModeMenuItems";
@@ -117,7 +118,7 @@ function UserMenu({ session }: { session: Session }) {
   }, [open]);
   const primaryRole = session.roles[0] ? roleLabel(session.roles[0]) : "Signed in";
   const signOut = async () => {
-    await api<void>("/api/auth/sign-out", { method: "POST" });
+    await apiParsed("/api/auth/sign-out", z.unknown(), { method: "POST" });
     navigate("/sign-in", { replace: true });
   };
   return (

@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
-import { api } from "../api/client";
+import * as z from "zod/mini";
+import { apiParsed } from "../api/client";
 import { useSession } from "../session/session";
 import { createNameStore, personLabel, type NameStore } from "./peopleStore";
+
+// Display names keyed by the actor reference sent; a reference the server cannot resolve is simply absent.
+const peopleNames = z.object({ names: z.record(z.string(), z.string()) });
 
 // One store per tenant: the server resolves only members of the selected tenant, so answers are not shared across them.
 const stores = new Map<string, NameStore>();
@@ -9,7 +13,7 @@ const stores = new Map<string, NameStore>();
 function storeFor(tenant: string): NameStore {
   let store = stores.get(tenant);
   if (!store) {
-    store = createNameStore(async (references) => (await api<{ names: Record<string, string> }>("/api/people/names", { method: "POST", body: { references } })).names);
+    store = createNameStore(async (references) => (await apiParsed("/api/people/names", peopleNames, { method: "POST", body: { references } })).names);
     stores.set(tenant, store);
   }
   return store;

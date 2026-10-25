@@ -1,11 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { api, ApiError } from "../api/client";
-import type { Session } from "../api/types";
+import * as z from "zod/mini";
+import { apiParsed, ApiError } from "../api/client";
+import { session, type Session } from "../api/types";
 import { Shortcut } from "../components/Shortcut";
 import { passkeyApi } from "../security/passkeyApi";
 import { passkeyFirst, rememberPasskeyFirst } from "../security/passkeyHint";
-import { secondStepApi, type EnrolmentStart, type PendingSecondStep } from "../security/secondStepApi";
+import { pendingSecondStep, secondStepApi, type EnrolmentStart, type PendingSecondStep } from "../security/secondStepApi";
 import { cancelled, passkeysSupported } from "../security/webauthn";
 import { BareFrame } from "../shell/Frame";
 import { Icon } from "../shell/Icons";
@@ -29,7 +30,7 @@ export function Component() {
   const [pending, setPending] = useState<PendingSecondStep | null>(null); const [error, setError] = useState<string | null>(null); const [busy, setBusy] = useState(false); const [waiting, setWaiting] = useState(false);
   const [passwordForm, setPasswordForm] = useState(() => !(passkeyFirst() && passkeysSupported()));
   const finish = (session: Session) => { void passkeyApi.account().then((account) => rememberPasskeyFirst(account.allowed && account.passwordless && account.passkeys.length > 0)).catch(() => undefined); const next = params.get("next"); navigate(session.passwordChangeRequired ? "/change-password" : session.tenant ? (next && next.startsWith("/") ? next : "/") : "/tenants", { replace: true }); };
-  const submit = async (e: FormEvent) => { e.preventDefault(); setBusy(true); setError(null); try { const result = await api<Session | PendingSecondStep>("/api/auth/sign-in", { method: "POST", body: { email, password } }); if (isPending(result)) setPending(result); else finish(result); } catch (err) { setError(err instanceof ApiError && err.status === 401 ? "That email and password do not match an active account." : "Sign-in is unavailable right now. Try again in a moment."); } finally { setBusy(false); } };
+  const submit = async (e: FormEvent) => { e.preventDefault(); setBusy(true); setError(null); try { const result = await apiParsed("/api/auth/sign-in", z.union([pendingSecondStep, session]), { method: "POST", body: { email, password } }); if (isPending(result)) setPending(result); else finish(result); } catch (err) { setError(err instanceof ApiError && err.status === 401 ? "That email and password do not match an active account." : "Sign-in is unavailable right now. Try again in a moment."); } finally { setBusy(false); } };
   const withPasskey = async () => { setWaiting(true); setError(null); try { const session = await passkeyApi.signIn("passwordless"); rememberPasskeyFirst(true); finish(session); } catch (reason) { if (reason instanceof ApiError && reason.title === "passkey_not_allowed") { rememberPasskeyFirst(false); setPasswordForm(true); } setError(passkeyError(reason)); setWaiting(false); } };
   const usePassword = () => { setPasswordForm(true); setWaiting(false); setError(null); };
   return <BareFrame><div className="auth">{pending ? <SecondStep pending={pending} onComplete={finish} /> : waiting ? <PasskeyWaiting onCancel={usePassword} /> : <section className="card" aria-labelledby="h-signin"><div className="card-body">

@@ -1,5 +1,17 @@
-import { api, ApiError } from "../../api/client";
+import * as z from "zod/mini";
+import { apiParsed, ApiError } from "../../api/client";
 import type { SearchResponse } from "../types";
+
+// The palette and the pattern fixtures share SearchResponse; the annotation keeps this schema and that type in step.
+const metadataField = z.object({ label: z.string(), value: z.nullable(z.string()), mono: z.boolean() });
+const resultMetadata = z.object({ eyebrow: z.string(), title: z.string(), titleMono: z.boolean(), subtitle: z.nullable(z.string()),
+  fields: z.array(metadataField), actions: z.array(z.object({ label: z.string(), href: z.string(), primary: z.boolean() })), note: z.nullable(z.string()) });
+const searchResult = z.object({ id: z.string(), type: z.string(), href: z.string(), title: z.string(), titleMono: z.boolean(),
+  matches: z.array(z.object({ start: z.number(), length: z.number() })), subtitle: z.string(), relevance: z.number(), reason: z.string(),
+  metadata: z.nullable(resultMetadata) });
+const searchResponse: z.ZodMiniType<SearchResponse> = z.object({ query: z.string(), tookMs: z.number(),
+  scopes: z.array(z.object({ id: z.string(), label: z.string(), count: z.number() })),
+  groups: z.array(z.object({ label: z.string(), results: z.array(searchResult) })), openDirectly: z.nullable(z.string()) });
 
 export type SearchOutcome = { kind: "results"; response: SearchResponse } | { kind: "unavailable" } | { kind: "error"; message: string };
 
@@ -11,7 +23,7 @@ export async function runSearch(query: string, scope: string | null, signal: Abo
   const params = new URLSearchParams({ q: query });
   if (scope) params.set("scope", scope);
   try {
-    const response = await api<SearchResponse>(`/api/search?${params.toString()}`, { signal });
+    const response = await apiParsed(`/api/search?${params.toString()}`, searchResponse, { signal });
     return { kind: "results", response };
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) {

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { api } from "../api/client";
+import { apiParsed, checkedBody } from "../api/client";
 import { DataGrid, FindBar, KpiStrip, StatusBadge, type GridColumn } from "../components";
 import { useReferenceNames } from "../corrections/ReferenceFields";
+import { referenceNamesRequest, referenceNamesResponse } from "../corrections/referenceSchemas";
 import { MAX_REFERENCE_NAMES, type PartyReferenceLabel } from "../corrections/referenceStore";
 import { campaignApi } from "../campaigns/api";
 import type { CampaignListRow } from "../campaigns/types";
@@ -110,7 +111,7 @@ export function Component() {
       const exportParties: Record<string, PartyReferenceLabel> = {};
       const partyIds = [...new Set(all.flatMap((row) => [row.claimantPartyRef, row.settlementPartyRef]))];
       for (let start = 0; start < partyIds.length; start += MAX_REFERENCE_NAMES) {
-        const resolved = await api<{ parties: Record<string, PartyReferenceLabel> }>("/api/serialisation/reference-names", { method: "POST", body: { items: [], parties: partyIds.slice(start, start + MAX_REFERENCE_NAMES), documents: [] } });
+        const resolved = await apiParsed("/api/serialisation/reference-names", referenceNamesResponse, { method: "POST", body: checkedBody(referenceNamesRequest, { items: [], parties: partyIds.slice(start, start + MAX_REFERENCE_NAMES), documents: [], locations: [] }) });
         Object.assign(exportParties, resolved.parties);
       }
       const partyName = (id: string) => exportParties[id]?.name ?? exportParties[id]?.code ?? "Name unavailable";
