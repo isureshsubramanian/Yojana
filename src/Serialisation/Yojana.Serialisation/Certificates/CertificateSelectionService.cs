@@ -33,9 +33,9 @@ public sealed class CertificateSelectionService(
     CertificateVersioningEngine versions,
     ReleaseRecordIssuePointSettings issuePoints,
     ReleaseRecordIssuePolicy issuePolicy,
+    CertificateCopyService copies,
     ICertificateRenderer renderer,
     ICertificateBundleRenderer bundleRenderer,
-    IUnitEventWriter events,
     IDbContextOutbox<SerialisationDbContext> outbox,
     CertificateRunOptions options,
     ICertificateRunChunkObserver chunks)
@@ -78,7 +78,7 @@ public sealed class CertificateSelectionService(
     {
         if (commandId == Guid.Empty) throw new CommandRefusedException("command_id_required", "A command id is required.");
         if (string.IsNullOrWhiteSpace(actorRef)) throw new CommandRefusedException("actor_required", "The authenticated actor is required.");
-        if (string.IsNullOrWhiteSpace(reason)) throw new CommandRefusedException("reprint_reason_required", "One reprint reason is required for the run.");
+        reason = CertificateCopyService.ReprintReason(reason);
         Validate(documentKind, formType, language, reprintOnly);
         if (!reprintOnly && issuerEntityId == Guid.Empty)
             throw new CommandRefusedException("issuer_entity_required", "An issuing legal entity is required.");
@@ -208,7 +208,7 @@ public sealed class CertificateSelectionService(
             : await db.CertificateInstances.Where(row => row.TenantId == tenant.TenantId
                     && certificateIds.Contains(row.CertificateId))
                 .ToDictionaryAsync(row => row.CertificateId, cancellationToken);
-        var reprintIds = chunk.Select(row => Deterministic(commandId, row.UnitId, "reprint")).ToList();
+        var reprintIds = chunk.Select(row => CertificateCopyService.Deterministic(commandId, row.UnitId)).ToList();
         List<Guid> logged = reprintIds.Count == 0
             ? []
             : await db.ReprintLogs.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
@@ -259,33 +259,9 @@ public sealed class CertificateSelectionService(
             else
             {
                 certificate = copyCertificates[row.CertificateId!.Value];
-                var reprintId = Deterministic(commandId, row.UnitId, "reprint");
+                var reprintId = CertificateCopyService.Deterministic(commandId, row.UnitId);
                 if (!loggedSet.Contains(reprintId))
-                {
-                    var at = clock.UtcNow;
-                    db.ReprintLogs.Add(new ReprintLog
-                    {
-                        TenantId = tenant.TenantId,
-                        ReprintId = reprintId,
-                        CertificateId = certificate.CertificateId,
-                        Version = certificate.Version,
-                        RequestedBy = actorRef,
-                        At = at,
-                    });
-                    await events.AppendAsync([new UnitEventDraft
-                    {
-                        UnitId = row.UnitId, EventTime = at, EventType = CertificateEventType.Reprinted,
-                        LegalEntityId = certificate.IssuerEntityId, ActorRef = actorRef,
-                        IdempotencyKey = $"cert:reprint:{reprintId:N}",
-                        Attributes = JsonObjectText.Of(new
-                        {
-                            reprint_id = reprintId, certificate_id = certificate.CertificateId,
-                            certificate_version = certificate.Version, tracking_number = certificate.TrackingNumber,
-                            reason = reason.Trim(), copy = true, reprinted_at = at,
-                        }),
-                        ProjectCurrentState = false,
-                    }], cancellationToken);
-                }
+                    await copies.RecordAsync(certificate, reprintId, actorRef, reason, cancellationToken);
             }
             db.CertificateRunUnits.Add(Receipt(commandId, row, copy
                     ? CertificateRunUnitOutcome.Copied : CertificateRunUnitOutcome.Issued,
@@ -450,11 +426,21 @@ public sealed class CertificateSelectionService(
                 certificate.SupersedesCertificateId is { } predecessorId
                     ? predecessorTracking.GetValueOrDefault(predecessorId) : null);
             var request = ordinary with { Copy = row.Copy };
-            var render = await renderer.RenderAsync(request, cancellationToken);
-            var extension = render.MediaType.StartsWith("application/pdf", StringComparison.OrdinalIgnoreCase) ? "pdf" : "html";
-            var serial = row.Serial ?? certificate.UnitId.ToString("N");
-            var fileName = $"{Safe(serial)}-{certificate.TrackingNumber}-v{certificate.Version}{(row.Copy ? "-copy" : "")}.{extension}";
-            rendered.Add(new RenderedDocument(row.UnitId, serial, certificate, fileName, request, render));
+            var serial = row.Serial ?? "unlabelled-unit";
+            if (row.Copy)
+            {
+                var copy = await copies.RenderAsync(certificate, serial, request, cancellationToken);
+                rendered.Add(new RenderedDocument(row.UnitId, serial, certificate, copy.FileName, request,
+                    new CertificateRenderResult(copy.Bytes, copy.MediaType)));
+            }
+            else
+            {
+                var render = await renderer.RenderAsync(request, cancellationToken);
+                var extension = render.MediaType.StartsWith("application/pdf", StringComparison.OrdinalIgnoreCase)
+                    ? "pdf" : "html";
+                rendered.Add(new RenderedDocument(row.UnitId, serial, certificate,
+                    $"{Safe(serial)}-{certificate.TrackingNumber}-v{certificate.Version}.{extension}", request, render));
+            }
         }
         var archive = await ArchiveAsync(rendered, stored.Where(row => row.CertificateId is null).ToList(),
             includeBundle, cancellationToken);
@@ -543,7 +529,8 @@ public sealed class CertificateSelectionService(
     private static Guid Deterministic(Guid commandId, Guid unitId, string purpose) =>
         new(SHA256.HashData(Encoding.UTF8.GetBytes($"{commandId:N}|{unitId:N}|certificate-selection|{purpose}")).AsSpan(0, 16));
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
-    private static string Safe(string value) => string.Concat(value.Select(character => char.IsLetterOrDigit(character) || character is '-' or '_' ? character : '_'));
+    private static string Safe(string value) => string.Concat(value.Select(character => char.IsLetterOrDigit(character)
+        || character is '-' or '_' ? character : '_'));
     private CertificateRunUnit Receipt(Guid commandId, CertificateSelectionUnit row, string outcome,
         Guid? certificateId, int? version, string? trackingNumber, bool copy) => new()
     {

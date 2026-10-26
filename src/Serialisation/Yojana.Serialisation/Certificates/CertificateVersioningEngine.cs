@@ -96,6 +96,10 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
             var latest = await db.CertificateInstances.Where(row => row.TenantId == tenantId && row.UnitId == command.UnitId
                     && row.DocumentKind == command.DocumentKind)
                 .OrderByDescending(row => row.Version).FirstOrDefaultAsync(cancellationToken);
+            if (command.ExpectedCurrentCertificateId is { } expectedCurrent
+                && (latest?.CertificateId != expectedCurrent || latest.Status != CertificateStatus.Issued))
+                return await RefuseAsync(CertificateCorrectionRefusal.NotCurrent,
+                    "Only the current issued version can be corrected.");
             var previous = latest?.Status == CertificateStatus.Issued ? latest : null;
             // COUPLING (automatic language inheritance): CertificateSubscriptionHandlers sends an empty language on
             // its internal published-fact hand-off because those events carry no presentation language. It means
@@ -146,11 +150,15 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
             var factsHash = FactsHash(built.CanonicalPayload);
             if (previous?.FactsHash == factsHash)
             {
-                const string reason = "certificate_facts_unchanged";
-                const string detail = "The trigger reached an existing certificate chain, but the certificate facts have not changed.";
-                db.CertificateTriggers.Add(Trigger(CertificateTriggerOutcome.Absorbed, null, reason, detail));
+                var correction = command.ExpectedCurrentCertificateId is not null;
+                var reason = correction ? CertificateCorrectionRefusal.NothingToCorrect : "certificate_facts_unchanged";
+                var detail = correction
+                    ? "Nothing to correct: the record matches today's data."
+                    : "The trigger reached an existing certificate chain, but the certificate facts have not changed.";
+                db.CertificateTriggers.Add(Trigger(correction ? CertificateTriggerOutcome.Refused
+                    : CertificateTriggerOutcome.Absorbed, null, reason, detail));
                 await PersistAsync();
-                return new(false, false, null, null, null, reason, detail, Absorbed: true);
+                return new(false, false, null, null, null, reason, detail, Absorbed: !correction);
             }
             var version = (latest?.Version ?? 0) + 1;
             if (version > 1 && string.IsNullOrWhiteSpace(command.SupersedeReason))

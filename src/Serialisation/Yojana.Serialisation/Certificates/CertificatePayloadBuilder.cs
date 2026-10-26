@@ -81,7 +81,8 @@ public sealed class CertificatePayloadBuilder(ICertificateUnitReadPort units, II
                 || triggerSchema is UnitIdentifierCorrected.Schema or UnitIdentifiersSwapped.Schema
                     or UnitItemCorrected.Schema or UnitAsBuiltCorrected.Schema);
         return new CertificateTriggerSnapshot(triggerSchema,
-            command.TriggeringEventId, command.EffectiveAt, command.SupersedeReason,
+            command.TriggeringEventId, command.EffectiveAt,
+            correction ? command.TriggerNote : command.SupersedeReason,
             correction ? false : null,
             correction ? "Verified record correction; unit condition was not re-verified." : null);
     }
