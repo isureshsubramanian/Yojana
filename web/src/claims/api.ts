@@ -33,7 +33,7 @@ function query(values: Record<string, string | number | null | undefined>): stri
 }
 
 export const claimsApi = {
-  list: (filters: ClaimFilters, skip: number, take: number, signal?: AbortSignal) => apiParsed(`/api/claims/${query({ ...filters, skip, take })}`, claimPageSchema, { signal }),
+  list: (filters: ClaimFilters, skip: number, take: number, signal?: AbortSignal, sort?: string, dir?: string) => apiParsed(`/api/claims/${query({ ...filters, sort, dir, skip, take })}`, claimPageSchema, { signal }),
   summary: (signal?: AbortSignal) => apiParsed("/api/claims/summary", claimSummarySchema, { signal }),
   detail: (claimId: string, signal?: AbortSignal) => apiParsed(`/api/claims/${claimId}`, claimDetailSchema, { signal }),
   preview: (claimId: string, signal?: AbortSignal) => apiParsed(`/api/claims/${claimId}/adjudication-preview`, claimAdjudicationPreviewSchema, { signal }),

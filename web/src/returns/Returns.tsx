@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router";
-import { DataGrid, FindBar, KpiStrip, StatusBadge, type GridColumn } from "../components";
+import { DataGrid, FindBar, KpiStrip, StatusBadge, useGridQuery, type GridColumn } from "../components";
+import { useSession } from "../session/session";
 import { useTenantTime } from "../components/tenantTime";
 import { useReferenceNames } from "../corrections/ReferenceFields";
 import { usePeople } from "../people/people";
@@ -11,39 +12,26 @@ import { Breadcrumbs } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
 import { returnsApi, type RmaFilters } from "./api";
 import { RMA_STAGES, ageBucketLabel, humanise, receiptTone, stageNumber, stageTone } from "./format";
-import type { RmaDetail, RmaListResult, RmaListRow } from "./types";
+import { rmaListResult, type RmaDetail, type RmaListRow } from "./types";
 import "./returns.css";
 
 const PAGE_SIZE = 50;
 const INITIAL_FILTERS: RmaFilters = { stage: "", minimumAgeDays: null, maximumAgeDays: null, exceptionsOnly: false, q: "" };
 
 export function Component() {
+  const session = useSession();
   const tenantTime = useTenantTime();
   const [filters, setFilters] = useState<RmaFilters>(INITIAL_FILTERS);
-  const [pageNumber, setPageNumber] = useState(1);
-  const [result, setResult] = useState<RmaListResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<unknown>(null);
   const [active, setActive] = useState<string | null>(null);
-  const cursors = useRef<(string | null)[]>([null]);
-  const load = useCallback((signal?: AbortSignal) => {
-    setLoading(true); setError(null);
-    return returnsApi.list(filters, cursors.current[pageNumber - 1] ?? null, PAGE_SIZE, signal)
-      .then(setResult).catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); })
-      .finally(() => setLoading(false));
-  }, [filters, pageNumber]);
-  useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort(); }, [load]);
+  const params = useMemo(() => { const value = new URLSearchParams(); Object.entries(filters).forEach(([key, entry]) => { if (entry !== null && entry !== false && entry !== "") value.set(key, String(entry)); }); return value; }, [filters]);
+  // The hidden priority key is coupled to the server's established exceptions-first, then oldest queue. Replacing it
+  // with a visible single-column default would silently change which returns operators see first.
+  const query = useGridQuery("/api/rmas/", rmaListResult, { gridId: "returns", userId: session.user.id, defaultSort: { key: "priority", dir: "asc" }, defaultSize: PAGE_SIZE, params, paging: "cursor", pageFacts: (data) => ({ continuation: data.continuation }), sortKeys: ["priority", "number", "requested", "status"] });
+  const result = query.data;
   const rows = result?.rows ?? [];
   const names = useReferenceNames({ items: rows.map((row) => row.primaryItemId), parties: rows.map((row) => row.returningPartyRef) });
   const people = usePeople(rows.flatMap((row) => [row.requestedBy, row.lastActorRef]));
-  const setFilter = (patch: Partial<RmaFilters>) => { cursors.current = [null]; setFilters((current) => ({ ...current, ...patch })); setPageNumber(1); };
-  const setPage = (next: number) => {
-    if (next > pageNumber) {
-      if (!result?.continuation) return;
-      cursors.current[next - 1] = result.continuation;
-    }
-    setPageNumber(Math.max(1, next));
-  };
+  const setFilter = (patch: Partial<RmaFilters>) => setFilters((current) => ({ ...current, ...patch }));
   const openReturn = async (row: RmaListRow) => {
     setActive(row.rmaId);
     openDrawer({ eyebrow: "Return", title: row.rmaNumber ?? "Return request", mono: true }, <p className="muted">Loading return…</p>);
@@ -51,13 +39,13 @@ export function Component() {
     catch (reason) { updateDrawer({ eyebrow: "Return", title: row.rmaNumber ?? "Return request", mono: true }, <ErrorNote error={reason} />); }
   };
   const columns = useMemo<GridColumn<RmaListRow>[]>(() => [
-    { key: "rma", label: "RMA", width: 15, render: (row) => <span className="primary"><Link className="t serial" to={`/returns/${row.rmaId}`}>{row.rmaNumber ?? "Awaiting number"}</Link><span className="sub">requested {tenantTime.date(row.requestDate)}</span></span> },
+    { key: "rma", label: "RMA", width: 15, sort: { key: "number", defaultDir: "asc" }, render: (row) => <span className="primary"><Link className="t serial" to={`/returns/${row.rmaId}`}>{row.rmaNumber ?? "Awaiting number"}</Link><span className="sub">requested {tenantTime.date(row.requestDate)}</span></span> },
     { key: "unit", label: "Unit", width: 18, render: (row) => row.primaryUnitId ? <><UnitLink unitId={row.primaryUnitId}>{row.primarySerial ?? "No serial recorded"}</UnitLink><span className="sub">{names.item(row.primaryItemId)}{row.lineCount > 1 ? ` · ${row.lineCount} lines` : ""}</span></> : <span className="muted">No unit resolved</span> },
     { key: "customer", label: "Customer", width: 20, render: (row) => <>{names.party(row.returningPartyRef)}<span className="sub">requested by {people(row.requestedBy)}</span></> },
-    { key: "stage", label: "Stage", width: 15, render: (row) => <><StatusBadge tone={stageTone(row.stage)}>{stageNumber(row.stage)} · {humanise(row.stage)}</StatusBadge><span className="sub">updated {tenantTime.dateTime(row.updatedAt)}</span></> },
+    { key: "stage", label: "Stage", width: 15, sort: { key: "status", defaultDir: "asc" }, render: (row) => <><StatusBadge tone={stageTone(row.stage)}>{stageNumber(row.stage)} · {humanise(row.stage)}</StatusBadge><span className="sub">updated {tenantTime.dateTime(row.updatedAt)}</span></> },
     { key: "receipt", label: "Receipt", width: 19, render: (row) => row.receiptOutcome ? <><StatusBadge tone={receiptTone(row.receiptOutcome)}>{humanise(row.receiptOutcome)}</StatusBadge><span className="sub">{row.conditionGrade ? `grade ${humanise(row.conditionGrade).toLowerCase()}` : "condition pending"}</span></> : <span className="muted">Not received</span> },
     { key: "exceptions", label: "Exceptions", width: 7, numeric: true, render: (row) => row.exceptionCount ? <span className="bad-text">{row.exceptionCount}</span> : "—" },
-    { key: "age", label: "Age", width: 6, numeric: true, render: (row) => <span title={ageBucketLabel(row.ageDays)}>{row.ageDays} d</span> },
+    { key: "age", label: "Age", width: 6, numeric: true, sort: { key: "requested", defaultDir: "asc" }, render: (row) => <span title={ageBucketLabel(row.ageDays)}>{row.ageDays} d</span> },
   ], [names, people, tenantTime]);
   const summary = result?.summary ?? [];
   const openCount = summary.filter((row) => row.stage !== "closed").reduce((total, row) => total + row.count, 0);
@@ -82,9 +70,9 @@ export function Component() {
           <button type="button" className="btn" aria-pressed={filters.exceptionsOnly} onClick={() => setFilter({ exceptionsOnly: !filters.exceptionsOnly })}>Exceptions only</button>
         </div></div></section>
         <section className="card" aria-labelledby="returns-list-heading"><div className="card-header"><h2 id="returns-list-heading">{filters.exceptionsOnly ? "Returns with exceptions" : filters.stage ? humanise(filters.stage) : "All returns"} <span className="meta">{rows.length.toLocaleString()} shown{result?.hasMore ? " · more" : ""}</span></h2><span className="meta">Exceptions first, then oldest</span></div>
-          <DataGrid columns={columns} page={{ rows, total: (pageNumber - 1) * PAGE_SIZE + rows.length + (result?.hasMore ? 1 : 0), page: pageNumber, pageSize: PAGE_SIZE, continuation: result?.continuation ?? null, totalIsExact: false, hasMore: result?.hasMore ?? false }} rowId={(row) => row.rmaId} onPage={setPage} onRowClick={(row) => void openReturn(row)} activeRowId={active} loading={loading} emptyText="No returns match these filters." />
+          <DataGrid columns={columns} page={{ rows, total: (query.page - 1) * query.pageSize + rows.length + (result?.hasMore ? 1 : 0), page: query.page, pageSize: query.pageSize, continuation: result?.continuation ?? null, totalIsExact: false, hasMore: result?.hasMore ?? false }} rowId={(row) => row.rmaId} onPage={query.onPage} onRowClick={(row) => void openReturn(row)} activeRowId={active} loading={query.loading} emptyText="No returns match these filters." gridId="returns" userId={session.user.id} sort={query.sort} defaultSort={{ key: "priority", dir: "asc" }} onSort={query.onSort} pageSize={query.pageSize} defaultPageSize={PAGE_SIZE} onPageSize={query.onPageSize} />
         </section>
-        <ErrorNote error={error} />
+        <ErrorNote error={query.error} />
       </div>
     </main>
     <Rail label="Returns"><Section title="Pipeline"><p className="muted">Select a row for its customer, receipt and next action. Open the return for line-level decisions.</p></Section></Rail>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { DataGrid, KpiStrip, StatusBadge, type GridColumn } from "../components";
 import { usePeople } from "../people/people";
+import { useSession } from "../session/session";
 import { Rail } from "../shell/Drawer";
 import { Icon } from "../shell/Icons";
 import { openDrawer } from "../shell/drawerStore";
@@ -48,6 +49,7 @@ export function commandLabel(command: string): string {
 function iso(date: Date): string { return date.toISOString().slice(0, 10); }
 
 export function Component() {
+  const session = useSession();
   const [view, setView] = useState<WorkbenchChoiceSettingsView | null>(null);
   const [kpi, setKpi] = useState<CorrectionKpiReport | null>(null);
   const [filter, setFilter] = useState("all");
@@ -89,12 +91,12 @@ export function Component() {
     setActive(null); openDrawer({ eyebrow: "Choice · new", title: "Add workbench choice" }, <ChoiceEditor choice={choice} initiatorRoles={choice.initiateRoles ?? []} onSave={saveChoice} />);
   };
   const columns: GridColumn<WorkbenchChoice>[] = [
-    { key: "choice", label: "Choice · as the user reads it", width: 30, render: (row) => <span className="primary correction-choice-help"><span className="t">{row.label}</span><span className="sub">{row.fallback ? "standard · always last · cannot be retired" : row.standard ? "standard" : "added by administrator"}</span></span> },
-    { key: "area", label: "Area", width: 14, render: (row) => row.fallback ? "always last" : row.area },
-    { key: "command", label: "Runs command", width: 20, render: (row) => row.fallback ? <span className="muted">correction request</span> : row.commands.map(commandLabel).join(" · ") },
-    { key: "root", label: "Root cause", width: 10, render: (row) => row.fallback ? <span className="muted">unclassified</span> : `${row.rootCause} · ${ROOT_CAUSES[String(row.rootCause)]?.label ?? ""}` },
-    { key: "roles", label: "Commit without approver", width: 14, render: (row) => row.fallback ? <span className="muted">serial administrator re-files</span> : (row.commitRoles ?? []).map(roleLabel).join(" + ") },
-    { key: "status", label: "Status · use 30 d", width: 12, render: (row) => <><StatusBadge tone={row.status === "shown" ? "ok" : "neutral"}>{row.status === "shown" ? "Shown" : "Retired"}</StatusBadge><span className="sub">usage feed unavailable</span></> },
+    { key: "choice", label: "Choice · as the user reads it", width: 30, sort: { key: "order", value: (row) => row.fallback ? Number.MAX_SAFE_INTEGER : row.order }, render: (row) => <span className="primary correction-choice-help"><span className="t">{row.label}</span><span className="sub">{row.fallback ? "standard · always last · cannot be retired" : row.standard ? "standard" : "added by administrator"}</span></span> },
+    { key: "area", label: "Area", width: 14, sort: { key: "area", value: (row) => row.area }, render: (row) => row.fallback ? "always last" : row.area },
+    { key: "command", label: "Runs command", width: 20, sort: { key: "command", value: (row) => row.commands.map(commandLabel).join(" · ") }, render: (row) => row.fallback ? <span className="muted">correction request</span> : row.commands.map(commandLabel).join(" · ") },
+    { key: "root", label: "Root cause", width: 10, sort: { key: "root", value: (row) => row.rootCause }, render: (row) => row.fallback ? <span className="muted">unclassified</span> : `${row.rootCause} · ${ROOT_CAUSES[String(row.rootCause)]?.label ?? ""}` },
+    { key: "roles", label: "Commit without approver", width: 14, sort: { key: "roles", value: (row) => (row.commitRoles ?? []).map(roleLabel).join(" + ") }, render: (row) => row.fallback ? <span className="muted">serial administrator re-files</span> : (row.commitRoles ?? []).map(roleLabel).join(" + ") },
+    { key: "status", label: "Status · use 30 d", width: 12, sort: { key: "status", value: (row) => row.status }, render: (row) => <><StatusBadge tone={row.status === "shown" ? "ok" : "neutral"}>{row.status === "shown" ? "Shown" : "Retired"}</StatusBadge><span className="sub">usage feed unavailable</span></> },
   ];
   const alert = kpi?.unclassifiedAlert;
 
@@ -111,7 +113,7 @@ export function Component() {
           { label: "No command fits", value: "—", detail: "request-status analytics are not exposed", trend: null },
         ]} />
         <section className="card" aria-labelledby="choice-list"><div className="card-header"><h2 id="choice-list">Choices <span className="meta">in the order users see them</span></h2><div className="segmented plain" role="group" aria-label="Filter">{[["all", `All ${choices.length}`], ["standard", `Standard ${standard}`], ["added", `Added ${added}`], ["retired", `Retired ${retired}`]].map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value!)}>{label}</button>)}</div></div>
-          <DataGrid dense columns={columns} page={{ rows: filtered.slice().sort((a, b) => (a.fallback ? Number.MAX_SAFE_INTEGER : a.order) - (b.fallback ? Number.MAX_SAFE_INTEGER : b.order)), total: filtered.length, page: 1, pageSize: Math.max(1, filtered.length), continuation: null }} rowId={(row) => row.choice} onPage={() => undefined} onRowClick={openChoice} activeRowId={active} loading={loading} emptyText="No choices match this filter." viewportHeight={560} footerNote="Standard choices can be re-worded and re-ordered but not retired; added choices can be retired, never deleted" />
+          <DataGrid dense columns={columns} page={{ rows: filtered, total: filtered.length, page: 1, pageSize: 25, continuation: null }} rowId={(row) => row.choice} onPage={() => undefined} onRowClick={openChoice} activeRowId={active} loading={loading} emptyText="No choices match this filter." viewportHeight={560} footer={`${filtered.length.toLocaleString()} choices · complete list`} gridId="workbench-choices" userId={session.user.id} defaultSort={{ key: "order", dir: "asc" }} defaultPageSize={25} />
         </section>
       </div>
     </main>

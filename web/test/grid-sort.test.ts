@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { build } from "esbuild";
 import { createElement, type ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -49,4 +50,21 @@ test("preferences render from defaults when storage is absent or unavailable", (
   const fallback = { sort: { key: "identifier", dir: "asc" } as const, pageSize: 50 };
   assert.deepEqual(readGridPreference("grid", fallback, null), fallback);
   assert.deepEqual(readGridPreference("grid", fallback, { getItem: () => { throw new Error("blocked"); } }), fallback);
+});
+
+test("the Serialisation list screens declare shared sort and page-size state", () => {
+  const screens = [
+    "campaigns/CampaignEditor.tsx", "campaigns/CampaignUnits.tsx", "campaigns/Campaigns.tsx", "claims/Claims.tsx",
+    "components/SelectionPreview.tsx", "corrections/AllocationReassign.tsx", "corrections/CorrectionKpi.tsx",
+    "corrections/MergeUnits.tsx", "corrections/VendorSerials.tsx", "corrections/WorkbenchChoices.tsx",
+    "entitlements/ApprovalInbox.tsx", "entitlements/BulkOperation.tsx", "entitlements/CoverChanges.tsx",
+    "entitlements/WarrantyLineExceptions.tsx", "jurisdictions/Jurisdictions.tsx", "labels/PrintJobs.tsx",
+    "mail/SentLog.tsx", "p7/ImportHistory.tsx", "recovery/RecoveryClaims.tsx",
+    "refurbishments/RefurbishmentList.tsx", "replacements/AwaitingReturns.tsx", "returns/Returns.tsx",
+  ];
+  for (const screen of screens) {
+    const source = readFileSync(new URL(`../src/${screen}`, import.meta.url), "utf8");
+    assert.match(source, /sort:\s*\{\s*key:|sort=\{/, `${screen} declares sortable headers or passes shared sort state`);
+    assert.match(source, /onPageSize|footer=/, `${screen} delegates page-size changes or declares a complete-list footer`);
+  }
 });

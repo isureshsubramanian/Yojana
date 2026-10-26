@@ -1,10 +1,11 @@
 using Microsoft.EntityFrameworkCore;
-using System.Text;
 using System.Text.Json;
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Serialisation.Claims;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Documents;
 using Yojana.Serialisation.Identity;
 
@@ -13,15 +14,25 @@ namespace Yojana.Serialisation.Rmas;
 public sealed class RmaQueries(SerialisationDbContext db, IIdentifierPolicySource identifierPolicies,
     IRmaFollowUpQueryPort followUps, ITenantContext tenant)
 {
+    private static readonly SortedPage<Rma, Guid> Pages = new("requested", row => row.RmaId,
+        new SortColumn<Rma, string>("number", row => row.RmaNumber ?? ""),
+        new SortColumn<Rma, DateTime>("requested", row => row.RequestedAt),
+        new SortColumn<Rma, string>("status", row => row.Stage));
     private const string RmaDocumentType = "rma";
 
-    public async Task<RmaListResult> ListAsync(RmaListFilter filter, DateTime now, string? after, int take,
+    public async Task<RmaListResult> ListAsync(RmaListFilter filter, DateTime now, string? sort, string? direction, string? after, int take,
         CancellationToken cancellationToken)
     {
         if (filter.Stage is not null && !RmaStage.All.Contains(filter.Stage)) throw new ArgumentException($"Unknown RMA stage '{filter.Stage}'.", nameof(filter));
         if (filter.MinimumAgeDays is < 0 || filter.MaximumAgeDays is < 0 || filter.MinimumAgeDays > filter.MaximumAgeDays)
             throw new ArgumentException("RMA age bounds must be non-negative and minimum cannot exceed maximum.", nameof(filter));
-        take = Math.Clamp(take, 1, 200);
+        var priorityOrder = string.IsNullOrWhiteSpace(sort) || string.Equals(sort, "priority", StringComparison.Ordinal);
+        if (priorityOrder && !string.IsNullOrWhiteSpace(direction) && !string.Equals(direction, "asc", StringComparison.OrdinalIgnoreCase))
+            throw new CommandRefusedException("sort_not_supported", $"Sort direction '{direction}' is not supported.");
+        if (take > SortedPage<Rma, Guid>.MaximumTake)
+            throw new CommandRefusedException("page_size_too_large", $"Page size cannot exceed {SortedPage<Rma, Guid>.MaximumTake}.");
+        if (take < 1) throw new CommandRefusedException("page_size_invalid", "Page size must be at least 1.");
+        var paging = priorityOrder ? null : Pages.Parse(sort, direction, take, after);
         var tenantId = tenant.TenantId;
         var query = db.Rmas.AsNoTracking().Where(r => r.TenantId == tenantId);
         if (filter.Stage is not null) query = query.Where(r => r.Stage == filter.Stage);
@@ -61,25 +72,20 @@ public sealed class RmaQueries(SerialisationDbContext db, IIdentifierPolicySourc
             query = query.Where(r => candidateIds.Contains(r.RmaId));
         }
 
-        if (DecodeCursor(after) is { } cursor)
-        {
-            query = cursor.HasException
+        if (priorityOrder && DecodePriorityCursor(after) is { } priorityCursor)
+            query = priorityCursor.HasException
                 ? query.Where(r => !r.HasException
-                    || r.HasException && (r.RequestedAt > cursor.RequestedAt
-                        || r.RequestedAt == cursor.RequestedAt && r.RmaId.CompareTo(cursor.RmaId) > 0))
-                : query.Where(r => !r.HasException && (r.RequestedAt > cursor.RequestedAt
-                    || r.RequestedAt == cursor.RequestedAt && r.RmaId.CompareTo(cursor.RmaId) > 0));
-        }
+                    || r.HasException && (r.RequestedAt > priorityCursor.RequestedAt
+                        || r.RequestedAt == priorityCursor.RequestedAt && r.RmaId.CompareTo(priorityCursor.RmaId) > 0))
+                : query.Where(r => !r.HasException && (r.RequestedAt > priorityCursor.RequestedAt
+                    || r.RequestedAt == priorityCursor.RequestedAt && r.RmaId.CompareTo(priorityCursor.RmaId) > 0));
 
-        var bounded = await query
-            .OrderByDescending(r => r.HasException)
-            .ThenBy(r => r.RequestedAt).ThenBy(r => r.RmaId).Take(take + 1)
-            .Select(r => new
-            {
-                r.RmaId, r.RmaNumber, r.Stage, r.RequestDate, r.RequestedAt, r.ReturningPartyRef,
-                UpdatedAt = r.ClosedAt ?? r.DispositionedAt ?? r.ReceivedAt ?? r.InTransitAt ?? r.AuthorisedAt ?? r.RequestedAt,
-                r.ReceivedAt, r.RequestedBy, r.LastActorRef, r.ExceptionCount, r.HasException,
-            }).ToListAsync(cancellationToken);
+        // The established queue order is a three-column indexed business priority. SortedPage deliberately owns
+        // all user-selected two-column orders; this compatibility seam alone preserves exceptions-first ordering.
+        var bounded = await (priorityOrder
+                ? query.OrderByDescending(r => r.HasException).ThenBy(r => r.RequestedAt).ThenBy(r => r.RmaId)
+                : paging!.Apply(query))
+            .Take(take + 1).ToListAsync(cancellationToken);
         var hasMore = bounded.Count > take;
         var raw = bounded.Take(take).ToList();
         var pageIds = raw.Select(r => r.RmaId).ToList();
@@ -98,7 +104,8 @@ public sealed class RmaQueries(SerialisationDbContext db, IIdentifierPolicySourc
         {
             primaryLines.TryGetValue(r.RmaId, out var line);
             var unitId = line?.ReceivedUnitId ?? line?.RequestedUnitId;
-            return new RmaListRow(r.RmaId, r.RmaNumber, r.Stage, r.RequestDate, r.UpdatedAt,
+            var updatedAt = r.ClosedAt ?? r.DispositionedAt ?? r.ReceivedAt ?? r.InTransitAt ?? r.AuthorisedAt ?? r.RequestedAt;
+            return new RmaListRow(r.RmaId, r.RmaNumber, r.Stage, r.RequestDate, updatedAt,
                 Math.Max(0, DateOnly.FromDateTime(now).DayNumber - r.RequestDate.DayNumber), r.ReturningPartyRef,
                 lineCounts.GetValueOrDefault(r.RmaId), r.ExceptionCount,
                 unitId, unitId is { } id ? serials.GetValueOrDefault(id) : null,
@@ -107,10 +114,15 @@ public sealed class RmaQueries(SerialisationDbContext db, IIdentifierPolicySourc
         }).ToList();
         var summary = await SummaryAsync(now, cancellationToken);
         var continuation = hasMore && raw.Count > 0
-            ? EncodeCursor(raw[^1].HasException, raw[^1].RequestedAt, raw[^1].RmaId)
+            ? priorityOrder
+                ? EncodePriorityCursor(raw[^1].HasException, raw[^1].RequestedAt, raw[^1].RmaId)
+                : paging!.CursorFor(raw[^1])
             : null;
         return new(rows, summary, continuation, hasMore, take);
     }
+
+    public Task<RmaListResult> ListAsync(RmaListFilter filter, DateTime now, string? after, int take,
+        CancellationToken cancellationToken) => ListAsync(filter, now, null, null, after, take, cancellationToken);
 
     public async Task<IReadOnlyList<RmaStageCount>> SummaryAsync(DateTime now, CancellationToken cancellationToken)
     {
@@ -158,31 +170,48 @@ public sealed class RmaQueries(SerialisationDbContext db, IIdentifierPolicySourc
         }).ToList();
     }
 
-    private static string EncodeCursor(bool hasException, DateTime requestedAt, Guid rmaId)
+    private static string EncodePriorityCursor(bool hasException, DateTime requestedAt, Guid rmaId)
     {
-        var bytes = Encoding.UTF8.GetBytes($"{(hasException ? 1 : 0)}|{requestedAt.Ticks}|{rmaId:N}");
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            sort = "priority",
+            direction = "asc",
+            value = $"{(hasException ? 1 : 0)}|{requestedAt.Ticks}",
+            tie = rmaId,
+        });
         return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     }
 
-    private static RmaCursor? DecodeCursor(string? value)
+    private static RmaCursor? DecodePriorityCursor(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
-        if (value.Length > 128) throw new ArgumentException("The RMA continuation is invalid.", nameof(value));
+        if (value.Length > 512) throw InvalidCursor();
         try
         {
             var encoded = value.Replace('-', '+').Replace('_', '/');
             encoded = encoded.PadRight(encoded.Length + (4 - encoded.Length % 4) % 4, '=');
-            var parts = Encoding.UTF8.GetString(Convert.FromBase64String(encoded)).Split('|');
-            if (parts.Length != 3 || parts[0] is not ("0" or "1") || !long.TryParse(parts[1], out var ticks)
-                || !Guid.TryParseExact(parts[2], "N", out var rmaId))
+            using var document = JsonDocument.Parse(Convert.FromBase64String(encoded));
+            var root = document.RootElement;
+            if (root.GetProperty("sort").GetString() != "priority" || root.GetProperty("direction").GetString() != "asc")
+                throw new CommandRefusedException("sort_changed", "The paging cursor belongs to another sort.", "return to the first page");
+            var parts = root.GetProperty("value").GetString()?.Split('|');
+            if (parts is null || parts.Length != 2 || parts[0] is not ("0" or "1") || !long.TryParse(parts[1], out var ticks)
+                || !root.GetProperty("tie").TryGetGuid(out var rmaId))
                 throw new FormatException();
             return new(parts[0] == "1", new DateTime(ticks, DateTimeKind.Utc), rmaId);
         }
-        catch (Exception ex) when (ex is FormatException or ArgumentException)
+        catch (CommandRefusedException)
         {
-            throw new ArgumentException("The RMA continuation is invalid.", nameof(value));
+            throw;
+        }
+        catch (Exception exception) when (exception is FormatException or JsonException or InvalidOperationException or KeyNotFoundException)
+        {
+            throw InvalidCursor();
         }
     }
+
+    private static CommandRefusedException InvalidCursor() =>
+        new("cursor_invalid", "The paging cursor is not valid.", "return to the first page");
 
     private sealed record RmaCursor(bool HasException, DateTime RequestedAt, Guid RmaId);
     private sealed class RmaStageSummaryProjection

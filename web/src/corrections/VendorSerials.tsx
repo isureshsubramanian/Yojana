@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router";
 import { newCommandId, now } from "../api/units";
 import { DataGrid, KpiStrip, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
 import { Rail } from "../shell/Drawer";
+import { useSession } from "../session/session";
 import { openDrawer } from "../shell/drawerStore";
 import { opaqueParam } from "../shell/handoff";
 import { Breadcrumbs } from "../shell/PageHeader";
@@ -16,6 +17,7 @@ import type { AssignIdentifiers, AssignIdentifiersPreview, AssignIdentifiersResu
 const PAGE = 8;
 
 export function Component() {
+  const session = useSession();
   const [params] = useSearchParams();
   const [productionOrderId, setProductionOrderId] = useState(opaqueParam(params, "productionOrder"));
   const [mode, setMode] = useState("allocation_order");
@@ -43,16 +45,15 @@ export function Component() {
   const commit = async () => { if (!command || !preview || preview.preview.refusal || assigning === 0) return; setBusy(true); setError(null); try { const result = await correctionsApi.assignIdentifiers(command); setCommitted(result); setPreview({ ...preview, lines: result.lines, remainingCount: result.remainingCount, awaitingVendorSerialUnitIds: result.awaitingVendorSerialUnitIds, reversal: result.reversal }); setCommandId(newCommandId()); setReport(await correctionsApi.awaitingVendorSerial(productionOrderId)); } catch (reason) { setError(reason); } finally { setBusy(false); } };
   const sourceRows = preview?.lines ?? [];
   const filtered = filter === "all" ? sourceRows : sourceRows.filter((row) => row.outcome === filter);
-  const visible = filtered.slice((page - 1) * PAGE, page * PAGE);
   const rejected = sourceRows.filter((row) => row.outcome === "rejected").length;
   const assigning = sourceRows.filter((row) => row.outcome === "assign" || row.outcome === "assigned").length;
   useModEnter(commit, !command || !preview || !!preview?.preview.refusal || assigning === 0 || busy);
 
   const openLine = (row: IdentifierAssignmentLineResult) => { const id = String(row.index); setActive(id); const provisional = report?.units.find((unit) => unit.unitId === row.unitId)?.provisionalIdentifier; openDrawer({ eyebrow: `${row.outcome === "rejected" ? "Refused" : "Assignment"} · ${productionOrderLabel}`, title: provisional ?? row.normalisedValue ?? row.rawValue, mono: true }, <><Kv rows={[["Vendor serial", row.normalisedValue ?? row.rawValue], ["Outcome", humanise(row.outcome)], ["Rule", row.reason ? <span className="serial">{row.reason}</span> : "all checks passed"], ["Unit", row.unitId ? shortId(row.unitId, 12) : "not matched"], ["Conflicting unit", row.conflictingUnitId ? shortId(row.conflictingUnitId, 12) : "—"], ["Warnings", row.warnings?.join(" · ") ?? "none"]]} />{row.conflictingUnitId && <div className="act"><UnitLink className="btn block" unitId={row.conflictingUnitId}>Open conflicting unit</UnitLink><Link className="btn block" to={`/corrections/merge?first=${encodeURIComponent(row.unitId ?? "")}&second=${encodeURIComponent(row.conflictingUnitId)}`}>Compare in Merge units</Link></div>}</>); };
   const columns: GridColumn<IdentifierAssignmentLineResult>[] = [
-    { key: "unit", label: "Unit · provisional", width: 28, mono: true, render: (row) => report?.units.find((unit) => unit.unitId === row.unitId)?.provisionalIdentifier ?? (row.unitId ? shortId(row.unitId, 12) : "—") },
-    { key: "serial", label: "Vendor serial", width: 26, mono: true, render: (row) => row.normalisedValue ?? row.rawValue },
-    { key: "outcome", label: "Outcome", width: 46, render: (row) => <><StatusBadge tone={row.outcome === "rejected" ? "bad" : "ok"}>{row.outcome === "rejected" ? `Refused${row.reason ? ` · ${humanise(row.reason)}` : ""}` : row.outcome === "assigned" ? "Assigned" : "Assign"}</StatusBadge>{row.warnings?.length ? <span className="sub">{row.warnings.join(" · ")}</span> : row.reason && <span className="sub">Value is never overwritten</span>}</> },
+    { key: "unit", label: "Unit · provisional", width: 28, mono: true, sort: { key: "unit", value: (row) => report?.units.find((unit) => unit.unitId === row.unitId)?.provisionalIdentifier ?? "" }, render: (row) => report?.units.find((unit) => unit.unitId === row.unitId)?.provisionalIdentifier ?? (row.unitId ? shortId(row.unitId, 12) : "—") },
+    { key: "serial", label: "Vendor serial", width: 26, mono: true, sort: { key: "serial", value: (row) => row.normalisedValue ?? row.rawValue }, render: (row) => row.normalisedValue ?? row.rawValue },
+    { key: "outcome", label: "Outcome", width: 46, sort: { key: "outcome", value: (row) => row.outcome }, render: (row) => <><StatusBadge tone={row.outcome === "rejected" ? "bad" : "ok"}>{row.outcome === "rejected" ? `Refused${row.reason ? ` · ${humanise(row.reason)}` : ""}` : row.outcome === "assigned" ? "Assigned" : "Assign"}</StatusBadge>{row.warnings?.length ? <span className="sub">{row.warnings.join(" · ")}</span> : row.reason && <span className="sub">Value is never overwritten</span>}</> },
   ];
 
   return <>
@@ -78,7 +79,7 @@ export function Component() {
           </div></div></section>
           <section className="card" aria-labelledby="vendor-preview"><div className="card-header"><h2 id="vendor-preview">Preview <span className="meta">in serial-allocation order</span></h2><div className="correction-toolbar"><div className="segmented plain" role="group" aria-label="Show">{[["rejected", `Refused ${rejected}`], ["assign", `Assigned ${assigning}`], ["all", `All ${sourceRows.length}`]].map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => { setFilter(value!); setPage(1); }}>{label}</button>)}</div><button type="button" className="btn sm" disabled={!report?.units.length} onClick={() => report && downloadAwaiting(report)}>Download the {report?.count ?? 0}</button></div></div>
             {preview?.preview.refusal && <div className="note bad"><strong>{humanise(preview.preview.refusal.rule)}.</strong>&nbsp;{preview.preview.refusal.message}</div>}
-            <DataGrid dense columns={columns} page={{ rows: visible, total: filtered.length, page, pageSize: PAGE, continuation: null }} rowId={(row) => String(row.index)} onPage={setPage} onRowClick={openLine} activeRowId={active} loading={busy} emptyText={preview ? "No rows match this preview filter." : "Paste a list and preview it to see every assignment."} viewportHeight={500} footerNote={rejected ? "Refused values are reported, never applied" : "Every valid value remains provisional until commit"} />
+            <DataGrid dense columns={columns} page={{ rows: filtered, total: filtered.length, page, pageSize: PAGE, continuation: null }} rowId={(row) => String(row.index)} onPage={setPage} onRowClick={openLine} activeRowId={active} loading={busy} emptyText={preview ? "No rows match this preview filter." : "Paste a list and preview it to see every assignment."} viewportHeight={500} footer={`${filtered.length.toLocaleString()} preview rows · ${rejected ? "refused values are never applied" : "valid values remain provisional"}`} gridId="vendor-serial-preview" userId={session.user.id} defaultSort={{ key: "unit", dir: "asc" }} defaultPageSize={PAGE} />
           </section>
         </div>
       </div>

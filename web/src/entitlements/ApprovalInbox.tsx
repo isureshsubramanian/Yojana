@@ -5,6 +5,7 @@ import { openDrawer, updateDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { usePeople } from "../people/people";
+import { useSession } from "../session/session";
 import { ErrorNote, Kv, Section, useActor } from "../units/common";
 import { documentLabel, fmtDateTime, humanise, shortId } from "../units/format";
 import { entitlementApi } from "./api";
@@ -19,6 +20,7 @@ type InboxRow =
   | { id: string; kind: "correction"; title: string; subject: string; reason: string; units: number; raisedAt: string; status: string; correction: WorkbenchRequestRow };
 
 export function Component() {
+  const session = useSession();
   const actor = useActor();
   const [requirements, setRequirements] = useState<EntitlementRequirement[]>([]);
   const [exceptions, setExceptions] = useState<WarrantyLineException[]>([]);
@@ -45,11 +47,11 @@ export function Component() {
   ].sort((left, right) => left.raisedAt.localeCompare(right.raisedAt)), [approvals, requirements, exceptions, corrections, person]);
   const oldest = rows[0] ? daysOld(rows[0].raisedAt) : 0;
   const columns: GridColumn<InboxRow>[] = [
-    { key: "request", label: "Request · subject", width: 34, render: (row) => <>{row.title}<span className="sub">{row.subject}</span></> },
-    { key: "source", label: "Source", width: 15, render: (row) => <StatusBadge tone={row.kind === "bulk" || row.kind === "correction" ? "info" : row.kind === "requirement" ? "bad" : "warn"}>{humanise(row.kind)}</StatusBadge> },
-    { key: "reason", label: "Why this needs attention", width: 24, mono: true, render: (row) => row.reason },
-    { key: "units", label: "Units", width: 8, numeric: true, render: (row) => row.units.toLocaleString() },
-    { key: "status", label: "Status · age", width: 19, render: (row) => <><StatusBadge tone={row.kind === "requirement" ? "bad" : "warn"}>{row.status}</StatusBadge><span className="sub">{daysOld(row.raisedAt)} d · {fmtDateTime(row.raisedAt)}</span></> },
+    { key: "request", label: "Request · subject", width: 34, sort: { key: "request", value: (row) => row.title }, render: (row) => <>{row.title}<span className="sub">{row.subject}</span></> },
+    { key: "source", label: "Source", width: 15, sort: { key: "source", value: (row) => row.kind }, render: (row) => <StatusBadge tone={row.kind === "bulk" || row.kind === "correction" ? "info" : row.kind === "requirement" ? "bad" : "warn"}>{humanise(row.kind)}</StatusBadge> },
+    { key: "reason", label: "Why this needs attention", width: 24, mono: true, sort: { key: "reason", value: (row) => row.reason }, render: (row) => row.reason },
+    { key: "units", label: "Units", width: 8, numeric: true, sort: { key: "units", defaultDir: "desc", value: (row) => row.units }, render: (row) => row.units.toLocaleString() },
+    { key: "status", label: "Status · age", width: 19, sort: { key: "raised", value: (row) => row.raisedAt }, render: (row) => <><StatusBadge tone={row.kind === "requirement" ? "bad" : "warn"}>{row.status}</StatusBadge><span className="sub">{daysOld(row.raisedAt)} d · {fmtDateTime(row.raisedAt)}</span></> },
   ];
   const open = (row: InboxRow) => {
     setActive(row.id);
@@ -71,7 +73,7 @@ export function Component() {
       <ErrorNote error={error} />
       <div className="stack">
         <KpiStrip kpis={[{ label: "Waiting for you", value: rows.length.toLocaleString(), detail: `${corrections.length} corrections · ${approvals.length} bulk · ${rows.length - approvals.length - corrections.length} single`, trend: null }, { label: "Oldest", value: `${oldest} d`, detail: rows[0]?.title ?? "Nothing waiting", trend: null }, { label: "Due today", value: requirements.length.toLocaleString(), detail: "manager requirements on this page", trend: null }, { label: "Bulk approvals", value: approvals.length.toLocaleString(), detail: "frozen previews · server", trend: null }]} />
-        <section className="card" aria-labelledby="approval-list"><div className="card-header"><h2 id="approval-list">Requests <span className="meta">{rows.length} waiting · sorted oldest first</span></h2><div className="segmented plain" aria-label="Approval scope"><button type="button" aria-pressed="true">Mine <span className="n">{rows.length}</span></button><button type="button">Finance review</button><button type="button">All open</button></div></div><DataGrid columns={columns} page={{ rows, total: rows.length, page: 1, pageSize: Math.max(rows.length, 1), continuation: null }} rowId={(row) => row.id} onPage={() => undefined} onRowClick={open} activeRowId={active} loading={loading} emptyText="Nothing is waiting for your approval. New requests will appear here with the command preview and required evidence." viewportHeight={620} /></section>
+        <section className="card" aria-labelledby="approval-list"><div className="card-header"><h2 id="approval-list">Requests <span className="meta">{rows.length} waiting · sorted oldest first</span></h2><div className="segmented plain" aria-label="Approval scope"><button type="button" aria-pressed="true">Mine <span className="n">{rows.length}</span></button><button type="button">Finance review</button><button type="button">All open</button></div></div><DataGrid columns={columns} page={{ rows, total: rows.length, page: 1, pageSize: 100, continuation: null }} rowId={(row) => row.id} onPage={() => undefined} onRowClick={open} activeRowId={active} loading={loading} emptyText="Nothing is waiting for your approval. New requests will appear here with the command preview and required evidence." viewportHeight={620} footer={`${rows.length.toLocaleString()} requests · complete list`} gridId="approval-inbox" userId={session.user.id} defaultSort={{ key: "raised", dir: "asc" }} defaultPageSize={100} /></section>
       </div>
     </main>
     <Rail label="Approval sources"><Section title="What appears here"><div className="job"><div><div className="t">Entitlement requirements</div><div className="s">backend · exception status</div></div><StatusBadge tone="bad">{requirements.length}</StatusBadge></div><div className="job"><div><div className="t">Warranty-line exceptions</div><div className="s">backend · open status</div></div><StatusBadge tone="warn">{exceptions.length}</StatusBadge></div><div className="job"><div><div className="t">Bulk previews</div><div className="s">backend · pending status</div></div><StatusBadge tone="info">{approvals.length}</StatusBadge></div></Section><Section title="Boundary"><p className="muted">The screen does not invent approval state. Every row here is persisted on the server. A bulk request executes the requester's exact arguments under your own roles, and never after its units have changed.</p></Section></Rail>

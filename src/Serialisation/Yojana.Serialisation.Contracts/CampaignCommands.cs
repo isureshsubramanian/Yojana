@@ -89,7 +89,7 @@ public sealed record UpdateCampaign(
     string? ExpectedVersion = null,
     Guid LegalEntityId = default) : IExpectedDocumentVersion;
 
-public sealed record PreviewCampaign(Guid CampaignId, int Skip = 0, int Take = 50);
+public sealed record PreviewCampaign(Guid CampaignId, int Skip = 0, int Take = 50, string? Sort = null, string? Direction = null);
 
 public sealed record SelectCampaignUnits(Guid CommandId, Guid CampaignId, DateTime EventTime, Guid LegalEntityId, string ActorRef);
 
@@ -168,7 +168,8 @@ public sealed record CampaignListRow(
     DateOnly? RunsUntil,
     decimal PartsPct,
     decimal LabourPct,
-    decimal TravelPct);
+    decimal TravelPct,
+    DateTime UpdatedAt);
 
 public sealed record CampaignFunnelStep(string Kind, int Count);
 

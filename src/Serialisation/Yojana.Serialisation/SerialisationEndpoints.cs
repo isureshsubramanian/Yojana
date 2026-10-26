@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Yojana.Platform.Contracts.Paging;
 using Wolverine;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
@@ -40,6 +41,9 @@ using Yojana.Serialisation.Settings;
 using CommandRefusedException = Yojana.Platform.Contracts.CommandRefusedException;
 
 namespace Yojana.Serialisation;
+
+// List endpoints only bind sort, direction, cursor and size. Their query services declare columns through
+// SortedPage<TRow, TTie>, which owns validation, ordering and cursor compatibility for this boundary.
 
 /// <summary>
 /// HTTP surface of the P1 screens: read models directly, commands through the message bus (the tenant of the
@@ -623,16 +627,21 @@ public static class SerialisationEndpoints
         // End P6 OD-26 numbering settings.
 
         var claims = app.MapGroup("/api/claims").RequireAuthorization(YojanaPolicy.TenantMember);
-        claims.MapGet("/", async (string? status, string? coverageSource, string? serviceCountry, string? recovery, string? q, Guid? campaignId, int? skip, int? take,
+        claims.MapGet("/", async (string? status, string? coverageSource, string? serviceCountry, string? recovery, string? q, Guid? campaignId,
+            string? sort, string? dir, string? cursor, int? skip, int? take,
             ClaimQueries queries, UnitQueries units, IClock clock, CancellationToken ct) =>
         {
-            IReadOnlyList<Guid>? unitIds = null;
-            if (!string.IsNullOrWhiteSpace(q)) unitIds = (await units.LookupAsync(q.Trim(), null, ct)).Hits.Select(h => h.UnitId).Distinct().ToList();
-            return Results.Ok(await queries.ListAsync(new ClaimListFilter(status ?? "open", coverageSource, serviceCountry, recovery, q, unitIds, campaignId),
-                DateOnly.FromDateTime(clock.UtcNow), Math.Max(0, skip ?? 0), take ?? 50, ct));
+            try
+            {
+                IReadOnlyList<Guid>? unitIds = null;
+                if (!string.IsNullOrWhiteSpace(q)) unitIds = (await units.LookupAsync(q.Trim(), null, ct)).Hits.Select(h => h.UnitId).Distinct().ToList();
+                return Results.Ok(await queries.ListAsync(new ClaimListFilter(status ?? "open", coverageSource, serviceCountry, recovery, q, unitIds, campaignId),
+                    DateOnly.FromDateTime(clock.UtcNow), sort, dir, cursor, Math.Max(0, skip ?? 0), take ?? 50, ct));
+            }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
         });
         claims.MapGet("/export", async (string? status, string? coverageSource, string? serviceCountry, string? recovery,
-            string? q, Guid? campaignId, string? format, HttpContext http, ClaimQueries queries, UnitQueries units,
+            string? q, Guid? campaignId, string? sort, string? dir, string? format, HttpContext http, ClaimQueries queries, UnitQueries units,
             IClock clock, ITabularExporter exporter, CancellationToken ct) =>
         {
             IReadOnlyList<Guid>? unitIds = null;
@@ -641,7 +650,7 @@ public static class SerialisationEndpoints
             var filter = new ClaimListFilter(status ?? "open", coverageSource, serviceCountry, recovery, q, unitIds, campaignId);
             return ListExport<ClaimListRow>(format, "claims", http, exporter,
                 ExistingListExports.OffsetPages<ClaimListRow>(async (skip, take, token) =>
-                    (await queries.ListAsync(filter, DateOnly.FromDateTime(clock.UtcNow), skip, take, token)).Items, ct));
+                    (await queries.ListAsync(filter, DateOnly.FromDateTime(clock.UtcNow), sort, dir, null, skip, take, token)).Items, ct));
         });
         claims.MapGet("/campaign-options", async (Guid unitId, DateOnly claimDate, ICampaignCoverPort campaigns, CancellationToken ct) =>
             Results.Ok((await campaigns.ListForUnitAsync(unitId, claimDate, ct)).Select(campaign => new ClaimCampaignOption(
@@ -745,19 +754,22 @@ public static class SerialisationEndpoints
             Invoke<ClaimChangeResult>(bus, tenant, command with { ClaimId = claimId, ActorRef = Actor(user) }, ct)).RequireAuthorization(desk);
 
         var rmas = app.MapGroup("/api/rmas").RequireAuthorization(YojanaPolicy.TenantMember);
-        rmas.MapGet("/", async (string? stage, int? minimumAgeDays, int? maximumAgeDays, bool? exceptionsOnly, string? q, string? after, int? take,
+        rmas.MapGet("/", async (string? stage, int? minimumAgeDays, int? maximumAgeDays, bool? exceptionsOnly, string? q,
+            string? sort, string? dir, string? cursor, string? after, int? take,
             RmaQueries queries, IClock clock, CancellationToken ct) =>
         {
-            try { return Results.Ok(await queries.ListAsync(new RmaListFilter(stage, minimumAgeDays, maximumAgeDays, q, exceptionsOnly ?? false), clock.UtcNow, after, take ?? 50, ct)); }
+            try { return Results.Ok(await queries.ListAsync(new RmaListFilter(stage, minimumAgeDays, maximumAgeDays, q, exceptionsOnly ?? false), clock.UtcNow, sort, dir, cursor ?? after, take ?? 50, ct)); }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
             catch (ArgumentException ex) { return ApiProblem("filters_invalid", ex.Message); }
         });
-        rmas.MapGet("/export", (string? stage, int? minimumAgeDays, int? maximumAgeDays, bool? exceptionsOnly, string? q, string? format,
+        rmas.MapGet("/export", (string? stage, int? minimumAgeDays, int? maximumAgeDays, bool? exceptionsOnly, string? q,
+            string? sort, string? dir, string? format,
             HttpContext http, RmaQueries queries, IClock clock, ITabularExporter exporter, CancellationToken ct) =>
             ListExport<RmaListRow>(format, "rmas", http, exporter,
                 ExistingListExports.CursorPages<RmaListRow>(async (after, take, token) =>
                 {
                     var page = await queries.ListAsync(new RmaListFilter(stage, minimumAgeDays, maximumAgeDays, q, exceptionsOnly ?? false),
-                        clock.UtcNow, after, take, token);
+                        clock.UtcNow, sort, dir, after, take, token);
                     return (page.Rows, page.Continuation);
                 }, ct)));
         rmas.MapPost("/stage-counters/rebuild", (RebuildRmaStageCounters command, ClaimsPrincipal user,
@@ -782,14 +794,17 @@ public static class SerialisationEndpoints
 
         // P5 refurbishment endpoints — kept as one block so sibling endpoint additions merge mechanically.
         var refurbishments = app.MapGroup("/api/refurbishments").RequireAuthorization(YojanaPolicy.TenantMember);
-        refurbishments.MapGet("/", async (string? status, string? kind, Guid? unitId, int? skip, int? take,
-            RefurbishmentQueries queries, CancellationToken ct) =>
-            Results.Ok(await queries.PageAsync(status, kind, unitId, Math.Max(0, skip ?? 0), take ?? 50, ct)));
-        refurbishments.MapGet("/export", (string? status, string? kind, Guid? unitId, string? format,
+        refurbishments.MapGet("/", async (string? status, string? kind, Guid? unitId, string? sort, string? dir,
+            string? cursor, int? skip, int? take, RefurbishmentQueries queries, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await queries.PageAsync(status, kind, unitId, sort, dir, cursor, Math.Max(0, skip ?? 0), take ?? 50, ct)); }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
+        });
+        refurbishments.MapGet("/export", (string? status, string? kind, Guid? unitId, string? sort, string? dir, string? format,
             HttpContext http, RefurbishmentQueries queries, ITabularExporter exporter, CancellationToken ct) =>
             ListExport<RefurbishmentWorkOrderRow>(format, "refurbishments", http, exporter,
                 ExistingListExports.OffsetPages<RefurbishmentWorkOrderRow>(async (skip, take, token) =>
-                    (await queries.PageAsync(status, kind, unitId, skip, take, token)).Items, ct)));
+                    (await queries.PageAsync(status, kind, unitId, sort, dir, null, skip, take, token)).Items, ct)));
         refurbishments.MapGet("/{workOrderId:guid}", async (Guid workOrderId, RefurbishmentQueries queries, CancellationToken ct) =>
             await queries.DetailAsync(workOrderId, ct) is { } row ? Results.Ok(row) : Results.NotFound());
         refurbishments.MapPost("/", (OpenRefurbishmentRequest request, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
@@ -913,16 +928,19 @@ public static class SerialisationEndpoints
         }).RequireAuthorization(YojanaPolicy.TenantAdministrator);
         labels.MapGet("/print-jobs", async (string? status, Guid? template, string? find, string? serial,
             string? printer, string? kind, DateTime? from, DateTime? to, DateTime? requestedFrom,
-            DateTime? requestedTo, int? skip, int? take, LabelQueries queries, CancellationToken ct) =>
-            Results.Ok(await queries.JobsAsync(status, template, find ?? serial, printer, kind,
-                from ?? requestedFrom, to ?? requestedTo, skip ?? 0, take ?? 50, ct)));
+            DateTime? requestedTo, string? sort, string? dir, string? cursor, int? skip, int? take, LabelQueries queries, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await queries.JobsAsync(status, template, find ?? serial, printer, kind,
+                from ?? requestedFrom, to ?? requestedTo, sort, dir, cursor, skip ?? 0, take ?? 50, ct)); }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
+        });
         labels.MapGet("/print-jobs/export", (string? status, Guid? template, string? find, string? serial,
             string? printer, string? kind, DateTime? from, DateTime? to, DateTime? requestedFrom,
-            DateTime? requestedTo, string? format, HttpContext http, LabelQueries queries,
+            DateTime? requestedTo, string? sort, string? dir, string? format, HttpContext http, LabelQueries queries,
             ITabularExporter exporter, CancellationToken ct) => ListExport<LabelPrintJobRow>(format,
                 "label-print-jobs", http, exporter, ExistingListExports.OffsetPages<LabelPrintJobRow>(async (skip, take, token) =>
                     (await queries.JobsAsync(status, template, find ?? serial, printer, kind,
-                        from ?? requestedFrom, to ?? requestedTo, skip, take, token)).Rows, ct)));
+                        from ?? requestedFrom, to ?? requestedTo, sort, dir, null, skip, take, token)).Rows, ct)));
         labels.MapGet("/print-jobs/summary", async (DateTime from, DateTime to, LabelQueries queries,
             CancellationToken ct) => Results.Ok(await queries.SummaryAsync(from, to, ct)));
         labels.MapGet("/print-jobs/printers", async (DateTime? from, DateTime? to, LabelQueries queries,
@@ -1011,17 +1029,19 @@ public static class SerialisationEndpoints
 
         // P5 advance-replacement block kept separate so sibling endpoint additions merge mechanically.
         var replacementLinks = app.MapGroup("/api/replacement-links").RequireAuthorization(YojanaPolicy.TenantMember);
-        replacementLinks.MapGet("/", async (string? state, bool? overdue, int? dueWithinDays, string? q, int? skip, int? take, Replacements.ReplacementLinkQueries queries, IClock clock, CancellationToken ct) =>
+        replacementLinks.MapGet("/", async (string? state, bool? overdue, int? dueWithinDays, string? q, string? sort,
+            string? dir, string? cursor, int? skip, int? take, Replacements.ReplacementLinkQueries queries, IClock clock, CancellationToken ct) =>
         {
-            try { return Results.Ok(await queries.PageAsync(state, overdue ?? false, dueWithinDays, q, DateOnly.FromDateTime(clock.UtcNow), skip ?? 0, take ?? 50, ct)); }
+            try { return Results.Ok(await queries.PageAsync(state, overdue ?? false, dueWithinDays, q, DateOnly.FromDateTime(clock.UtcNow), sort, dir, cursor, skip ?? 0, take ?? 50, ct)); }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
             catch (ArgumentException ex) { return ApiProblem("filters_invalid", ex.Message); }
         });
-        replacementLinks.MapGet("/export", (string? state, bool? overdue, int? dueWithinDays, string? q,
+        replacementLinks.MapGet("/export", (string? state, bool? overdue, int? dueWithinDays, string? q, string? sort, string? dir,
             string? format, HttpContext http, Replacements.ReplacementLinkQueries queries, IClock clock,
             ITabularExporter exporter, CancellationToken ct) => ListExport<ReplacementLinkRow>(format,
                 "replacement-links", http, exporter, ExistingListExports.OffsetPages<ReplacementLinkRow>(async (skip, take, token) =>
                     (await queries.PageAsync(state, overdue ?? false, dueWithinDays, q,
-                        DateOnly.FromDateTime(clock.UtcNow), skip, take, token)).Rows, ct)));
+                        DateOnly.FromDateTime(clock.UtcNow), sort, dir, null, skip, take, token)).Rows, ct)));
         replacementLinks.MapPost("/{replacementLinkId:guid}/extend-return-due", (Guid replacementLinkId, ExtendReturnDue command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<ExtendReturnDueResult>(bus, tenant, command with { ReplacementLinkId = replacementLinkId, ActorRef = Actor(user) }, ct)).RequireAuthorization(YojanaPolicy.ServiceSupervisor);
         replacementLinks.MapPost("/{replacementLinkId:guid}/bill-non-return", (Guid replacementLinkId, BillNonReturn command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
@@ -1030,20 +1050,22 @@ public static class SerialisationEndpoints
             Invoke<LiftReplacementHoldResult>(bus, tenant, command with { PartyRef = partyRef, ActorRef = Actor(user) }, ct)).RequireAuthorization(YojanaPolicy.ServiceSupervisor);
 
         var recoveryClaims = app.MapGroup("/api/recovery-claims").RequireAuthorization(YojanaPolicy.TenantMember);
-        recoveryClaims.MapGet("/", async (string? status, Guid? vendor, Guid? childItem, string? find, int? skip, int? take, RecoveryQueries queries, IPartyNamePort parties, IClock clock, CancellationToken ct) =>
+        recoveryClaims.MapGet("/", async (string? status, Guid? vendor, Guid? childItem, string? find, string? sort,
+            string? dir, string? cursor, int? skip, int? take, RecoveryQueries queries, IPartyNamePort parties, IClock clock, CancellationToken ct) =>
         {
             try
             {
                 var matchingVendors = string.IsNullOrWhiteSpace(find) ? [] : (await parties.SearchAsync(find, 25, ct)).Select(row => row.PartyRef).ToList();
-                return Results.Ok(await queries.PageAsync(status, vendor, childItem, find, matchingVendors, DateOnly.FromDateTime(clock.UtcNow), skip ?? 0, take ?? 50, ct));
+                return Results.Ok(await queries.PageAsync(status, vendor, childItem, find, matchingVendors, DateOnly.FromDateTime(clock.UtcNow), sort, dir, cursor, skip ?? 0, take ?? 50, ct));
             }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
             catch (ArgumentException ex) { return ApiProblem("filters_invalid", ex.Message); }
         });
         recoveryClaims.MapGet("/summary", async (RecoveryQueries queries, IClock clock, CancellationToken ct) =>
             Results.Ok(await queries.SummaryAsync(DateOnly.FromDateTime(clock.UtcNow), ct)));
         recoveryClaims.MapGet("/not-raised", async (int? days, RecoveryQueries queries, IClock clock, CancellationToken ct) =>
             Results.Ok(await queries.NotRaisedAsync(days ?? 30, DateOnly.FromDateTime(clock.UtcNow), ct)));
-        recoveryClaims.MapGet("/export", async (string? status, Guid? vendor, Guid? childItem, string? find, string? format,
+        recoveryClaims.MapGet("/export", async (string? status, Guid? vendor, Guid? childItem, string? find, string? sort, string? dir, string? format,
             HttpContext http, RecoveryQueries queries, IItemNamePort items, IPartyNamePort parties, IClock clock,
             ITabularExporter exporter, CancellationToken ct) =>
         {
@@ -1054,7 +1076,7 @@ public static class SerialisationEndpoints
                 ["recovery_number", "raised_at", "customer_claim", "claim_date", "child_serial", "child_item", "vendor",
                     "vendor_term_start", "vendor_term_end", "term_months", "claim_month_of_term", "requested", "approved",
                     "currency", "status", "vendor_reference", "vendor_note"],
-                RecoveryClaimRows(status, vendor, childItem, find, matchingVendors, queries, items, parties,
+                RecoveryClaimRows(status, vendor, childItem, find, matchingVendors, sort, dir, queries, items, parties,
                     DateOnly.FromDateTime(clock.UtcNow), ct));
         });
         recoveryClaims.MapPost("/{recoveryClaimId:guid}/approve", (Guid recoveryClaimId, ApproveRecoveryClaim command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
@@ -1164,25 +1186,31 @@ public static class SerialisationEndpoints
         var warrantyLines = app.MapGroup("/api/warranty-lines").RequireAuthorization(YojanaPolicy.TenantMember);
         warrantyLines.MapPost("/validate", async (WarrantyLineValidation request, WarrantyLineValidationService validation, CancellationToken ct) =>
             Results.Ok(await validation.ValidateAsync(request, ct)));
-        warrantyLines.MapGet("/exceptions", async (string? status, int? skip, int? take, WarrantyLineExceptionQueries queries, CancellationToken ct) =>
-            Results.Ok(await queries.PageAsync(status, skip ?? 0, take ?? 50, ct)));
-        warrantyLines.MapGet("/exceptions/export", (string? status, string? format, HttpContext http,
+        warrantyLines.MapGet("/exceptions", async (string? status, string? sort, string? dir, string? cursor, int? skip, int? take, WarrantyLineExceptionQueries queries, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await queries.PageAsync(status, sort, dir, cursor, skip ?? 0, take ?? 50, ct)); }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
+        });
+        warrantyLines.MapGet("/exceptions/export", (string? status, string? sort, string? dir, string? format, HttpContext http,
             WarrantyLineExceptionQueries queries, ITabularExporter exporter, CancellationToken ct) =>
             ListExport<WarrantyLineExceptionRow>(format, "warranty-line-exceptions", http, exporter,
                 ExistingListExports.OffsetPages<WarrantyLineExceptionRow>(async (skip, take, token) =>
-                    (await queries.PageAsync(status, skip, take, token)).Items, ct)));
+                    (await queries.PageAsync(status, sort, dir, null, skip, take, token)).Items, ct)));
         warrantyLines.MapPost("/exceptions/{exceptionId:guid}/resolve", (Guid exceptionId, ResolveWarrantyLineException command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<WarrantyLineExceptionRow>(bus, tenant, command with { ActorRef = Actor(user), ExceptionId = exceptionId }, ct)).RequireAuthorization(desk);
 
         // Campaign recipients are selected from current ownership and custody by the handler. The body can never name
         // the acting user; the authenticated claim is stamped at this boundary like every other command endpoint.
         var campaigns = app.MapGroup("/api/campaigns").RequireAuthorization(YojanaPolicy.TenantMember);
-        campaigns.MapGet("/", async (string? status, int? skip, int? take, CampaignQueries queries, CancellationToken ct) =>
-            Results.Ok(await queries.ListAsync(status, skip ?? 0, take ?? 50, ct)));
-        campaigns.MapGet("/export", (string? status, string? format, HttpContext http, CampaignQueries queries,
+        campaigns.MapGet("/", async (string? status, string? sort, string? dir, string? cursor, int? skip, int? take, CampaignQueries queries, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await queries.ListAsync(status, sort, dir, cursor, skip ?? 0, take ?? 50, ct)); }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
+        });
+        campaigns.MapGet("/export", (string? status, string? sort, string? dir, string? format, HttpContext http, CampaignQueries queries,
             ITabularExporter exporter, CancellationToken ct) => ListExport<CampaignListRow>(format, "campaigns", http,
                 exporter, ExistingListExports.OffsetPages<CampaignListRow>(async (skip, take, token) =>
-                    (await queries.ListAsync(status, skip, take, token)).Items, ct)));
+                    (await queries.ListAsync(status, sort, dir, null, skip, take, token)).Items, ct)));
         campaigns.MapGet("/{campaignId:guid}", async (Guid campaignId, CampaignQueries queries, CancellationToken ct) =>
             await queries.DetailAsync(campaignId, ct) is { } campaign ? Results.Ok(campaign) : Results.NotFound());
         campaigns.MapPost("/", (CreateCampaign command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
@@ -1198,15 +1226,21 @@ public static class SerialisationEndpoints
         campaigns.MapGet("/{campaignId:guid}/units/{unitId:guid}/match", async (Guid campaignId, Guid unitId, CampaignQueries queries, CancellationToken ct) =>
             await queries.MatchAsync(campaignId, unitId, ct) is { } evidence ? Results.Ok(evidence) : Results.NotFound());
         campaigns.MapGet("/{campaignId:guid}/units", async (Guid campaignId, string? serial, Guid? owner, string? custody,
-            bool? ownerDiffersInvoice, string? repair, int? skip, int? take, CampaignQueries queries, CancellationToken ct) =>
-            await queries.UnitsAsync(campaignId, serial, owner, custody, ownerDiffersInvoice, repair, skip ?? 0, take ?? 50, ct) is { } page
-                ? Results.Ok(page) : Results.NotFound());
+            bool? ownerDiffersInvoice, string? repair, string? sort, string? dir, string? cursor, int? skip, int? take, CampaignQueries queries, CancellationToken ct) =>
+        {
+            try
+            {
+                return await queries.UnitsAsync(campaignId, serial, owner, custody, ownerDiffersInvoice, repair, sort, dir, cursor,
+                    skip ?? 0, take ?? 50, ct) is { } page ? Results.Ok(page) : Results.NotFound();
+            }
+            catch (CommandRefusedException ex) { return Refused(ex, StatusCodes.Status400BadRequest); }
+        });
         campaigns.MapGet("/{campaignId:guid}/units/summary", async (Guid campaignId, CampaignQueries queries, CancellationToken ct) =>
             await queries.UnitsSummaryAsync(campaignId, ct) is { } summary ? Results.Ok(summary) : Results.NotFound());
-        campaigns.MapGet("/{campaignId:guid}/units/export", (Guid campaignId, string? format, HttpContext http,
+        campaigns.MapGet("/{campaignId:guid}/units/export", (Guid campaignId, string? sort, string? dir, string? format, HttpContext http,
             CampaignQueries queries, IPartyNamePort parties, ITabularExporter exporter, CancellationToken ct) =>
             DirectExport(format, $"campaign-{campaignId:N}-recipients", http, exporter,
-                ["serial", "owner", "custodian", "selected_at"], CampaignRecipientRows(campaignId, queries, parties, ct)));
+                ["serial", "owner", "custodian", "selected_at"], CampaignRecipientRows(campaignId, sort, dir, queries, parties, ct)));
 
         // P6 certificate read and selection issue/reprint surface.
         var generalSettings = app.MapGroup("/api/settings").RequireAuthorization(YojanaPolicy.TenantMember);
@@ -1563,10 +1597,10 @@ public static class SerialisationEndpoints
             YojanaRole.SerialAdministrator, YojanaRole.ProductionSupervisor, YojanaRole.Quality,
             YojanaRole.InventoryController, YojanaRole.WarehouseLead, YojanaRole.TenantAdministrator));
         importJobs.MapGet("/history", (DateTime? from, DateTime? to, string? find, string? status,
-            string? uploader, string? fileName, string? hash, string? cursor, int? take, ClaimsPrincipal user,
+            string? uploader, string? fileName, string? hash, string? sort, string? dir, string? cursor, int? take, ClaimsPrincipal user,
             ImportQueries queries, CancellationToken ct) => ImportInvoke(async () =>
             {
-                var page = await queries.HistoryAsync(new(from, to, status, uploader, find, fileName, hash), cursor, take ?? 50, ct);
+                var page = await queries.HistoryAsync(new(from, to, status, uploader, find, fileName, hash), sort, dir, cursor, take ?? 50, ct);
                 var actor = Actor(user);
                 var roles = Roles(user);
                 return page with
@@ -1580,39 +1614,39 @@ public static class SerialisationEndpoints
                 };
             }));
         importJobs.MapGet("/history/export", (DateTime? from, DateTime? to, string? find, string? status,
-            string? uploader, string? fileName, string? hash, HttpContext http, ImportQueries queries,
+            string? uploader, string? fileName, string? hash, string? sort, string? dir, HttpContext http, ImportQueries queries,
             ITabularExporter exporter, CancellationToken ct) =>
         {
             http.Response.Headers.ContentDisposition = "attachment; filename=import-file-history.csv";
             return Results.Stream(stream => exporter.WriteAsync("csv", new TabularExport(
                 ["file_name", "format", "size", "original_hash", "converted_hash", "uploader", "uploaded_at", "source", "status", "applied", "skipped", "rejected", "storage_state"],
-                queries.ExportHistoryAsync(new(from, to, status, uploader, find, fileName, hash), ct)), stream, ct),
+                queries.ExportHistoryAsync(new(from, to, status, uploader, find, fileName, hash), sort, dir, ct)), stream, ct),
                 exporter.ContentType("csv"), "import-file-history.csv");
         });
         importJobs.MapGet("/history/feed-messages", (DateTime? from, DateTime? to, string? find, string? status,
-            string? cursor, int? take, ImportQueries queries, CancellationToken ct) => ImportInvoke(() =>
-                queries.FeedMessagesAsync(new(from, to, find, status), cursor, take ?? 50, ct)));
+            string? sort, string? dir, string? cursor, int? take, ImportQueries queries, CancellationToken ct) => ImportInvoke(() =>
+                queries.FeedMessagesAsync(new(from, to, find, status), sort, dir, cursor, take ?? 50, ct)));
         importJobs.MapGet("/history/feed-messages/export", (DateTime? from, DateTime? to, string? find, string? status,
-            HttpContext http, ImportQueries queries, ITabularExporter exporter, CancellationToken ct) =>
+            string? sort, string? dir, HttpContext http, ImportQueries queries, ITabularExporter exporter, CancellationToken ct) =>
         {
             http.Response.Headers.ContentDisposition = "attachment; filename=partner-feed-message-history.csv";
             return Results.Stream(stream => exporter.WriteAsync("csv", new TabularExport(
                 ["message_reference", "document_type", "document_id", "document_line", "received_at", "caller",
                     "status", "shipped", "asset_tags", "rejected", "payload_hash", "import_job_id"],
-                queries.ExportFeedMessagesAsync(new(from, to, find, status), ct)), stream, ct),
+                queries.ExportFeedMessagesAsync(new(from, to, find, status), sort, dir, ct)), stream, ct),
                 exporter.ContentType("csv"), "partner-feed-message-history.csv");
         });
         importJobs.MapGet("/history/comparisons", (DateTime? from, DateTime? to, string? find, string? status,
-            string? cursor, int? take, ImportQueries queries, CancellationToken ct) => ImportInvoke(() =>
-                queries.ComparisonsAsync(new(from, to, find, status), cursor, take ?? 50, ct)));
+            string? sort, string? dir, string? cursor, int? take, ImportQueries queries, CancellationToken ct) => ImportInvoke(() =>
+                queries.ComparisonsAsync(new(from, to, find, status), sort, dir, cursor, take ?? 50, ct)));
         importJobs.MapGet("/history/comparisons/export", (DateTime? from, DateTime? to, string? find, string? status,
-            HttpContext http, ImportQueries queries, ITabularExporter exporter, CancellationToken ct) =>
+            string? sort, string? dir, HttpContext http, ImportQueries queries, ITabularExporter exporter, CancellationToken ct) =>
         {
             http.Response.Headers.ContentDisposition = "attachment; filename=file-comparison-history.csv";
             return Results.Stream(stream => exporter.WriteAsync("csv", new TabularExport(
                 ["first_file_id", "first_file_name", "first_file_hash", "second_file_id", "second_file_name",
                     "second_file_hash", "status", "applied", "skipped", "rejected", "ran_at", "import_job_id"],
-                queries.ExportComparisonsAsync(new(from, to, find, status), ct)), stream, ct),
+                queries.ExportComparisonsAsync(new(from, to, find, status), sort, dir, ct)), stream, ct),
                 exporter.ContentType("csv"), "file-comparison-history.csv");
         });
         // Downloads sit outside the import-role group: the administrators and the service manager may download any file
@@ -2014,7 +2048,7 @@ public static class SerialisationEndpoints
     }
 
     private static async IAsyncEnumerable<IReadOnlyList<string?>> RecoveryClaimRows(string? status, Guid? vendor,
-        Guid? childItem, string? find, List<Guid> matchingVendors, RecoveryQueries queries, IItemNamePort items,
+        Guid? childItem, string? find, List<Guid> matchingVendors, string? sort, string? direction, RecoveryQueries queries, IItemNamePort items,
         IPartyNamePort parties, DateOnly asOf,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -2022,7 +2056,7 @@ public static class SerialisationEndpoints
         var exported = 0;
         while (true)
         {
-            var page = await queries.PageAsync(status, vendor, childItem, find, matchingVendors, asOf, offset,
+            var page = await queries.PageAsync(status, vendor, childItem, find, matchingVendors, asOf, sort, direction, null, offset,
                 ExistingListExports.PageSize, cancellationToken);
             var itemNames = await items.NamesAsync(page.Rows.Select(row => row.ChildItemId).Distinct().ToList(), cancellationToken);
             var partyNames = await parties.NamesAsync(page.Rows.Select(row => row.VendorPartyRef).Distinct().ToList(), cancellationToken);
@@ -2074,12 +2108,12 @@ public static class SerialisationEndpoints
     }
 
     private static async IAsyncEnumerable<IReadOnlyList<string?>> CampaignRecipientRows(Guid campaignId,
-        CampaignQueries queries, IPartyNamePort parties,
+        string? sort, string? direction, CampaignQueries queries, IPartyNamePort parties,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var names = await parties.NamesAsync(await queries.RecipientPartyRefsAsync(campaignId, cancellationToken), cancellationToken);
         var exported = 0;
-        await foreach (var row in queries.ExportUnitsAsync(campaignId, cancellationToken))
+        await foreach (var row in queries.ExportUnitsAsync(campaignId, sort, direction, cancellationToken))
         {
             EnsureEndpointExportCap(++exported);
             yield return [row.Serial, PartyName(row.OwnerPartyRef, names),

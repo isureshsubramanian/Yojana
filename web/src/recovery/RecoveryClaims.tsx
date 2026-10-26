@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router";
-import { DataGrid, KpiStrip, StatusBadge, type GridColumn } from "../components";
+import { DataGrid, KpiStrip, StatusBadge, useGridQuery, type GridColumn } from "../components";
+import { useSession } from "../session/session";
 import { useReferenceNames } from "../corrections/ReferenceFields";
 import { usePeople } from "../people/people";
 import { Rail } from "../shell/Drawer";
@@ -11,29 +12,30 @@ import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
 import { fmtDate } from "../units/format";
 import { recoveryApi } from "./api";
 import { currencyAmounts, money, noRecoveryExplanation, primaryApprovalRate, recoveryState, termText } from "./format";
-import type { RecoveryAnswer, RecoveryClaimPage, RecoveryClaimRow, RecoveryClaimSummary, RecoveryNotRaisedReport, RecoveryPolicy } from "./types";
+import { recoveryClaimPage, type RecoveryAnswer, type RecoveryClaimRow, type RecoveryClaimSummary, type RecoveryNotRaisedReport, type RecoveryPolicy } from "./types";
 
 const PAGE_SIZE = 50;
 
 export function Component() {
+  const session = useSession();
   const [status, setStatus] = useState("open");
   const [vendor, setVendor] = useState("");
   const [childItem, setChildItem] = useState("");
   const [findText, setFindText] = useState("");
   const [find, setFind] = useState("");
-  const [page, setPage] = useState(1);
-  const [data, setData] = useState<RecoveryClaimPage | null>(null);
   const [summary, setSummary] = useState<RecoveryClaimSummary | null>(null);
   const [notRaised, setNotRaised] = useState<RecoveryNotRaisedReport | null>(null);
   const [policy, setPolicy] = useState<RecoveryPolicy | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [revision, setRevision] = useState(0);
-  const filters = useMemo(() => ({ status, vendor: vendor || undefined, childItem: childItem || undefined, find: find || undefined, skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE }), [status, vendor, childItem, find, page]);
+  const filters = useMemo(() => ({ status, vendor: vendor || undefined, childItem: childItem || undefined, find: find || undefined }), [status, vendor, childItem, find]);
   const exportFilters = useMemo(() => ({ status, vendor: vendor || undefined, childItem: childItem || undefined, find: find || undefined }), [status, vendor, childItem, find]);
+  const filterParams = useMemo(() => { const value = new URLSearchParams(); Object.entries(filters).forEach(([key, entry]) => { if (entry) value.set(key, entry); }); return value; }, [filters]);
+  const query = useGridQuery("/api/recovery-claims/", recoveryClaimPage, { gridId: "recovery-claims", userId: session.user.id, defaultSort: { key: "raised", dir: "asc" }, defaultSize: PAGE_SIZE, params: filterParams, reloadKey: revision, sortKeys: ["number", "raised", "status"] });
+  const data = query.data;
 
-  useEffect(() => { const timer = window.setTimeout(() => { setFind(findText.trim()); setPage(1); }, 250); return () => window.clearTimeout(timer); }, [findText]);
+  useEffect(() => { const timer = window.setTimeout(() => setFind(findText.trim()), 250); return () => window.clearTimeout(timer); }, [findText]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -44,12 +46,12 @@ export function Component() {
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController(); setLoading(true); setError(null);
-    Promise.all([recoveryApi.page(filters, controller.signal), recoveryApi.summary(controller.signal), recoveryApi.notRaised(30, controller.signal)])
-      .then(([nextPage, nextSummary, nextNotRaised]) => { setData(nextPage); setSummary(nextSummary); setNotRaised(nextNotRaised); setLoading(false); })
-      .catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) { setError(reason); setLoading(false); } });
+    const controller = new AbortController(); setError(null);
+    Promise.all([recoveryApi.summary(controller.signal), recoveryApi.notRaised(30, controller.signal)])
+      .then(([nextSummary, nextNotRaised]) => { setSummary(nextSummary); setNotRaised(nextNotRaised); })
+      .catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); });
     return () => controller.abort();
-  }, [filters, revision]);
+  }, [revision]);
 
   const rows = data?.rows ?? [];
   const allItemIds = [...rows.map((row) => row.childItemId), ...(summary?.childItems.map((row) => row.id) ?? []), ...(notRaised?.rows.map((row) => row.itemId) ?? [])];
@@ -70,27 +72,28 @@ export function Component() {
   }, [drawerBody, vendorAnswerDueDays]);
 
   const columns: GridColumn<RecoveryClaimRow>[] = [
-    { key: "recovery", label: "Recovery", width: 13, mono: true, render: (row) => <>{row.recoveryNumber}<span className="sub" style={{ fontFamily: "var(--font-body)" }}>raised {fmtDate(row.raisedAt)}</span></> },
+    { key: "recovery", label: "Recovery", width: 13, mono: true, sort: { key: "number", defaultDir: "asc" }, render: (row) => <>{row.recoveryNumber}<span className="sub" style={{ fontFamily: "var(--font-body)" }}>raised {fmtDate(row.raisedAt)}</span></> },
     { key: "claim", label: "Customer claim", width: 13, mono: true, render: (row) => <Link to={`/claims/${row.customerClaimId}`}>{row.customerClaimNumber}</Link> },
     { key: "child", label: "Child unit", width: 16, render: (row) => <><UnitLink unitId={row.childUnitId}>{row.childSerial}</UnitLink><span className="sub">{names.item(row.childItemId)} · {row.parentSerial ? `in ${row.parentSerial}` : "unit itself"}</span></> },
     { key: "vendor", label: "Vendor", width: 15, render: (row) => names.party(row.vendorPartyRef) },
     { key: "term", label: "Vendor term", width: 14, render: (row) => <>{termText(row.vendorTermMonths, row.vendorTermEnd)}<span className="sub">month {row.claimMonthOfTerm ?? "—"}</span></> },
     { key: "requested", label: "Requested", width: 9, numeric: true, render: (row) => money(row.requestedAmount, row.currency) },
     { key: "approved", label: "Approved", width: 9, numeric: true, muted: true, render: (row) => row.approvedAmount === null ? "—" : money(row.approvedAmount, row.currency) },
-    { key: "status", label: "Status", width: 11, render: (row) => { const state = recoveryState(row, vendorAnswerDueDays); return <><StatusBadge tone={state.tone}>{state.label}</StatusBadge><span className="sub">{state.detail}</span></>; } },
+    { key: "status", label: "Status", width: 11, sort: { key: "status", defaultDir: "asc" }, render: (row) => { const state = recoveryState(row, vendorAnswerDueDays); return <><StatusBadge tone={state.tone}>{state.label}</StatusBadge><span className="sub">{state.detail}</span></>; } },
+    { key: "raised", label: "Raised", width: 10, sort: { key: "raised", defaultDir: "asc" }, render: (row) => fmtDate(row.raisedAt) },
   ];
 
   const title = status === "open" ? "Open recovery claims" : status === "approved" ? "Approved recovery claims" : "Recovery claims";
-  const gridPage = { rows, total: data?.total ?? 0, page, pageSize: PAGE_SIZE, continuation: null };
+  const gridPage = { rows, total: data?.total ?? 0, page: query.page, pageSize: query.pageSize, continuation: null };
 
   return <>
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Claims", to: "/claims" }, { label: "Recovery claims" }]} />
       <div className="page-header"><div><h1>Recovery claims</h1><p className="sub">Raised automatically when an approved customer claim hits a unit or child with a vendor term live on the claim date · requested and approved amounts tracked separately</p></div><div className="actions">
-        <a className="btn" href={recoveryApi.exportUrl(exportFilters)} download><Icon name="down" />Export</a>
+        <a className="btn" href={recoveryApi.exportUrl(exportFilters, query.sort.key, query.sort.dir)} download><Icon name="down" />Export</a>
         <button type="button" className="btn primary" disabled={!selected || selected.status !== "raised"} onClick={() => selected && openRow(selected)}><Icon name="check" />Record vendor answer</button>
       </div></div>
-      <ErrorNote error={error} />
+      <ErrorNote error={error ?? query.error} />
       <div className="stack">
         <KpiStrip label="Recovery figures" kpis={[
           { label: "Open with vendors", value: (summary?.openCount ?? 0).toLocaleString(), detail: `${openAmounts.value} requested${openAmounts.others ? ` · ${openAmounts.others}` : ""}`, trend: null },
@@ -101,19 +104,19 @@ export function Component() {
 
         <section className="card" aria-label="Recovery claim filters"><div className="card-body"><div className="toolbar">
           <div className="scanbox plain"><Icon name="scan" /><input className="input" type="search" value={findText} onChange={(event) => setFindText(event.target.value)} placeholder="Recovery, claim, child serial or vendor" aria-label="Find a recovery claim" /></div>
-          <label className="chip-field"><span className="chip-k">Status</span><select className={`chip-select${status !== "all" ? " on" : ""}`} aria-label="Status" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="open">Open</option><option value="approved">Approved</option><option value="all">All</option></select></label>
-          <label className="chip-field"><span className="chip-k">Vendor</span><select className={`chip-select${vendor ? " on" : ""}`} aria-label="Vendor" value={vendor} onChange={(event) => { setVendor(event.target.value); setPage(1); }}><option value="">All</option>{summary?.vendors.map((option) => <option key={option.id} value={option.id}>{names.party(option.id)} · {option.count}</option>)}</select></label>
-          <label className="chip-field"><span className="chip-k">Child item</span><select className={`chip-select${childItem ? " on" : ""}`} aria-label="Child item" value={childItem} onChange={(event) => { setChildItem(event.target.value); setPage(1); }}><option value="">All</option>{summary?.childItems.map((option) => <option key={option.id} value={option.id}>{names.item(option.id)} · {option.count}</option>)}</select></label>
+          <label className="chip-field"><span className="chip-k">Status</span><select className={`chip-select${status !== "all" ? " on" : ""}`} aria-label="Status" value={status} onChange={(event) => setStatus(event.target.value)}><option value="open">Open</option><option value="approved">Approved</option><option value="all">All</option></select></label>
+          <label className="chip-field"><span className="chip-k">Vendor</span><select className={`chip-select${vendor ? " on" : ""}`} aria-label="Vendor" value={vendor} onChange={(event) => setVendor(event.target.value)}><option value="">All</option>{summary?.vendors.map((option) => <option key={option.id} value={option.id}>{names.party(option.id)} · {option.count}</option>)}</select></label>
+          <label className="chip-field"><span className="chip-k">Child item</span><select className={`chip-select${childItem ? " on" : ""}`} aria-label="Child item" value={childItem} onChange={(event) => setChildItem(event.target.value)}><option value="">All</option>{summary?.childItems.map((option) => <option key={option.id} value={option.id}>{names.item(option.id)} · {option.count}</option>)}</select></label>
         </div></div></section>
 
         <section className="card" aria-labelledby="recovery-list"><div className="card-header"><h2 id="recovery-list">{title} <span className="meta">{data?.total.toLocaleString() ?? "…"} claims · {summary?.vendors.length.toLocaleString() ?? "…"} vendors</span></h2><span className="meta nowrap">Sorted by age, oldest first</span></div>
-          <DataGrid columns={columns} page={gridPage} rowId={(row) => row.recoveryClaimId} onPage={setPage} onRowClick={openRow} activeRowId={selectedId} loading={loading} emptyText="No recovery claims match these filters." viewportHeight={330} />
+          <DataGrid columns={columns} page={gridPage} rowId={(row) => row.recoveryClaimId} onPage={query.onPage} onRowClick={openRow} activeRowId={selectedId} loading={query.loading} emptyText="No recovery claims match these filters." viewportHeight={330} gridId="recovery-claims" userId={session.user.id} sort={query.sort} defaultSort={{ key: "raised", dir: "asc" }} onSort={query.onSort} pageSize={query.pageSize} defaultPageSize={PAGE_SIZE} onPageSize={query.onPageSize} />
         </section>
 
         <section className="card" aria-labelledby="not-raised"><div className="card-header"><h2 id="not-raised">Approved claims that raised no recovery <span className="meta">last {notRaised?.days ?? 30} days · {notRaised?.rows.length.toLocaleString() ?? "…"} claims</span></h2><span className="meta">so a missed recovery is visible, not silent</span></div>
           <table className="table dense"><colgroup><col style={{ width: "16%" }} /><col style={{ width: "22%" }} /><col style={{ width: "22%" }} /><col style={{ width: "40%" }} /></colgroup><tbody>
             {notRaised?.rows.map((row) => <tr key={row.customerClaimId}><td className="serial"><Link to={`/claims/${row.customerClaimId}`}>{row.customerClaimNumber}</Link></td><td><UnitLink unitId={row.unitId}>{row.unitSerial}</UnitLink> · {names.item(row.itemId)}</td><td>{row.vendorPartyRef ? names.party(row.vendorPartyRef) : <span className="muted">{row.reason === "no_vendor_term" ? "no vendor term" : row.reason === "recall_claim" ? "campaign" : "tenant policy"}</span>}</td><td className="muted">{noRecoveryExplanation(row.reason, row)}</td></tr>)}
-            {!loading && !notRaised?.rows.length && <tr><td colSpan={4} className="muted" style={{ textAlign: "center", height: 64 }}>Every approved claim in the last 30 days has an explained recovery outcome.</td></tr>}
+            {!query.loading && !notRaised?.rows.length && <tr><td colSpan={4} className="muted" style={{ textAlign: "center", height: 64 }}>Every approved claim in the last 30 days has an explained recovery outcome.</td></tr>}
           </tbody></table>
         </section>
       </div>

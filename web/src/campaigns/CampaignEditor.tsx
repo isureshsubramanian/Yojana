@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { DataGrid, PresenceAdvisory, PresenceChips, Shortcut, StatusBadge, useDocumentPresence, useModEnter, type GridColumn } from "../components";
+import { DataGrid, PresenceAdvisory, PresenceChips, Shortcut, StatusBadge, useDocumentPresence, useGridState, useModEnter, type GridColumn } from "../components";
 import { ItemField, LotField, UnitField, useReferenceNames } from "../corrections/ReferenceFields";
 import { usePeople } from "../people/people";
+import { useSession } from "../session/session";
 import { Rail } from "../shell/Drawer";
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
@@ -18,13 +19,14 @@ const PAGE = 50;
 const TODAY = new Date().toISOString().slice(0, 10);
 
 export function Component() {
+  const session = useSession();
+  const grid = useGridState("campaign-preview", session.user.id, { key: "serial", dir: "asc" }, PAGE);
   const { campaignId } = useParams();
   const navigate = useNavigate();
   const isNew = !campaignId;
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [draft, setDraft] = useState<CampaignDraft>(() => emptyDraft());
   const [addKind, setAddKind] = useState<CampaignCriterionKind>("identifier_range");
-  const [previewPage, setPreviewPage] = useState(1);
   const [preview, setPreview] = useState<CampaignPreview | null>(null);
   const [funnel, setFunnel] = useState<CampaignFunnelStep[]>([]);
   const [active, setActive] = useState<string | null>(null);
@@ -47,11 +49,11 @@ export function Component() {
   useEffect(() => {
     if (!campaignId || loading || selectionFixed) return;
     const controller = new AbortController();
-    Promise.all([campaignApi.preview(campaignId, (previewPage - 1) * PAGE, PAGE, controller.signal), campaignApi.funnel(campaignId, controller.signal)])
+    Promise.all([campaignApi.preview(campaignId, (grid.page - 1) * grid.pageSize, grid.pageSize, grid.sort.key, grid.sort.dir, controller.signal), campaignApi.funnel(campaignId, controller.signal)])
       .then(([nextPreview, nextFunnel]) => { setPreview(nextPreview); setFunnel(nextFunnel); })
       .catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); });
     return () => controller.abort();
-  }, [campaignId, loading, previewPage, campaign?.updatedAt, selectionFixed]);
+  }, [campaignId, loading, grid.page, grid.pageSize, grid.sort, campaign?.updatedAt, selectionFixed]);
 
   const people = usePeople([campaign?.createdBy]);
   const names = useReferenceNames({ items: preview?.page.items.map((row) => row.itemId) ?? [], parties: preview?.page.items.flatMap((row) => [row.ownerPartyRef, row.custodianPartyRef]) ?? [] });
@@ -93,7 +95,7 @@ export function Component() {
     campaignApi.match(campaignId, row.unitId).then((evidence) => updateDrawer(head, <MatchEvidence evidence={evidence} />)).catch((reason) => updateDrawer(head, <ErrorNote error={reason} />));
   };
   const columns: GridColumn<CampaignMatchRow>[] = [
-    { key: "serial", label: "Serial", width: 17, mono: true, render: (row) => row.serial ?? "—" },
+    { key: "serial", label: "Serial", width: 17, mono: true, sort: { key: "serial", defaultDir: "asc" }, render: (row) => row.serial ?? "—" },
     { key: "item", label: "Item", width: 17, render: (row) => names.item(row.itemId) },
     { key: "child", label: "Child serial matched", width: 17, mono: true, render: (row) => row.matchedChildSerial ?? "—" },
     { key: "firmware", label: "Firmware", width: 13, render: (row) => <>{row.firmwareValue ?? "—"}{row.firmwareSince && <span className="sub">since {fmtDate(row.firmwareSince)}</span>}</> },
@@ -110,7 +112,7 @@ export function Component() {
       <div className="cols-3-2 top">
         <div className="stack">
           <section className="card" aria-labelledby="campaign-criteria"><div className="card-header"><h2 id="campaign-criteria">Criteria <span className="meta">all {grouped} kinds must match · any row within a kind</span></h2><div className="campaign-add"><select className="select" aria-label="Criterion kind" value={addKind} onChange={(event) => setAddKind(event.target.value as CampaignCriterionKind)}><option value="identifier_range">Serial range</option><option value="child">Child unit or item</option><option value="firmware">Firmware</option><option value="lot">Lot</option></select><button type="button" className="btn sm" onClick={addCriterion}><Icon name="plus" />Add</button></div></div><div className="card-body">{draft.criteria.map((criterion, index) => <CriterionEditor key={criterion.criterionId} criterion={criterion} onChange={(patch) => updateCriterion(index, patch)} onRemove={() => removeCriterion(index)} />)}{draft.criteria.length === 0 && <p className="muted">Add at least one criterion. Different kinds narrow with AND; repeated rows of one kind widen with OR.</p>}</div></section>
-          <section className="card" aria-labelledby="campaign-preview"><div className="card-header"><h2 id="campaign-preview">Preview <span className="meta">{selectionFixed ? `selection fixed · ${draft.status}` : preview ? `${preview.page.total.toLocaleString()} units match` : isNew ? "save to preview" : "loading"}</span></h2>{selectionFixed && campaignId ? <Link className="btn sm" to={`/claims/campaigns/${campaignId}/units`}>Selected units</Link> : <span className="meta">re-run on select</span>}</div>{selectionFixed ? <div className="card-body"><p className="muted">This campaign is {draft.status}, so its selection no longer changes. The units it selected, with their recipients and claims, are on the units list.</p></div> : <DataGrid columns={columns} page={{ rows: preview?.page.items ?? [], total: preview?.page.total ?? 0, page: previewPage, pageSize: PAGE, continuation: null }} rowId={(row) => row.unitId} onPage={setPreviewPage} onRowClick={openMatch} activeRowId={active} loading={loading} dense emptyText={isNew ? "Save the campaign to preview its criteria." : "No units match all criterion kinds."} footerNote="Owner and custodian are read from current episodes" />}</section>
+          <section className="card" aria-labelledby="campaign-preview"><div className="card-header"><h2 id="campaign-preview">Preview <span className="meta">{selectionFixed ? `selection fixed · ${draft.status}` : preview ? `${preview.page.total.toLocaleString()} units match` : isNew ? "save to preview" : "loading"}</span></h2>{selectionFixed && campaignId ? <Link className="btn sm" to={`/claims/campaigns/${campaignId}/units`}>Selected units</Link> : <span className="meta">re-run on select</span>}</div>{selectionFixed ? <div className="card-body"><p className="muted">This campaign is {draft.status}, so its selection no longer changes. The units it selected, with their recipients and claims, are on the units list.</p></div> : <DataGrid columns={columns} page={{ rows: preview?.page.items ?? [], total: preview?.page.total ?? 0, page: grid.page, pageSize: grid.pageSize, continuation: null }} rowId={(row) => row.unitId} onPage={grid.onPage} onRowClick={openMatch} activeRowId={active} loading={loading} dense emptyText={isNew ? "Save the campaign to preview its criteria." : "No units match all criterion kinds."} footerNote="Owner and custodian are read from current episodes" gridId="campaign-preview" userId={session.user.id} sort={grid.sort} defaultSort={{ key: "serial", dir: "asc" }} onSort={grid.onSort} pageSize={grid.pageSize} defaultPageSize={PAGE} onPageSize={grid.onPageSize} />}</section>
         </div>
         <div className="stack">
           <section className="card" aria-labelledby="campaign-settings">

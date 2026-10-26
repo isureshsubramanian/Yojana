@@ -45,9 +45,9 @@ test("upload history renders the three accepted cards and keeps their fetches se
     assert.match(screen, new RegExp(`title=\\"${title}\\"`));
   assert.match(screen, /Message bodies are not kept; the payload hash proves what was received\./);
   assert.match(screen, />Back to imports</);
-  assert.match(screen, /p7Api\.importHistory/);
-  assert.match(screen, /p7Api\.feedMessageHistory/);
-  assert.match(screen, /p7Api\.comparisonHistory/);
+  assert.match(screen, /useGridQuery\("\/api\/imports\/history"/);
+  assert.match(screen, /useGridQuery\("\/api\/imports\/history\/feed-messages"/);
+  assert.match(screen, /useGridQuery\("\/api\/imports\/history\/comparisons"/);
   assert.match(screen, /storageKey=\{`upload-history:\$\{viewer\}:/);
 });
 

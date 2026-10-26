@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Documents;
@@ -11,6 +12,10 @@ namespace Yojana.Serialisation.Claims;
 
 public sealed class ClaimQueries(SerialisationDbContext db, ICampaignCoverPort campaigns, ITenantCurrency currency, ITenantContext tenant) : IWarrantyClaimsPort
 {
+    private static readonly SortedPage<Claim, Guid> Pages = new("submitted", row => row.ClaimId,
+        new SortColumn<Claim, string>("number", row => row.ClaimNumber),
+        new SortColumn<Claim, DateTime>("submitted", row => row.SubmittedAt),
+        new SortColumn<Claim, string>("status", row => row.Status));
     private static readonly string[] Settled = [ClaimStatus.Settled, ClaimStatus.Closed];
     private static readonly string[] Decided = [ClaimStatus.Approved, ClaimStatus.PartiallyApproved, ClaimStatus.Denied, ClaimStatus.Settled, ClaimStatus.Closed];
 
@@ -43,15 +48,14 @@ public sealed class ClaimQueries(SerialisationDbContext db, ICampaignCoverPort c
         return source;
     }
 
-    public async Task<ClaimPage> ListAsync(ClaimListFilter filter, DateOnly asOf, int skip, int take, CancellationToken cancellationToken)
+    public async Task<ClaimPage> ListAsync(ClaimListFilter filter, DateOnly asOf, string? sort, string? direction,
+        string? cursor, int skip, int take, CancellationToken cancellationToken)
     {
+        var paging = Pages.Parse(sort, direction, take, cursor, skip);
         var tenantId = tenant.TenantId;
         var source = Filtered(filter);
         var total = await source.CountAsync(cancellationToken);
-        take = Math.Clamp(take, 1, 200);
-        skip = Math.Max(0, skip);
-        var claims = await source.OrderBy(c => c.ListOrderBucket).ThenBy(c => c.SubmittedAt).ThenBy(c => c.ClaimId)
-            .Skip(skip).Take(take).ToListAsync(cancellationToken);
+        var claims = await paging.Apply(source).Take(paging.Take).ToListAsync(cancellationToken);
         var claimIds = claims.Select(claim => claim.ClaimId).ToList();
         var lineTotals = claimIds.Count == 0
             ? []
@@ -91,8 +95,11 @@ public sealed class ClaimQueries(SerialisationDbContext db, ICampaignCoverPort c
                 CampaignId: claim.CampaignId, CampaignCode: campaign?.Code, CampaignName: campaign?.Name,
                 ReserveTag: claim.ReserveTag, CampaignCoverReason: claim.CampaignCoverReason));
         }
-        return new(models, total, skip, take);
+        return new(models, total, paging.Skip, paging.Take);
     }
+
+    public Task<ClaimPage> ListAsync(ClaimListFilter filter, DateOnly asOf, int skip, int take, CancellationToken cancellationToken) =>
+        ListAsync(filter, asOf, null, null, null, skip, take, cancellationToken);
 
     public async Task<ClaimSummary> SummaryAsync(DateOnly asOf, int targetWorkingDays, CancellationToken cancellationToken)
     {

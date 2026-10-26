@@ -73,6 +73,7 @@ internal static class CustomerMailModel
             // The sent log pages newest first by (queued_at, message_id); filters narrow by status, kind and sender.
             b.HasIndex(x => new { x.TenantId, x.QueuedAt, x.MessageId }).IsDescending(false, true, true);
             b.HasIndex(x => new { x.TenantId, x.Status, x.QueuedAt });
+            b.HasIndex(x => new { x.TenantId, x.Status, x.MessageId });
             b.HasIndex(x => new { x.TenantId, x.UnitId, x.QueuedAt });
             b.HasIndex(x => new { x.TenantId, x.TemplateVersionId });
             b.HasIndex(x => new { x.TenantId, x.CommandId });

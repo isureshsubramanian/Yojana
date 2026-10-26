@@ -21,7 +21,8 @@ test("P7 API schemas accept the DTO and refuse a missing required field", () => 
 test("upload history is server-paged, filterable and offers both downloads", () => {
   const screen = readFileSync(new URL("../src/p7/ImportHistory.tsx", import.meta.url), "utf8");
   assert.match(screen, /FindBar/);
-  assert.match(screen, /p7Api\.importHistory/);
+  assert.match(screen, /useGridQuery\("\/api\/imports\/history"/);
+  assert.match(screen, /sort: fileSort\.key, dir: fileSort\.dir/);
   assert.match(screen, /row\.mayDownload/);
   assert.match(screen, /p7-file-btn disabled/, "a download the viewer may not take stays visible but disabled");
   assert.match(screen, /title=\{label\}/, "the disabled icon explains who may download in its tooltip");

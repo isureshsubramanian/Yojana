@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { apiParsed, checkedBody } from "../api/client";
-import { DataGrid, FindBar, KpiStrip, StatusBadge, type GridColumn } from "../components";
+import { DataGrid, FindBar, KpiStrip, StatusBadge, useGridQuery, type GridColumn } from "../components";
+import { useSession } from "../session/session";
 import { useReferenceNames } from "../corrections/ReferenceFields";
 import { referenceNamesRequest, referenceNamesResponse } from "../corrections/referenceSchemas";
 import { MAX_REFERENCE_NAMES, type PartyReferenceLabel } from "../corrections/referenceStore";
@@ -16,40 +17,30 @@ import { fmtDate } from "../units/format";
 import { claimsApi, type ClaimFilters } from "./api";
 import { ClaimsTabs } from "./ClaimsTabs";
 import { CLAIM_STATUSES, COVERAGE_SOURCES, ageBucketLabel, claimTone, coverageSourceLabel, csvCell, evidenceCue, humanise, money, moneyTotals } from "./format";
-import type { ClaimDetail, ClaimListRow, ClaimPage, ClaimSummary, CurrencyInfo } from "./types";
+import { claimPageSchema, type ClaimDetail, type ClaimListRow, type ClaimSummary, type CurrencyInfo } from "./types";
 import "./claims.css";
 
 const PAGE_SIZE = 50;
 const INITIAL_FILTERS: ClaimFilters = { status: "open", coverageSource: "", serviceCountry: "", recovery: "", q: "", campaignId: "" };
 
 export function Component() {
+  const session = useSession();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const campaignParam = params.get("campaignId") ?? "";
   const [filters, setFilters] = useState<ClaimFilters>(() => ({ ...INITIAL_FILTERS, campaignId: campaignParam }));
   const [campaigns, setCampaigns] = useState<CampaignListRow[]>([]);
-  const [pageNumber, setPageNumber] = useState(1);
-  const [page, setPage] = useState<ClaimPage | null>(null);
   const [summary, setSummary] = useState<ClaimSummary | null>(null);
   const [catalogue, setCatalogue] = useState<CurrencyInfo[]>([]);
   const [active, setActive] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
-  const load = useCallback((signal?: AbortSignal) => {
-    setLoading(true); setError(null);
-    return Promise.all([
-      claimsApi.list(filters, (pageNumber - 1) * PAGE_SIZE, PAGE_SIZE, signal),
-      claimsApi.summary(signal),
-      claimsApi.currencyCatalogue(signal),
-    ]).then(([nextPage, nextSummary, nextCatalogue]) => { setPage(nextPage); setSummary(nextSummary); setCatalogue(nextCatalogue); })
-      .catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); })
-      .finally(() => setLoading(false));
-  }, [filters, pageNumber]);
-
-  useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort(); }, [load]);
-  useEffect(() => { setFilters((current) => current.campaignId === campaignParam ? current : { ...current, campaignId: campaignParam }); setPageNumber(1); }, [campaignParam]);
+  const filterParams = useMemo(() => { const value = new URLSearchParams(); Object.entries(filters).forEach(([key, entry]) => { if (entry) value.set(key, entry); }); return value; }, [filters]);
+  const query = useGridQuery("/api/claims/", claimPageSchema, { gridId: "claims", userId: session.user.id, defaultSort: { key: "submitted", dir: "asc" }, defaultSize: PAGE_SIZE, params: filterParams, sortKeys: ["number", "submitted", "status"] });
+  const page = query.data;
+  useEffect(() => { const controller = new AbortController(); Promise.all([claimsApi.summary(controller.signal), claimsApi.currencyCatalogue(controller.signal)]).then(([nextSummary, nextCatalogue]) => { setSummary(nextSummary); setCatalogue(nextCatalogue); }).catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); }); return () => controller.abort(); }, []);
+  useEffect(() => { setFilters((current) => current.campaignId === campaignParam ? current : { ...current, campaignId: campaignParam }); }, [campaignParam]);
   useEffect(() => {
     const controller = new AbortController();
     const loadCampaigns = async () => {
@@ -81,7 +72,7 @@ export function Component() {
   const rows = page?.items ?? [];
   const names = useReferenceNames({ items: rows.map((row) => row.itemId), parties: rows.flatMap((row) => [row.claimantPartyRef, row.settlementPartyRef]) });
   const setFilter = (patch: Partial<ClaimFilters>) => {
-    setFilters((current) => ({ ...current, ...patch })); setPageNumber(1);
+    setFilters((current) => ({ ...current, ...patch }));
     if (patch.campaignId !== undefined) {
       const next = new URLSearchParams(params);
       if (patch.campaignId) next.set("campaignId", patch.campaignId); else next.delete("campaignId");
@@ -104,7 +95,7 @@ export function Component() {
       const all: ClaimListRow[] = [];
       let skip = 0;
       while (true) {
-        const batch = await claimsApi.list(filters, skip, 500);
+        const batch = await claimsApi.list(filters, skip, 200, undefined, query.sort.key, query.sort.dir);
         all.push(...batch.items); skip += batch.items.length;
         if (!batch.items.length || skip >= batch.total) break;
       }
@@ -124,17 +115,17 @@ export function Component() {
   };
 
   const columns = useMemo<GridColumn<ClaimListRow>[]>(() => [
-    { key: "claim", label: "Claim", width: 12, render: (row) => <span className="primary"><span className="t serial">{row.claimNumber}</span><span className="sub">{row.evidenceRequested ? "evidence requested" : humanise(row.remedy)}</span></span> },
+    { key: "claim", label: "Claim", width: 12, sort: { key: "number", defaultDir: "asc" }, render: (row) => <span className="primary"><span className="t serial">{row.claimNumber}</span><span className="sub">{row.evidenceRequested ? "evidence requested" : humanise(row.remedy)}</span></span> },
     { key: "serial", label: "Serial", width: 13, render: (row) => <><UnitLink unitId={row.unitId}>{row.serial ?? "No serial recorded"}</UnitLink><span className="sub">{names.item(row.itemId)}</span></> },
     { key: "party", label: "Claimant · settlement", width: 20, render: (row) => <>{names.party(row.claimantPartyRef)}<span className="sub">settles: {row.claimantPartyRef === row.settlementPartyRef ? "same" : names.party(row.settlementPartyRef)}</span></> },
     { key: "source", label: "Source", width: 9, render: (row) => { const label = coverageSourceLabel(row.coverageSource, row.campaignCode); return <span title={row.campaignName ? `${label} · ${row.campaignName}` : label}>{label}</span>; } },
-    { key: "status", label: "Status", width: 15, render: (row) => <><StatusBadge tone={claimTone(row.status)}>{humanise(row.status)}</StatusBadge><span className="sub">{evidenceCue(row.status, row.evidenceRequested, row.denialReason, row.recoveryRaised, row.linesDecided, row.lineCount)}</span></> },
+    { key: "status", label: "Status", width: 15, sort: { key: "status", defaultDir: "asc" }, render: (row) => <><StatusBadge tone={claimTone(row.status)}>{humanise(row.status)}</StatusBadge><span className="sub">{evidenceCue(row.status, row.evidenceRequested, row.denialReason, row.recoveryRaised, row.linesDecided, row.lineCount)}</span></> },
     { key: "requested", label: "Requested", width: 12, numeric: true, render: (row) => money(row.requestedAmount, row.currency, catalogue) },
     { key: "approved", label: "Approved", width: 12, numeric: true, render: (row) => ["submitted", "adjudicating"].includes(row.status) ? <span className="muted">—</span> : money(row.approvedAmount, row.currency, catalogue) },
-    { key: "age", label: "Age", width: 7, numeric: true, render: (row) => `${row.ageDays} d` },
+    { key: "age", label: "Age", width: 7, numeric: true, sort: { key: "submitted", defaultDir: "asc" }, render: (row) => `${row.ageDays} d` },
   ], [catalogue, names]);
 
-  const gridPage = { rows, total: page?.total ?? 0, page: pageNumber, pageSize: PAGE_SIZE, continuation: null };
+  const gridPage = { rows, total: page?.total ?? 0, page: query.page, pageSize: query.pageSize, continuation: null };
   const statusLabel = filters.status === "open" ? "Open claims" : filters.status === "all" ? "All claims" : humanise(filters.status);
   return <>
     <main className="content" id="main" tabIndex={-1}>
@@ -145,7 +136,7 @@ export function Component() {
         <Link className="btn primary" to="/claims/new"><Icon name="plus" />New claim<kbd className="key">N</kbd></Link>
       </div></div>
       <ClaimsTabs current="claims" />
-      <ErrorNote error={error} />
+      <ErrorNote error={error ?? query.error} />
       {!!summary?.otherCurrencyClaimCount && <div className="note warn"><strong>{summary.otherCurrencyClaimCount.toLocaleString()} {summary.otherCurrencyClaimCount === 1 ? "claim" : "claims"} in other currencies are not counted.</strong>&nbsp;<Link to="/settings/currencies#currency-report">Open the currency report</Link>.</div>}
       <div className="stack" style={{ marginTop: error ? 16 : 0 }}>
         <KpiStrip label="Claim figures" kpis={[
@@ -167,7 +158,7 @@ export function Component() {
           <FilterSelect label="Recovery" value={filters.recovery} onChange={(recovery) => setFilter({ recovery })} options={["", "raised", "none"]} empty="Any" />
         </div></div></section>
         <section className="card" aria-labelledby="claims-list"><div className="card-header"><h2 id="claims-list">{statusLabel} <span className="meta">{page?.total.toLocaleString() ?? "—"} claims · {summary?.coverageSources.length ?? "—"} coverage sources · {summary?.serviceCountries.length ?? "—"} service countries</span></h2><span className="meta nowrap">Sorted by age, oldest first</span></div>
-          <DataGrid columns={columns} page={gridPage} rowId={(row) => row.claimId} onPage={setPageNumber} onRowClick={(row) => void openClaim(row)} activeRowId={active} loading={loading} emptyText="No claims match these filters." viewportHeight={560} footerNote={`${summary?.allClaims.toLocaleString() ?? "—"} claims since go-live`} />
+          <DataGrid columns={columns} page={gridPage} rowId={(row) => row.claimId} onPage={query.onPage} onRowClick={(row) => void openClaim(row)} activeRowId={active} loading={query.loading} emptyText="No claims match these filters." viewportHeight={560} footerNote={`${summary?.allClaims.toLocaleString() ?? "—"} claims since go-live`} gridId="claims" userId={session.user.id} sort={query.sort} defaultSort={{ key: "submitted", dir: "asc" }} onSort={query.onSort} pageSize={query.pageSize} defaultPageSize={PAGE_SIZE} onPageSize={query.onPageSize} />
         </section>
       </div>
     </main>

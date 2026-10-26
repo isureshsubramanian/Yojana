@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Yojana.Platform.Contracts.Paging;
 using Wolverine;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
@@ -15,6 +16,8 @@ namespace Yojana.Serialisation.Campaigns;
 /// <summary>Campaign writes and selection. Criteria are replaced as one narrow child collection.</summary>
 public static class CampaignHandler
 {
+    private static readonly SortedPage<CampaignMatchRow, Guid> PreviewPages = new("serial", row => row.UnitId,
+        new SortColumn<CampaignMatchRow, string>("serial", row => row.Serial ?? ""));
     private const int EventBatchSize = 1000;
 
     public static async Task<CampaignResult> Handle(CreateCampaign command, SerialisationDbContext db,
@@ -141,10 +144,10 @@ public static class CampaignHandler
         var campaign = await Campaign(db, tenant.TenantId, command.CampaignId, cancellationToken);
         EnsureSelectable(campaign.Campaign);
         var matched = await facts.MatchingUnitIdsAsync(campaign.Criteria, cancellationToken);
-        var take = Math.Clamp(command.Take, 1, 200);
-        var ids = matched.Order().Skip(Math.Max(0, command.Skip)).Take(take).ToList();
-        var rows = (await facts.CurrentMatchesAsync(ids, campaign.Criteria, cancellationToken)).ToDictionary(r => r.UnitId);
-        return new(command.CampaignId, new Page<CampaignMatchRow>(ids.Select(id => rows[id]).ToList(), matched.Count, Math.Max(0, command.Skip), take));
+        var paging = PreviewPages.Parse(command.Sort, command.Direction, command.Take, skip: command.Skip, defaultTake: 50);
+        var matches = await facts.CurrentMatchesAsync(matched, campaign.Criteria, cancellationToken);
+        var rows = paging.Apply(matches.AsQueryable()).Take(paging.Take).ToList();
+        return new(command.CampaignId, new Page<CampaignMatchRow>(rows, matched.Count, paging.Skip, paging.Take));
     }
 
     public static async Task<SelectCampaignUnitsResult> Handle(SelectCampaignUnits command, SerialisationDbContext db,

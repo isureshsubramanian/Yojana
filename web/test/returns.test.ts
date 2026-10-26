@@ -44,4 +44,6 @@ test("returns search uses the shared list toolbar sizing", () => {
   assert.doesNotMatch(screen, /returns-filter-grid/);
   assert.match(sharedStyles, /\.toolbar > \.findbar \{ display: contents; \}/);
   assert.match(sharedStyles, /\.findbar\.compact \.scanbox \{ flex: 1 1 360px; min-width: min\(100%, 280px\); max-width: 640px; \}/);
+  assert.match(screen, /defaultSort: \{ key: "priority", dir: "asc" \}/);
+  assert.match(screen, /Exceptions first, then oldest/);
 });

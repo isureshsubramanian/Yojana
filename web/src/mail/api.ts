@@ -136,5 +136,5 @@ export const mailApi = {
     apiParsed(`/api/customer-mail${query({ ...filter, cursor, take: 25 })}`, sentMailPage, options(signal)),
   aboutUnit: (unitId: string, signal?: AbortSignal) => apiParsed(`/api/customer-mail${query({ unitId, take: 5 })}`, sentMailPage, options(signal)),
   sentMessage: (id: string, signal?: AbortSignal) => apiParsed(`/api/customer-mail/${id}`, sentMailDetail, options(signal)),
-  exportUrl: (filter: SentMailFilter) => `/api/customer-mail/export${query({ format: "csv", status: filter.status, kind: filter.kind, sentBy: filter.sentBy, q: filter.q })}`,
+  exportUrl: (filter: SentMailFilter, sort?: string, dir?: string) => `/api/customer-mail/export${query({ format: "csv", status: filter.status, kind: filter.kind, sentBy: filter.sentBy, q: filter.q, sort, dir })}`,
 };

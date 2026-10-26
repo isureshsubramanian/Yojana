@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Documents;
@@ -10,25 +11,34 @@ namespace Yojana.Serialisation.Refurbishments;
 
 public sealed class RefurbishmentQueries(SerialisationDbContext db, EffectiveItemProfiles itemProfiles, ITenantContext tenant, IClock clock)
 {
+    private static readonly SortedPage<Data.Entities.RefurbishmentWorkOrder, Guid> Pages = new("opened", row => row.WorkOrderId,
+        new SortColumn<Data.Entities.RefurbishmentWorkOrder, string>("number", row => row.WorkOrderNumber),
+        new SortColumn<Data.Entities.RefurbishmentWorkOrder, DateTime>("opened", row => row.OpenedAt, SortDirection.Descending),
+        new SortColumn<Data.Entities.RefurbishmentWorkOrder, string>("status", row => row.Status));
+
     public async Task<RefurbishmentWorkOrderRow?> DetailAsync(Guid workOrderId, CancellationToken cancellationToken)
     {
         var workOrder = await db.RefurbishmentWorkOrders.AsNoTracking().FirstOrDefaultAsync(w => w.TenantId == tenant.TenantId && w.WorkOrderId == workOrderId, cancellationToken);
         return workOrder is null ? null : await RowAsync(workOrder, cancellationToken);
     }
 
-    public async Task<RefurbishmentWorkOrderPage> PageAsync(string? status, string? kind, Guid? unitId, int skip, int take, CancellationToken cancellationToken)
+    public async Task<RefurbishmentWorkOrderPage> PageAsync(string? status, string? kind, Guid? unitId,
+        string? sort, string? direction, string? cursor, int skip, int take, CancellationToken cancellationToken)
     {
-        take = Math.Clamp(take, 1, 200);
+        var paging = Pages.Parse(sort, direction, take, cursor, skip);
         var query = db.RefurbishmentWorkOrders.AsNoTracking().Where(w => w.TenantId == tenant.TenantId);
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(w => w.Status == status);
         if (!string.IsNullOrWhiteSpace(kind)) query = query.Where(w => w.Kind == kind);
         if (unitId is { } unit) query = query.Where(w => w.TargetUnitId == unit);
         var total = await query.CountAsync(cancellationToken);
-        var rows = await query.OrderByDescending(w => w.OpenedAt).Skip(skip).Take(take).ToListAsync(cancellationToken);
+        var rows = await paging.Apply(query).Take(paging.Take).ToListAsync(cancellationToken);
         var result = new List<RefurbishmentWorkOrderRow>(rows.Count);
         foreach (var row in rows) result.Add(await RowAsync(row, cancellationToken));
-        return new(result, total, skip, take);
+        return new(result, total, paging.Skip, paging.Take);
     }
+
+    public Task<RefurbishmentWorkOrderPage> PageAsync(string? status, string? kind, Guid? unitId, int skip, int take,
+        CancellationToken cancellationToken) => PageAsync(status, kind, unitId, null, null, null, skip, take, cancellationToken);
 
     private async Task<RefurbishmentWorkOrderRow> RowAsync(Data.Entities.RefurbishmentWorkOrder workOrder, CancellationToken cancellationToken)
     {

@@ -504,8 +504,14 @@ namespace Yojana.Serialisation.Data.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_campaign_tenant_id_code");
 
+                    b.HasIndex("TenantId", "Status", "CampaignId")
+                        .HasDatabaseName("ix_campaign_tenant_id_status_campaign_id");
+
                     b.HasIndex("TenantId", "Status", "UpdatedAt")
                         .HasDatabaseName("ix_campaign_tenant_id_status_updated_at");
+
+                    b.HasIndex("TenantId", "UpdatedAt", "CampaignId")
+                        .HasDatabaseName("ix_campaign_tenant_id_updated_at_campaign_id");
 
                     b.ToTable("campaign", "serialisation", t =>
                         {
@@ -678,6 +684,9 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.HasIndex("TenantId", "OwnerPartyRef", "CampaignId")
                         .HasDatabaseName("ix_campaign_unit_tenant_id_owner_party_ref_campaign_id");
+
+                    b.HasIndex("TenantId", "SelectedAt", "UnitId")
+                        .HasDatabaseName("ix_campaign_unit_tenant_id_selected_at_unit_id");
 
                     b.ToTable("campaign_unit", "serialisation");
                 });
@@ -1659,8 +1668,14 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "ReportedCauseCode")
                         .HasDatabaseName("ix_claim_tenant_id_reported_cause_code");
 
+                    b.HasIndex("TenantId", "Status", "ClaimId")
+                        .HasDatabaseName("ix_claim_tenant_id_status_claim_id");
+
                     b.HasIndex("TenantId", "Status", "SubmittedAt")
                         .HasDatabaseName("ix_claim_tenant_id_status_submitted_at");
+
+                    b.HasIndex("TenantId", "SubmittedAt", "ClaimId")
+                        .HasDatabaseName("ix_claim_tenant_id_submitted_at_claim_id");
 
                     b.HasIndex("TenantId", "ListOrderBucket", "SubmittedAt", "ClaimId")
                         .HasDatabaseName("ix_claim_tenant_id_list_order_bucket_submitted_at_claim_id");
@@ -2857,6 +2872,9 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "QueuedAt", "MessageId")
                         .IsDescending(false, true, true)
                         .HasDatabaseName("ix_customer_mail_message_tenant_id_queued_at_message_id");
+
+                    b.HasIndex("TenantId", "Status", "MessageId")
+                        .HasDatabaseName("ix_customer_mail_message_tenant_id_status_message_id");
 
                     b.HasIndex("TenantId", "Status", "QueuedAt")
                         .HasDatabaseName("ix_customer_mail_message_tenant_id_status_queued_at");
@@ -4186,8 +4204,14 @@ namespace Yojana.Serialisation.Data.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_import_job_tenant_id_command_id");
 
+                    b.HasIndex("TenantId", "FileName", "JobId")
+                        .HasDatabaseName("ix_import_job_tenant_id_file_name_job_id");
+
                     b.HasIndex("TenantId", "RecordedTime", "JobId")
                         .HasDatabaseName("ix_import_job_tenant_id_recorded_time_job_id");
+
+                    b.HasIndex("TenantId", "Status", "JobId")
+                        .HasDatabaseName("ix_import_job_tenant_id_status_job_id");
 
                     b.HasIndex("TenantId", "Status", "RecordedTime")
                         .HasDatabaseName("ix_import_job_tenant_id_status_recorded_time");
@@ -6058,6 +6082,12 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasDatabaseName("ux_print_job_tenant_id_batch_command_id_batch_sequence")
                         .HasFilter("[batch_command_id] IS NOT NULL");
 
+                    b.HasIndex("TenantId", "RequestedAt", "JobId")
+                        .HasDatabaseName("ix_print_job_tenant_id_requested_at_job_id");
+
+                    b.HasIndex("TenantId", "Status", "JobId")
+                        .HasDatabaseName("ix_print_job_tenant_id_status_job_id");
+
                     b.HasIndex("TenantId", "Status", "RequestedAt")
                         .HasDatabaseName("ix_print_job_tenant_id_status_requested_at");
 
@@ -6188,8 +6218,14 @@ namespace Yojana.Serialisation.Data.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_recovery_claim_tenant_id_recovery_number");
 
+                    b.HasIndex("TenantId", "RaisedAt", "RecoveryClaimId")
+                        .HasDatabaseName("ix_recovery_claim_tenant_id_raised_at_recovery_claim_id");
+
                     b.HasIndex("TenantId", "Status", "RaisedAt")
                         .HasDatabaseName("ix_recovery_claim_tenant_id_status_raised_at");
+
+                    b.HasIndex("TenantId", "Status", "RecoveryClaimId")
+                        .HasDatabaseName("ix_recovery_claim_tenant_id_status_recovery_claim_id");
 
                     b.HasIndex("TenantId", "VendorPartyRef", "Status")
                         .HasDatabaseName("ix_recovery_claim_tenant_id_vendor_party_ref_status");
@@ -6765,8 +6801,14 @@ namespace Yojana.Serialisation.Data.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_refurbishment_work_order_tenant_id_open_command_id_target_unit_id");
 
+                    b.HasIndex("TenantId", "OpenedAt", "WorkOrderId")
+                        .HasDatabaseName("ix_refurbishment_work_order_tenant_id_opened_at_work_order_id");
+
                     b.HasIndex("TenantId", "Status", "OpenedAt")
                         .HasDatabaseName("ix_refurbishment_work_order_tenant_id_status_opened_at");
+
+                    b.HasIndex("TenantId", "Status", "WorkOrderId")
+                        .HasDatabaseName("ix_refurbishment_work_order_tenant_id_status_work_order_id");
 
                     b.HasIndex("TenantId", "TargetUnitId", "OpenedAt")
                         .HasDatabaseName("ix_refurbishment_work_order_tenant_id_target_unit_id_opened_at");
@@ -7124,8 +7166,14 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "ReplacementUnitId", "CreatedAt")
                         .HasDatabaseName("ix_replacement_link_tenant_id_replacement_unit_id_created_at");
 
+                    b.HasIndex("TenantId", "ReturnDue", "ReplacementLinkId")
+                        .HasDatabaseName("ix_replacement_link_tenant_id_return_due_replacement_link_id");
+
                     b.HasIndex("TenantId", "SourceKind", "SourceId")
                         .HasDatabaseName("ix_replacement_link_tenant_id_source_kind_source_id");
+
+                    b.HasIndex("TenantId", "State", "ReplacementLinkId")
+                        .HasDatabaseName("ix_replacement_link_tenant_id_state_replacement_link_id");
 
                     b.HasIndex("TenantId", "State", "ReturnDue")
                         .HasDatabaseName("ix_replacement_link_tenant_id_state_return_due");
@@ -7580,8 +7628,14 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasDatabaseName("ux_rma_tenant_id_rma_number")
                         .HasFilter("[rma_number] IS NOT NULL");
 
+                    b.HasIndex("TenantId", "RequestedAt", "RmaId")
+                        .HasDatabaseName("ix_rma_tenant_id_requested_at_rma_id");
+
                     b.HasIndex("TenantId", "ReturningPartyRef", "Stage")
                         .HasDatabaseName("ix_rma_tenant_id_returning_party_ref_stage");
+
+                    b.HasIndex("TenantId", "Stage", "RmaId")
+                        .HasDatabaseName("ix_rma_tenant_id_stage_rma_id");
 
                     b.HasIndex("TenantId", "HasException", "RequestedAt", "RmaId")
                         .IsDescending(false, true, false, false)
@@ -8891,6 +8945,12 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasIndex("TenantId", "MessageReference")
                         .IsUnique()
                         .HasDatabaseName("ux_three_pl_feed_message_tenant_id_message_reference");
+
+                    b.HasIndex("TenantId", "RecordedTime", "FeedMessageId")
+                        .HasDatabaseName("ix_three_pl_feed_message_tenant_id_recorded_time_feed_message_id");
+
+                    b.HasIndex("TenantId", "Status", "FeedMessageId")
+                        .HasDatabaseName("ix_three_pl_feed_message_tenant_id_status_feed_message_id");
 
                     b.HasIndex("TenantId", "DocumentType", "DocumentId", "DocumentLine")
                         .HasDatabaseName("ix_three_pl_feed_message_tenant_id_document_type_document_id_document_line");
@@ -10273,8 +10333,17 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.HasKey("TenantId", "ExceptionId")
                         .HasName("pk_warranty_line_exception");
 
+                    b.HasIndex("TenantId", "RaisedAt", "ExceptionId")
+                        .HasDatabaseName("ix_warranty_line_exception_tenant_id_raised_at_exception_id");
+
+                    b.HasIndex("TenantId", "Status", "ExceptionId")
+                        .HasDatabaseName("ix_warranty_line_exception_tenant_id_status_exception_id");
+
                     b.HasIndex("TenantId", "Status", "RaisedAt")
                         .HasDatabaseName("ix_warranty_line_exception_tenant_id_status_raised_at");
+
+                    b.HasIndex("TenantId", "TriggerAt", "ExceptionId")
+                        .HasDatabaseName("ix_warranty_line_exception_tenant_id_trigger_at_exception_id");
 
                     b.HasIndex("TenantId", "DocumentType", "DocumentId", "DocumentLine")
                         .IsUnique()

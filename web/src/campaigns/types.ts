@@ -28,7 +28,7 @@ export type Campaign = z.infer<typeof campaignSchema>;
 export const campaignListRowSchema = z.object({
   campaignId: text, code: text, name: text, coverageSource: text, status: text, selectedUnits: count,
   selectedAt: nullableText, reserveTag: text, reasonCode: campaignReasonSchema, runsUntil: nullableText,
-  partsPct: count, labourPct: count, travelPct: count,
+  partsPct: count, labourPct: count, travelPct: count, updatedAt: text,
 });
 export type CampaignListRow = z.infer<typeof campaignListRowSchema>;
 

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { selections, RELEASE_OPERATION, now, type BulkExecutionResult, type BulkOperationArguments, type BulkPreviewResult, type ResolveSelectionSetResult, type SelectionSource, type UnitOutcome } from "../api/units";
 import { LegalEntityPicker, useLegalEntities } from "../api/legalEntities";
-import { SelectionPreview, Shortcut, StatusBadge, useModEnter, type PreviewOutcome, type PreviewResult } from "../components";
+import { SelectionPreview, Shortcut, StatusBadge, useGridState, useModEnter, type PreviewOutcome, type PreviewResult } from "../components";
+import { useSession } from "../session/session";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { useHandoff, useLegacyParam } from "../shell/handoff";
@@ -26,6 +27,7 @@ function toPreview(r: BulkPreviewResult): PreviewResult {
 
 /** Selection-set preview (P1 screen 6): address units by document, customer, item, dates, list or range; the command computes every outcome; execute is one transaction. */
 export function Component() {
+  const session = useSession();
   const actor = useActor();
   const { value: legalEntities } = useLegalEntities();
   const [legalEntityId, setLegalEntityId] = useState("");
@@ -56,7 +58,7 @@ export function Component() {
   const [preview, setPreview] = useState<BulkPreviewResult | null>(null);
   const [find, setFind] = useState("");
   const [outcome, setOutcome] = useState<PreviewOutcome | null>(null);
-  const [page, setPage] = useState(1);
+  const grid = useGridState("release-selection-preview", session.user.id, { key: "priority", dir: "asc" }, PAGE);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -82,23 +84,23 @@ export function Component() {
 
   const resolve = async () => {
     setBusy(true); setError(null); setExecuted(null); setPreview(null);
-    try { setResolved(await selections.resolve(source, actor)); setPage(1); } catch (e) { setError(e); } finally { setBusy(false); }
+    try { setResolved(await selections.resolve(source, actor)); grid.reset(); } catch (e) { setError(e); } finally { setBusy(false); }
   };
 
   useEffect(() => {
     if (!resolved || !args) { return; }
     const controller = new AbortController();
     setLoading(true);
-    selections.preview(resolved.selectionId, RELEASE_OPERATION, args, (page - 1) * PAGE, PAGE, find || null, outcome, controller.signal)
+    selections.preview(resolved.selectionId, RELEASE_OPERATION, args, (grid.page - 1) * grid.pageSize, grid.pageSize, find || null, outcome, grid.sort.key, grid.sort.dir, controller.signal)
       .then((p) => { setPreview(p); setLoading(false); })
       .catch((e) => { if (!(e instanceof DOMException && e.name === "AbortError")) { setError(e); setLoading(false); } });
     return () => controller.abort();
-  }, [resolved, args, page, find, outcome]);
+  }, [resolved, args, grid.page, grid.pageSize, grid.sort, find, outcome]);
 
   const execute = async () => {
     if (!resolved || !args) return;
     setBusy(true); setError(null);
-    try { setExecuted(await selections.execute(resolved.selectionId, RELEASE_OPERATION, args, approver || null)); setPage(1); setFind(""); setOutcome(null); } catch (e) { setError(e); } finally { setBusy(false); }
+    try { setExecuted(await selections.execute(resolved.selectionId, RELEASE_OPERATION, args, approver || null)); grid.reset(); setFind(""); setOutcome(null); } catch (e) { setError(e); } finally { setBusy(false); }
   };
   useModEnter(execute, !preview || !args || preview.change === 0 || busy || !!executed);
 
@@ -170,7 +172,8 @@ export function Component() {
             if (row) rowClick(row);
           }}>
             <SelectionPreview preview={previewResult} loading={loading} currentLabel="Current" nextLabel="Next" changeLabel="Release" query={find} outcome={outcome}
-              onQuery={(q) => { setFind(q); setPage(1); }} onOutcome={(o) => { setOutcome(o); setPage(1); }} onPage={setPage} />
+              onQuery={(q) => { setFind(q); grid.reset(); }} onOutcome={(o) => { setOutcome(o); grid.reset(); }} onPage={grid.onPage}
+              grid={grid} gridId="release-selection-preview" userId={session.user.id} />
           </div>
         </div>
       </main>

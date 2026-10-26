@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
@@ -8,6 +9,10 @@ namespace Yojana.Serialisation.Labels;
 
 public sealed class LabelQueries(SerialisationDbContext db, ITenantContext tenant)
 {
+    private static readonly SortedPage<PrintJob, Guid> PrintJobPages = new("requested", row => row.JobId,
+        new SortColumn<PrintJob, string>("number", row => row.JobNumber),
+        new SortColumn<PrintJob, DateTime>("requested", row => row.RequestedAt, SortDirection.Descending),
+        new SortColumn<PrintJob, string>("status", row => row.Status));
     public async Task<IReadOnlyList<LabelTemplateCatalogueRow>> TemplatesAsync(string? name, string? appliesTo,
         string? status, int skip, int take, CancellationToken cancellationToken)
     {
@@ -65,11 +70,12 @@ public sealed class LabelQueries(SerialisationDbContext db, ITenantContext tenan
     }
 
     public async Task<LabelPrintJobPage> JobsAsync(string? status, Guid? templateId, string? find,
-        string? printer, string? kind, DateTime? requestedFrom, DateTime? requestedTo, int skip, int take,
+        string? printer, string? kind, DateTime? requestedFrom, DateTime? requestedTo, string? sort,
+        string? direction, string? cursor, int skip, int take,
         CancellationToken cancellationToken)
     {
         var tenantId = tenant.TenantId;
-        take = Math.Clamp(take, 1, 200);
+        var paging = PrintJobPages.Parse(sort, direction, take, cursor, skip);
         var query = db.PrintJobs.AsNoTracking().Where(row => row.TenantId == tenantId);
         if (string.Equals(status, "waiting", StringComparison.Ordinal))
             query = query.Where(row => row.Status == LabelPrintStatus.Rendered || row.Status == LabelPrintStatus.Sent);
@@ -108,10 +114,13 @@ public sealed class LabelQueries(SerialisationDbContext db, ITenantContext tenan
         if (requestedFrom is { } from) query = query.Where(row => row.RequestedAt >= from);
         if (requestedTo is { } to) query = query.Where(row => row.RequestedAt < to);
         var total = await query.CountAsync(cancellationToken);
-        var jobs = await query.OrderByDescending(row => row.RequestedAt).ThenByDescending(row => row.JobId)
-            .Skip(Math.Max(0, skip)).Take(take).ToListAsync(cancellationToken);
-        return new(await RowsAsync(jobs, cancellationToken), total, Math.Max(0, skip), take);
+        var jobs = await paging.Apply(query).Take(paging.Take).ToListAsync(cancellationToken);
+        return new(await RowsAsync(jobs, cancellationToken), total, paging.Skip, paging.Take);
     }
+
+    public Task<LabelPrintJobPage> JobsAsync(string? status, Guid? templateId, string? find, string? printer,
+        string? kind, DateTime? requestedFrom, DateTime? requestedTo, int skip, int take, CancellationToken cancellationToken) =>
+        JobsAsync(status, templateId, find, printer, kind, requestedFrom, requestedTo, null, null, null, skip, take, cancellationToken);
 
     public async Task<LabelPrintJobSummary> SummaryAsync(DateTime from, DateTime to,
         CancellationToken cancellationToken)

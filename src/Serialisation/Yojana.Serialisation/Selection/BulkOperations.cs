@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Commands;
 using Yojana.Serialisation.Contracts;
@@ -109,6 +110,12 @@ public sealed class ReleaseUnitsOperation(SerialisationDbContext db, IUnitEventW
 public sealed class BulkExecutor(SerialisationDbContext db, IServiceProvider services, ITenantContext tenant,
     IClock clock, IMessageBus bus, BulkPublicationContext publication)
 {
+    private sealed record PreviewSortRow(UnitOutcome Outcome, string Priority, string Serial, Guid UnitId);
+    private static readonly SortedPage<PreviewSortRow, Guid> PreviewPages = new("priority", row => row.UnitId,
+        new SortColumn<PreviewSortRow, string>("priority", row => row.Priority),
+        new SortColumn<PreviewSortRow, string>("serial", row => row.Serial),
+        new SortColumn<PreviewSortRow, string>("outcome", row => row.Outcome.Outcome));
+
     private IBulkOperation Operation(string name) =>
         services.GetServices<IBulkOperation>().FirstOrDefault(o => o.Name == name) ?? throw new CommandRefusedException("operation_unknown", $"Bulk operation '{name}' is not registered.");
 
@@ -117,10 +124,14 @@ public sealed class BulkExecutor(SerialisationDbContext db, IServiceProvider ser
         var (selectionId, operationName, outcomes) = await EvaluateAsync(command.SelectionId, command.Operation, command.Arguments, command.Approval, cancellationToken);
 
         // Blocked first, then skipped, then changes: the operator reads the problems before the bulk of the list.
-        var ordered = outcomes.OrderBy(o => o.Outcome switch { UnitOutcome.Outcomes.Block => 0, UnitOutcome.Outcomes.Skip => 1, _ => 2 }).ThenBy(o => o.Serial).ToList();
-        var filtered = ordered.Where(o => command.OutcomeFilter is null || o.Outcome == command.OutcomeFilter).Where(o => command.Find is null || Matches(o.Serial, command.Find)).ToList();
-        var page = filtered.Skip(command.Skip).Take(command.Take).ToList();
-        return new BulkPreviewResult(selectionId, operationName, outcomes.Count, outcomes.Count(o => o.Outcome == UnitOutcome.Outcomes.Change), outcomes.Count(o => o.Outcome == UnitOutcome.Outcomes.Skip), outcomes.Count(o => o.Outcome == UnitOutcome.Outcomes.Block), page, command.Skip, command.Take);
+        var filtered = outcomes.Where(o => command.OutcomeFilter is null || o.Outcome == command.OutcomeFilter)
+            .Where(o => command.Find is null || Matches(o.Serial, command.Find))
+            .Select(o => new PreviewSortRow(o,
+                $"{(o.Outcome switch { UnitOutcome.Outcomes.Block => 0, UnitOutcome.Outcomes.Skip => 1, _ => 2 })}|{o.Serial}",
+                o.Serial ?? "", o.UnitId)).AsQueryable();
+        var paging = PreviewPages.Parse(command.Sort, command.Direction, command.Take, skip: command.Skip);
+        var page = paging.Apply(filtered).Take(paging.Take).Select(row => row.Outcome).ToList();
+        return new BulkPreviewResult(selectionId, operationName, outcomes.Count, outcomes.Count(o => o.Outcome == UnitOutcome.Outcomes.Change), outcomes.Count(o => o.Outcome == UnitOutcome.Outcomes.Skip), outcomes.Count(o => o.Outcome == UnitOutcome.Outcomes.Block), page, paging.Skip, paging.Take);
     }
 
     /// <summary>

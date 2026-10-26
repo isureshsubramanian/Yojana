@@ -8,7 +8,8 @@ using Yojana.Serialisation.Contracts;
 namespace Yojana.Serialisation.Entitlements;
 
 public sealed record CoverChangesRequest(DateOnly? SoldFrom = null, DateOnly? SoldTo = null, Guid? Customer = null,
-    string? ItemFamily = null, string? ChangeKind = null, string? Serial = null, string? Cursor = null, int? Take = null)
+    string? ItemFamily = null, string? ChangeKind = null, string? Serial = null, string? Sort = null,
+    string? Dir = null, string? Cursor = null, int? Take = null)
 {
     public CoverChangeFilters Filters => new(SoldFrom, SoldTo, Customer, ItemFamily, ChangeKind, Serial);
 }
@@ -23,7 +24,8 @@ public static class CoverDeviationEndpoints
         var report = app.MapGroup("/api/entitlements/cover-changes").RequireAuthorization(YojanaPolicy.TenantMember);
         report.MapGet("", async ([AsParameters] CoverChangesRequest request, CoverDeviationQueries queries, CancellationToken ct) =>
         {
-            try { return Results.Ok(await queries.PageAsync(request.Filters, request.Cursor, request.Take ?? 25, ct)); }
+            try { return Results.Ok(await queries.PageAsync(request.Filters, request.Sort, request.Dir, request.Cursor, request.Take ?? 25, ct)); }
+            catch (Yojana.Platform.Contracts.CommandRefusedException e) { return Results.Problem(statusCode: 400, title: e.Rule, detail: e.Message, extensions: new Dictionary<string, object?> { ["rule"] = e.Rule, ["unblockingStep"] = e.UnblockingStep }); }
             catch (ArgumentException e) { return Invalid(e.Message); }
         });
         report.MapGet("/summary", async ([AsParameters] CoverChangesRequest request, CoverDeviationQueries queries, CancellationToken ct) =>
@@ -44,7 +46,7 @@ public static class CoverDeviationEndpoints
             http.Response.Headers["X-Export-Row-Limit"] = "100000";
             var table = new TabularExport(
                 ["Serial", "Item", "Customer", "Item family", "Sold", "Sale document", "Cover", "Policy", "Change", "Business date", "Months after sale",
-                    "Document", "Line", "Amount", "Currency", "Payer", "Actor", "Approver", "Reason", "Before and after"], queries.ExportAsync(request.Filters, ct));
+                    "Document", "Line", "Amount", "Currency", "Payer", "Actor", "Approver", "Reason", "Before and after"], queries.ExportAsync(request.Filters, request.Sort, request.Dir, ct));
             if (selected == "xlsx")
             {
                 // The spreadsheet package needs a seekable stream and synchronous ZIP writes. Buffer to a temporary

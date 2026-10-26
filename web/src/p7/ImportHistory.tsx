@@ -1,20 +1,20 @@
-import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { Link } from "react-router";
-import { CollapsibleCard, DataGrid, FindBar, StatusBadge, type GridColumn, type PageResult } from "../components";
+import { CollapsibleCard, DataGrid, FindBar, StatusBadge, useGridQuery, type GridColumn, type GridSort, type PageResult } from "../components";
 import { useSession } from "../session/session";
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { ErrorNote } from "../units/common";
-import { p7Api, query } from "./api";
+import { query } from "./api";
 import { date, human, tone } from "./model";
-import type { ComparisonHistoryRow, ComparisonInputFile, FeedMessageHistoryRow, ImportFileHistoryRow } from "./types";
+import { comparisonHistoryPageSchema, feedMessageHistoryPageSchema, importFileHistoryPageSchema, type ComparisonHistoryRow, type ComparisonInputFile, type FeedMessageHistoryRow, type ImportFileHistoryRow } from "./types";
 
 const PAGE_SIZE = 50;
 const JOB_STATUSES = ["intake", "compared", "reviewed", "handed_off", "applied", "partial", "rejected"];
 const FEED_STATUSES = ["applied", "partial", "rejected"];
 
-function pageOf<T>(rows: T[], page: number, hasMore: boolean): PageResult<T> {
-  return { rows, total: (page - 1) * PAGE_SIZE + rows.length + (hasMore ? 1 : 0), page, pageSize: PAGE_SIZE,
+function pageOf<T>(rows: T[], page: number, pageSize: number, hasMore: boolean): PageResult<T> {
+  return { rows, total: (page - 1) * pageSize + rows.length + (hasMore ? 1 : 0), page, pageSize,
     continuation: null, totalIsExact: !hasMore, hasMore };
 }
 function rowsMeta(rows: number, page: number): string {
@@ -40,80 +40,71 @@ function FileDownload({ row, copy, available }: { row: ImportFileHistoryRow; cop
     : <span className={`p7-file-btn disabled${available ? "" : " p7-file-slot"}`} aria-disabled="true" aria-label={label} title={label}><Icon name={copy === "original" ? "file" : "converted"} /></span>;
 }
 
-interface ContentProps { find: string; from: string; to: string; status: string; setMeta: Dispatch<SetStateAction<string>> }
+interface ContentProps { find: string; from: string; to: string; status: string; setMeta: Dispatch<SetStateAction<string>>; setSort: Dispatch<SetStateAction<GridSort>> }
 
-function UploadedFilesContent({ find, from, to, status, uploader, setMeta, setUploaders }: ContentProps & {
+function UploadedFilesContent({ find, from, to, status, uploader, setMeta, setSort, setUploaders }: ContentProps & {
   uploader: string; setUploaders: Dispatch<SetStateAction<Array<[string, string]>>> }) {
-  const [rows, setRows] = useState<ImportFileHistoryRow[]>([]); const [cursor, setCursor] = useState<string | null>(null);
-  const [cursors, setCursors] = useState<Array<string | undefined>>([undefined]); const [page, setPage] = useState(1);
-  const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null);
+  const session = useSession();
   const filters = useMemo(() => historyFilters(find, from, to, status, uploader), [find, from, to, status, uploader]);
-  const load = useCallback(async (target = 1, after?: string, signal?: AbortSignal) => { setBusy(true); setError(null); try {
-    const result = await p7Api.importHistory(filters, after, signal); setRows(result.items); setCursor(result.nextCursor); setPage(target);
-    if (result.nextCursor) setCursors((current) => { const next = current.slice(0, target); next[target] = result.nextCursor!; return next; });
-  } catch (reason) { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); } finally { setBusy(false); } }, [filters]);
-  useEffect(() => { const controller = new AbortController(); setCursors([undefined]); void load(1, undefined, controller.signal); return () => controller.abort(); }, [load]);
-  useEffect(() => setMeta(rowsMeta(rows.length, page)), [rows.length, page, setMeta]);
+  const params = useMemo(() => new URLSearchParams(query(filters)), [filters]);
+  const grid = useGridQuery("/api/imports/history", importFileHistoryPageSchema, { gridId: "import-files-history", userId: session.user.id, defaultSort: { key: "uploaded", dir: "desc" }, defaultSize: PAGE_SIZE, params, paging: "cursor", pageFacts: (data) => ({ continuation: data.nextCursor }), sortKeys: ["file", "uploaded", "status"] });
+  const rows = grid.data?.items ?? [];
+  useEffect(() => setMeta(rowsMeta(rows.length, grid.page)), [rows.length, grid.page, setMeta]);
+  useEffect(() => setSort(grid.sort), [grid.sort, setSort]);
   useEffect(() => setUploaders(Array.from(new Map(rows.map((row) => [row.uploaderReference, row.uploaderName])).entries()).sort((a, b) => a[1].localeCompare(b[1]))), [rows, setUploaders]);
   const columns: GridColumn<ImportFileHistoryRow>[] = [
-    { key: "file", label: "File", width: 20, render: (row) => <><span className="primary">{row.fileName}</span><span className="sub">{row.format.toUpperCase()} · {row.size.toLocaleString()} bytes</span></> },
-    { key: "uploaded", label: "Uploaded", width: 13, render: (row) => <><span className="primary">{date(row.uploadedAt)}</span><span className="sub">{row.uploaderName}</span></> },
+    { key: "file", label: "File", width: 20, sort: { key: "file", defaultDir: "asc" }, render: (row) => <><span className="primary">{row.fileName}</span><span className="sub">{row.format.toUpperCase()} · {row.size.toLocaleString()} bytes</span></> },
+    { key: "uploaded", label: "Uploaded", width: 13, sort: { key: "uploaded", defaultDir: "desc" }, render: (row) => <><span className="primary">{date(row.uploadedAt)}</span><span className="sub">{row.uploaderName}</span></> },
     { key: "source", label: "Source", width: 9, render: (row) => human(row.source) },
-    { key: "status", label: "Status", width: 9, render: (row) => badge(row.status) },
+    { key: "status", label: "Status", width: 9, sort: { key: "status", defaultDir: "asc" }, render: (row) => badge(row.status) },
     { key: "rows", label: "Rows", width: 12, render: (row) => <><span className="primary">{row.applied} applied</span><span className="sub">{row.skipped} skipped · {row.rejected} rejected</span></> },
     { key: "hash", label: "SHA-256", width: 13, render: (row) => <><span className="serial" title={row.originalHash}>{row.originalHash.slice(0, 12)}…</span>{row.convertedHash && <span className="sub" title={row.convertedHash}>Converted {row.convertedHash.slice(0, 8)}…</span>}</> },
     { key: "storage", label: "Storage", width: 8, render: (row) => <>{badge(row.storageState)}{row.archiveStoreName && <span className="sub">{row.archiveStoreName}</span>}</> },
     { key: "download", label: "Files", width: 7, render: (row) => <span className="p7-file-actions"><FileDownload row={row} copy="original" available={row.originalAvailable} /><FileDownload row={row} copy="converted" available={row.convertedAvailable} /></span> },
   ];
-  return <><ErrorNote error={error} /><DataGrid columns={columns} page={pageOf(rows, page, !!cursor)} rowId={(row) => row.jobId}
-    onPage={(next) => void load(next, cursors[next - 1])} loading={busy} emptyText="No uploaded files match these filters." /></>;
+  return <><ErrorNote error={grid.error} /><DataGrid columns={columns} page={pageOf(rows, grid.page, grid.pageSize, !!grid.data?.nextCursor)} rowId={(row) => row.jobId}
+    onPage={grid.onPage} loading={grid.loading} emptyText="No uploaded files match these filters." gridId="import-files-history" userId={session.user.id} sort={grid.sort} defaultSort={{ key: "uploaded", dir: "desc" }} onSort={grid.onSort} pageSize={grid.pageSize} defaultPageSize={PAGE_SIZE} onPageSize={grid.onPageSize} /></>;
 }
 
-function FeedMessagesContent({ find, from, to, status, setMeta }: ContentProps) {
-  const [rows, setRows] = useState<FeedMessageHistoryRow[]>([]); const [cursor, setCursor] = useState<string | null>(null);
-  const [cursors, setCursors] = useState<Array<string | undefined>>([undefined]); const [page, setPage] = useState(1);
-  const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null);
+function FeedMessagesContent({ find, from, to, status, setMeta, setSort }: ContentProps) {
+  const session = useSession();
   const filters = useMemo(() => historyFilters(find, from, to, status), [find, from, to, status]);
-  const load = useCallback(async (target = 1, after?: string, signal?: AbortSignal) => { setBusy(true); setError(null); try {
-    const result = await p7Api.feedMessageHistory(filters, after, signal); setRows(result.items); setCursor(result.nextCursor); setPage(target);
-    if (result.nextCursor) setCursors((current) => { const next = current.slice(0, target); next[target] = result.nextCursor!; return next; });
-  } catch (reason) { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); } finally { setBusy(false); } }, [filters]);
-  useEffect(() => { const controller = new AbortController(); setCursors([undefined]); void load(1, undefined, controller.signal); return () => controller.abort(); }, [load]);
-  useEffect(() => setMeta(rowsMeta(rows.length, page)), [rows.length, page, setMeta]);
+  const params = useMemo(() => new URLSearchParams(query(filters)), [filters]);
+  const grid = useGridQuery("/api/imports/history/feed-messages", feedMessageHistoryPageSchema, { gridId: "feed-message-history", userId: session.user.id, defaultSort: { key: "received", dir: "desc" }, defaultSize: PAGE_SIZE, params, paging: "cursor", pageFacts: (data) => ({ continuation: data.nextCursor }), sortKeys: ["message", "received", "status"] });
+  const rows = grid.data?.items ?? [];
+  useEffect(() => setMeta(rowsMeta(rows.length, grid.page)), [rows.length, grid.page, setMeta]);
+  useEffect(() => setSort(grid.sort), [grid.sort, setSort]);
   const columns: GridColumn<FeedMessageHistoryRow>[] = [
-    { key: "message", label: "Message", width: 18, render: (row) => <><span className="primary">{row.messageReference}</span><span className="sub">{human(row.documentType)}</span></> },
-    { key: "received", label: "Received", width: 15, render: (row) => <><span className="primary">{date(row.receivedAt)}</span><span className="sub">{row.callerName}</span></> },
+    { key: "message", label: "Message", width: 18, sort: { key: "message", defaultDir: "asc" }, render: (row) => <><span className="primary">{row.messageReference}</span><span className="sub">{human(row.documentType)}</span></> },
+    { key: "received", label: "Received", width: 15, sort: { key: "received", defaultDir: "desc" }, render: (row) => <><span className="primary">{date(row.receivedAt)}</span><span className="sub">{row.callerName}</span></> },
     { key: "document", label: "Document", width: 11, render: (row) => <Link to={`/search?q=${encodeURIComponent(row.documentId)}`}>Shipment →<span className="sub">Line {row.documentLine}</span></Link> },
-    { key: "status", label: "Status", width: 10, render: (row) => badge(row.status) },
+    { key: "status", label: "Status", width: 10, sort: { key: "status", defaultDir: "asc" }, render: (row) => badge(row.status) },
     { key: "lines", label: "Lines", width: 17, render: (row) => <><span className="primary">{row.shipped} shipped · {row.assetTags} asset tags</span><span className="sub">{row.rejected} rejected</span></> },
     { key: "hash", label: "Payload SHA-256", width: 15, render: (row) => <span className="serial" title={row.payloadHash}>{row.payloadHash.slice(0, 12)}…</span> },
     { key: "job", label: "Import job", width: 10, render: (row) => <Link to={`/imports?job=${row.importJobId}`}>Open job</Link> },
   ];
-  return <><div className="card-body p7-history-note">Message bodies are not kept; the payload hash proves what was received.</div><ErrorNote error={error} />
-    <DataGrid columns={columns} page={pageOf(rows, page, !!cursor)} rowId={(row) => row.feedMessageId}
-      onPage={(next) => void load(next, cursors[next - 1])} loading={busy} emptyText="No partner feed messages match these filters." /></>;
+  return <><div className="card-body p7-history-note">Message bodies are not kept; the payload hash proves what was received.</div><ErrorNote error={grid.error} />
+    <DataGrid columns={columns} page={pageOf(rows, grid.page, grid.pageSize, !!grid.data?.nextCursor)} rowId={(row) => row.feedMessageId}
+      onPage={grid.onPage} loading={grid.loading} emptyText="No partner feed messages match these filters." gridId="feed-message-history" userId={session.user.id} sort={grid.sort} defaultSort={{ key: "received", dir: "desc" }} onSort={grid.onSort} pageSize={grid.pageSize} defaultPageSize={PAGE_SIZE} onPageSize={grid.onPageSize} /></>;
 }
 
-function ComparisonsContent({ find, from, to, status, setMeta }: ContentProps) {
-  const [rows, setRows] = useState<ComparisonHistoryRow[]>([]); const [cursor, setCursor] = useState<string | null>(null);
-  const [cursors, setCursors] = useState<Array<string | undefined>>([undefined]); const [page, setPage] = useState(1);
-  const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null);
+function ComparisonsContent({ find, from, to, status, setMeta, setSort }: ContentProps) {
+  const session = useSession();
   const filters = useMemo(() => historyFilters(find, from, to, status), [find, from, to, status]);
-  const load = useCallback(async (target = 1, after?: string, signal?: AbortSignal) => { setBusy(true); setError(null); try {
-    const result = await p7Api.comparisonHistory(filters, after, signal); setRows(result.items); setCursor(result.nextCursor); setPage(target);
-    if (result.nextCursor) setCursors((current) => { const next = current.slice(0, target); next[target] = result.nextCursor!; return next; });
-  } catch (reason) { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); } finally { setBusy(false); } }, [filters]);
-  useEffect(() => { const controller = new AbortController(); setCursors([undefined]); void load(1, undefined, controller.signal); return () => controller.abort(); }, [load]);
-  useEffect(() => setMeta(rowsMeta(rows.length, page)), [rows.length, page, setMeta]);
+  const params = useMemo(() => new URLSearchParams(query(filters)), [filters]);
+  const grid = useGridQuery("/api/imports/history/comparisons", comparisonHistoryPageSchema, { gridId: "comparison-history", userId: session.user.id, defaultSort: { key: "ran", dir: "desc" }, defaultSize: PAGE_SIZE, params, paging: "cursor", pageFacts: (data) => ({ continuation: data.nextCursor }), sortKeys: ["file", "ran", "status"] });
+  const rows = grid.data?.items ?? [];
+  useEffect(() => setMeta(rowsMeta(rows.length, grid.page)), [rows.length, grid.page, setMeta]);
+  useEffect(() => setSort(grid.sort), [grid.sort, setSort]);
   const columns: GridColumn<ComparisonHistoryRow>[] = [
-    { key: "compared", label: "Compared", width: 38, render: (row) => <><span className="primary"><InputFileLink file={row.firstFile} /> × <InputFileLink file={row.secondFile} /></span><span className="sub serial" title={`${row.firstFile.hash ?? "—"} · ${row.secondFile.hash ?? "—"}`}>{shortHash(row.firstFile.hash)} · {shortHash(row.secondFile.hash)}</span></> },
-    { key: "ran", label: "Ran", width: 16, render: (row) => date(row.ranAt) },
-    { key: "status", label: "Status", width: 13, render: (row) => badge(row.status) },
+    { key: "compared", label: "Compared", width: 38, sort: { key: "file", defaultDir: "asc" }, render: (row) => <><span className="primary"><InputFileLink file={row.firstFile} /> × <InputFileLink file={row.secondFile} /></span><span className="sub serial" title={`${row.firstFile.hash ?? "—"} · ${row.secondFile.hash ?? "—"}`}>{shortHash(row.firstFile.hash)} · {shortHash(row.secondFile.hash)}</span></> },
+    { key: "ran", label: "Ran", width: 16, sort: { key: "ran", defaultDir: "desc" }, render: (row) => date(row.ranAt) },
+    { key: "status", label: "Status", width: 13, sort: { key: "status", defaultDir: "asc" }, render: (row) => badge(row.status) },
     { key: "result", label: "Result", width: 23, render: (row) => <><span className="primary">{row.applied} applied · {row.skipped} skipped</span><span className="sub">{row.rejected} rejected</span></> },
     { key: "job", label: "Import job", width: 10, render: (row) => <Link to={`/imports?job=${row.jobId}`}>Open job</Link> },
   ];
-  return <><ErrorNote error={error} /><DataGrid columns={columns} page={pageOf(rows, page, !!cursor)} rowId={(row) => row.jobId}
-    onPage={(next) => void load(next, cursors[next - 1])} loading={busy} emptyText="No file comparisons match these filters." /></>;
+  return <><ErrorNote error={grid.error} /><DataGrid columns={columns} page={pageOf(rows, grid.page, grid.pageSize, !!grid.data?.nextCursor)} rowId={(row) => row.jobId}
+    onPage={grid.onPage} loading={grid.loading} emptyText="No file comparisons match these filters." gridId="comparison-history" userId={session.user.id} sort={grid.sort} defaultSort={{ key: "ran", dir: "desc" }} onSort={grid.onSort} pageSize={grid.pageSize} defaultPageSize={PAGE_SIZE} onPageSize={grid.onPageSize} /></>;
 }
 
 export function Component() {
@@ -122,6 +113,9 @@ export function Component() {
   const [fileStatus, setFileStatus] = useState(""); const [feedStatus, setFeedStatus] = useState(""); const [comparisonStatus, setComparisonStatus] = useState("");
   const [uploader, setUploader] = useState(""); const [uploaders, setUploaders] = useState<Array<[string, string]>>([]);
   const [fileMeta, setFileMeta] = useState("Rows 0–0"); const [feedMeta, setFeedMeta] = useState("Rows 0–0"); const [comparisonMeta, setComparisonMeta] = useState("Rows 0–0");
+  const [fileSort, setFileSort] = useState<GridSort>({ key: "uploaded", dir: "desc" });
+  const [feedSort, setFeedSort] = useState<GridSort>({ key: "received", dir: "desc" });
+  const [comparisonSort, setComparisonSort] = useState<GridSort>({ key: "ran", dir: "desc" });
   const shared = { find, from, to };
   return <main className="content" id="main" tabIndex={-1}><Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Imports", to: "/imports" }, { label: "Upload history" }]} />
     <PageHeader eyebrow="Data · Imports" title="Upload history" sub="Every file, partner message and comparison that came in, with its integrity hash." actions={<Link className="btn" to="/imports">Back to imports</Link>} />
@@ -132,18 +126,18 @@ export function Component() {
       <CollapsibleCard title="Uploaded files" meta={fileMeta} storageKey={`upload-history:${viewer}:files`} headerActions={<>
         <StatusSelect value={fileStatus} onChange={setFileStatus} values={JOB_STATUSES} />
         <label className="p7-card-filter">Uploader<select className="select" value={uploader} onChange={(event) => setUploader(event.target.value)}><option value="">All uploaders</option>{uploaders.map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select></label>
-        <ExportCsv path={`/api/imports/history/export${query(historyFilters(find, from, to, fileStatus, uploader))}`} /></>}>
-        <UploadedFilesContent {...shared} status={fileStatus} uploader={uploader} setMeta={setFileMeta} setUploaders={setUploaders} />
+        <ExportCsv path={`/api/imports/history/export${query({ ...historyFilters(find, from, to, fileStatus, uploader), sort: fileSort.key, dir: fileSort.dir })}`} /></>}>
+        <UploadedFilesContent {...shared} status={fileStatus} uploader={uploader} setMeta={setFileMeta} setSort={setFileSort} setUploaders={setUploaders} />
       </CollapsibleCard>
       <CollapsibleCard title="Partner feed messages" meta={feedMeta} storageKey={`upload-history:${viewer}:feed-messages`} headerActions={<>
         <StatusSelect value={feedStatus} onChange={setFeedStatus} values={FEED_STATUSES} />
-        <ExportCsv path={`/api/imports/history/feed-messages/export${query(historyFilters(find, from, to, feedStatus))}`} /></>}>
-        <FeedMessagesContent {...shared} status={feedStatus} setMeta={setFeedMeta} />
+        <ExportCsv path={`/api/imports/history/feed-messages/export${query({ ...historyFilters(find, from, to, feedStatus), sort: feedSort.key, dir: feedSort.dir })}`} /></>}>
+        <FeedMessagesContent {...shared} status={feedStatus} setMeta={setFeedMeta} setSort={setFeedSort} />
       </CollapsibleCard>
       <CollapsibleCard title="File comparisons" meta={comparisonMeta} storageKey={`upload-history:${viewer}:comparisons`} headerActions={<>
         <StatusSelect value={comparisonStatus} onChange={setComparisonStatus} values={JOB_STATUSES} />
-        <ExportCsv path={`/api/imports/history/comparisons/export${query(historyFilters(find, from, to, comparisonStatus))}`} /></>}>
-        <ComparisonsContent {...shared} status={comparisonStatus} setMeta={setComparisonMeta} />
+        <ExportCsv path={`/api/imports/history/comparisons/export${query({ ...historyFilters(find, from, to, comparisonStatus), sort: comparisonSort.key, dir: comparisonSort.dir })}`} /></>}>
+        <ComparisonsContent {...shared} status={comparisonStatus} setMeta={setComparisonMeta} setSort={setComparisonSort} />
       </CollapsibleCard>
     </div>
   </main>;

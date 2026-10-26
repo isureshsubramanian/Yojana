@@ -99,7 +99,9 @@ public sealed record CorrectionAsBuiltRequirementPreview(Guid ParentUnitId, Guid
 
 /// <summary>Run the named bulk operation over a stored selection without writing; the outcomes are the command's own.</summary>
 /// <see cref="Approval"/> is who previews and the roles they hold (the endpoint sets it from the claims), so the preview judges the set as that person would commit it.
-public sealed record PreviewBulkOperation(Guid SelectionId, string Operation, BulkOperationArguments Arguments, int Skip = 0, int Take = 50, string? Find = null, string? OutcomeFilter = null, BulkApproval? Approval = null);
+public sealed record PreviewBulkOperation(Guid SelectionId, string Operation, BulkOperationArguments Arguments, int Skip = 0,
+    int Take = 50, string? Find = null, string? OutcomeFilter = null, BulkApproval? Approval = null,
+    string? Sort = null, string? Direction = null);
 
 public sealed record BulkPreviewResult(Guid SelectionId, string Operation, int Total, int Change, int Skip, int Block, IReadOnlyList<UnitOutcome> Page, int PageSkip, int PageTake);
 

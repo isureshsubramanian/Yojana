@@ -14,6 +14,6 @@ export const recoveryApi = {
   page: (filters: Record<string, string | number | undefined | null>, signal?: AbortSignal) => apiParsed(`/api/recovery-claims${query(filters)}`, recoveryClaimPage, { signal }),
   summary: (signal?: AbortSignal) => apiParsed("/api/recovery-claims/summary", recoveryClaimSummary, { signal }),
   notRaised: (days = 30, signal?: AbortSignal) => apiParsed(`/api/recovery-claims/not-raised${query({ days })}`, recoveryNotRaisedReport, { signal }),
-  exportUrl: (filters: Record<string, string | undefined | null>) => `/api/recovery-claims/export${query(filters)}`,
+  exportUrl: (filters: Record<string, string | undefined | null>, sort?: string, dir?: string) => `/api/recovery-claims/export${query({ ...filters, sort, dir })}`,
   answer: (recoveryClaimId: string, body: RecoveryAnswer) => apiParsed(`/api/recovery-claims/${recoveryClaimId}/approve`, recoveryAnswerResult, { method: "POST", body }),
 };
