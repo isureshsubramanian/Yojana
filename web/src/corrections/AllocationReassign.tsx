@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router";
 import { DataGrid, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
 import { newCommandId, now } from "../api/units";
 import { Rail } from "../shell/Drawer";
+import { useSession } from "../session/session";
 import { openDrawer } from "../shell/drawerStore";
 import { opaqueParam } from "../shell/handoff";
 import { Breadcrumbs } from "../shell/PageHeader";
@@ -16,6 +17,7 @@ import type { CorrectionAllocationPreview, ReassignAllocation, ReassignAllocatio
 const PAGE = 10;
 
 export function Component() {
+  const session = useSession();
   const [params] = useSearchParams();
   const [commandId, setCommandId] = useState(newCommandId);
   const [fromOrder, setFromOrder] = useState(opaqueParam(params, "from"));
@@ -33,7 +35,6 @@ export function Component() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const rows = preview?.preview.allocationReassignments ?? [];
-  const visible = rows.slice((page - 1) * PAGE, page * PAGE);
   const fromDocument: DocumentValue | null = GUID.test(fromOrder) ? { type: "production_order", id: fromOrder } : null;
   const toDocument: DocumentValue | null = GUID.test(toOrder) ? { type: "production_order", id: toOrder } : null;
   const referenceNames = useReferenceNames({ documents: [fromDocument, toDocument] });
@@ -52,10 +53,10 @@ export function Component() {
 
   const openPair = (row: CorrectionAllocationPreview) => { const id = String(row.pair); setActive(id); openDrawer({ eyebrow: `Pair ${row.pair} of ${rows.length}`, title: row.fromSerial, mono: true }, <><h3>{row.outcome === "blocked" ? "Refused by the command" : "Ready to move"}</h3><Kv rows={[["Exchange serial", row.exchangeSerial ?? "one-sided move"], ["Rule", row.rule ? <span className="serial">{row.rule}</span> : "all checks passed"], ["Detail", row.detail ?? "reservation is eligible"], ["Unblock by", row.unblockingStep ?? "—"], ["From range", row.fromSerialRangeId], ["To range", row.exchangeSerialRangeId ?? "—"]]} />{row.unblockingStep && <div className="act"><Link className="btn block" to="/corrections">Open in workbench</Link></div>}</>); };
   const columns: GridColumn<CorrectionAllocationPreview>[] = [
-    { key: "from", label: `To ${toLabel}`, width: 22, mono: true, render: (row) => row.fromSerial },
-    { key: "to", label: mode === "pairwise_exchange" ? `To ${fromLabel}` : "Exchange serial", width: 22, mono: true, render: (row) => row.exchangeSerial ?? <span className="muted">—</span> },
-    { key: "reservation", label: "Reservation", width: 22, render: (row) => row.outcome === "blocked" ? <span className="muted">pre-commission</span> : "reserved" },
-    { key: "outcome", label: "Outcome", width: 34, render: (row) => <><StatusBadge tone={row.outcome === "blocked" ? "bad" : "ok"}>{row.outcome === "blocked" ? `Blocked${row.rule ? ` · ${humanise(row.rule)}` : ""}` : "Will move"}</StatusBadge>{row.detail && <span className="sub">{row.detail}</span>}</> },
+    { key: "from", label: `To ${toLabel}`, width: 22, mono: true, sort: { key: "from", value: (row) => row.fromSerial }, render: (row) => row.fromSerial },
+    { key: "to", label: mode === "pairwise_exchange" ? `To ${fromLabel}` : "Exchange serial", width: 22, mono: true, sort: { key: "to", value: (row) => row.exchangeSerial }, render: (row) => row.exchangeSerial ?? <span className="muted">—</span> },
+    { key: "reservation", label: "Reservation", width: 22, sort: { key: "reservation", value: (row) => row.outcome === "blocked" ? "pre-commission" : "reserved" }, render: (row) => row.outcome === "blocked" ? <span className="muted">pre-commission</span> : "reserved" },
+    { key: "outcome", label: "Outcome", width: 34, sort: { key: "outcome", value: (row) => row.outcome }, render: (row) => <><StatusBadge tone={row.outcome === "blocked" ? "bad" : "ok"}>{row.outcome === "blocked" ? `Blocked${row.rule ? ` · ${humanise(row.rule)}` : ""}` : "Will move"}</StatusBadge>{row.detail && <span className="sub">{row.detail}</span>}</> },
   ];
   const blocked = preview?.preview.block ?? rows.filter((row) => row.outcome === "blocked").length;
   const moving = preview?.preview.change ?? rows.filter((row) => row.outcome !== "blocked").length;
@@ -80,7 +81,7 @@ export function Component() {
         </div></section>
         <section className="card" aria-labelledby="allocation-preview"><div className="card-header"><h2 id="allocation-preview">Preview <span className="meta">computed by the command</span></h2><button type="button" className="btn ghost sm" disabled={!rows.length} onClick={() => download(rows)}>Download CSV</button></div><div className="preview-summary"><Figure label="Pairs" value={rows.length} /><Figure label="Will move" value={moving} tone="ok" /><Figure label="Blocked" value={blocked} tone="bad" /><Figure label="Range check" value={preview?.preview.refusal ? "refused" : preview ? "valid" : "—"} /></div>
           {preview?.preview.refusal && <div className="note bad"><strong>{humanise(preview.preview.refusal.rule)}.</strong>&nbsp;{preview.preview.refusal.message}{preview.preview.refusal.unblockingStep ? ` · ${preview.preview.refusal.unblockingStep}` : ""}</div>}
-          <DataGrid dense columns={columns} page={{ rows: visible, total: rows.length, page, pageSize: PAGE, continuation: null }} rowId={(row) => String(row.pair)} onPage={setPage} onRowClick={openPair} activeRowId={active} loading={busy} emptyText={command ? "Preview this exchange to see every pair." : "Enter both work orders and serial selections to preview."} viewportHeight={460} footerNote={blocked ? "Blocked pairs must be removed or fixed before anything moves" : "Nothing moves until you commit"} />
+          <DataGrid dense columns={columns} page={{ rows, total: rows.length, page, pageSize: PAGE, continuation: null }} rowId={(row) => String(row.pair)} onPage={setPage} onRowClick={openPair} activeRowId={active} loading={busy} emptyText={command ? "Preview this exchange to see every pair." : "Enter both work orders and serial selections to preview."} viewportHeight={460} footer={`${rows.length.toLocaleString()} preview rows · ${blocked ? "blocked pairs must be fixed" : "nothing moves until commit"}`} gridId="allocation-reassign-preview" userId={session.user.id} defaultSort={{ key: "from", dir: "asc" }} defaultPageSize={PAGE} />
         </section>
       </div>
     </main>

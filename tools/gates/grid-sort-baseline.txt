@@ -1,19 +1,5 @@
 # ADR-0021 rollout baseline. Entries may only be removed; new files must use the shared paging pieces.
 [web]
-web/src/campaigns/CampaignEditor.tsx
-web/src/campaigns/CampaignUnits.tsx
-web/src/campaigns/Campaigns.tsx
-web/src/claims/Claims.tsx
-web/src/components/SelectionPreview.tsx
-web/src/corrections/AllocationReassign.tsx
-web/src/corrections/CorrectionKpi.tsx
-web/src/corrections/MergeUnits.tsx
-web/src/corrections/VendorSerials.tsx
-web/src/corrections/WorkbenchChoices.tsx
-web/src/entitlements/ApprovalInbox.tsx
-web/src/entitlements/BulkOperation.tsx
-web/src/entitlements/CoverChanges.tsx
-web/src/entitlements/WarrantyLineExceptions.tsx
 web/src/integration/AdminCommon.tsx
 web/src/integration/ConnectionVerification.tsx
 web/src/integration/ManualTasks.tsx
@@ -22,18 +8,10 @@ web/src/integration/MigrationDelta.tsx
 web/src/integration/MigrationLoadUndo.tsx
 web/src/integration/MigrationRefusals.tsx
 web/src/integration/MigrationSettings.tsx
-web/src/jurisdictions/Jurisdictions.tsx
-web/src/labels/PrintJobs.tsx
-web/src/mail/SentLog.tsx
-web/src/p7/ImportHistory.tsx
 web/src/patterns/DocumentPattern.tsx
 web/src/questions/EntryEditor.tsx
 web/src/questions/KnowledgeBase.tsx
 web/src/questions/MyQuestions.tsx
-web/src/recovery/RecoveryClaims.tsx
-web/src/refurbishments/RefurbishmentList.tsx
-web/src/replacements/AwaitingReturns.tsx
-web/src/returns/Returns.tsx
 web/src/settings/DeveloperClients.tsx
 web/src/settings/DeveloperDeliveries.tsx
 web/src/settings/DeveloperWebhooks.tsx
@@ -53,5 +31,3 @@ src/Knowledge/Yojana.Knowledge/KnowledgeEndpoints.cs
 src/Platform/Yojana.Platform/Privacy/PrivacyEndpoints.cs
 src/Platform/Yojana.Platform/Security/SecurityEndpoints.cs
 src/Platform/Yojana.Platform/Security/UserManagementEndpoints.cs
-src/Serialisation/Yojana.Serialisation/CustomerMail/CustomerMailEndpoints.cs
-src/Serialisation/Yojana.Serialisation/SerialisationEndpoints.cs

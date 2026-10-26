@@ -4,14 +4,29 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
+using Yojana.Serialisation.Data.Entities;
 
 namespace Yojana.Serialisation.Imports;
 
 public sealed class ImportQueries(SerialisationDbContext db, ImportService imports, ITenantContext tenant,
     IUserDirectory users)
 {
+    private static readonly SortedPage<ImportJob, Guid> HistoryPages = new("uploaded", row => row.JobId,
+        new SortColumn<ImportJob, string>("file", row => row.FileName),
+        new SortColumn<ImportJob, DateTime>("uploaded", row => row.RecordedTime, SortDirection.Descending),
+        new SortColumn<ImportJob, string>("status", row => row.Status));
+    private static readonly SortedPage<ThreePlFeedMessage, Guid> FeedPages = new("received", row => row.FeedMessageId,
+        new SortColumn<ThreePlFeedMessage, string>("message", row => row.MessageReference),
+        new SortColumn<ThreePlFeedMessage, DateTime>("received", row => row.RecordedTime, SortDirection.Descending),
+        new SortColumn<ThreePlFeedMessage, string>("status", row => row.Status));
+    private static readonly SortedPage<ImportJob, Guid> ComparisonPages = new("ran", row => row.JobId,
+        new SortColumn<ImportJob, string>("file", row => row.FileName),
+        new SortColumn<ImportJob, DateTime>("ran", row => row.RecordedTime, SortDirection.Descending),
+        new SortColumn<ImportJob, string>("status", row => row.Status));
+
     public async Task<ImportJobView?> GetAsync(Guid jobId, CancellationToken cancellationToken)
     {
         var job = await db.ImportJobs.AsNoTracking()
@@ -34,10 +49,11 @@ public sealed class ImportQueries(SerialisationDbContext db, ImportService impor
         return new(rows, last is null ? null : $"{last.RecordedTime.Ticks.ToString(CultureInfo.InvariantCulture)}.{last.JobId:N}");
     }
 
-    public async Task<ImportFileHistoryPage> HistoryAsync(ImportFileHistoryFilter filter, string? cursor, int take,
+    public async Task<ImportFileHistoryPage> HistoryAsync(ImportFileHistoryFilter filter, string? sort, string? direction,
+        string? cursor, int take,
         CancellationToken cancellationToken)
     {
-        take = Math.Clamp(take, 1, 200);
+        var paging = HistoryPages.Parse(sort, direction, take, cursor);
         // Upload history lists files people uploaded: compare results and feed messages store no file and stay out.
         var query = db.ImportJobs.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
             && (row.OriginalFileReference != null || row.OriginalContent != null));
@@ -52,9 +68,7 @@ public sealed class ImportQueries(SerialisationDbContext db, ImportService impor
         if (!string.IsNullOrWhiteSpace(filter.FileName)) query = query.Where(row => row.FileName.Contains(filter.FileName));
         if (!string.IsNullOrWhiteSpace(filter.Hash))
             query = query.Where(row => row.OriginalHash == filter.Hash || row.ConvertedHash == filter.Hash);
-        if (Parse(cursor) is { } after)
-            query = query.Where(row => row.RecordedTime < after.Time || row.RecordedTime == after.Time && row.JobId.CompareTo(after.Id) < 0);
-        var rows = await query.OrderByDescending(row => row.RecordedTime).ThenByDescending(row => row.JobId).Take(take + 1)
+        var rows = await paging.Apply(query).Take(paging.Take + 1)
             .Select(row => new HistoryProjection
             {
                 JobId = row.JobId, FileName = row.FileName, Format = row.Format,
@@ -66,7 +80,7 @@ public sealed class ImportQueries(SerialisationDbContext db, ImportService impor
                 ConvertedAvailable = row.ConvertedFileReference != null || row.ConvertedContent != null,
                 OriginalReference = row.OriginalFileReference,
             }).ToListAsync(cancellationToken);
-        var more = rows.Count > take;
+        var more = rows.Count > paging.Take;
         if (more) rows.RemoveAt(rows.Count - 1);
         var names = await users.DisplayNamesAsync(rows.Select(row => row.ActorRef).Distinct().ToList(), cancellationToken);
         var items = rows.Select(row => new ImportFileHistoryRow(row.JobId, row.FileName, row.Format, row.Size,
@@ -75,16 +89,19 @@ public sealed class ImportQueries(SerialisationDbContext db, ImportService impor
             row.Archived ? "archived" : "active", row.OriginalAvailable, row.ConvertedAvailable,
             ImportFileStore.ArchiveStoreName(row.OriginalReference))).ToList();
         var last = more ? rows[^1] : null;
-        return new(items, last is null ? null : $"{last.RecordedTime.Ticks.ToString(CultureInfo.InvariantCulture)}.{last.JobId:N}");
+        return new(items, last is null ? null : paging.CursorFor(ImportCursorRow(last)));
     }
 
-    public async IAsyncEnumerable<IReadOnlyList<string?>> ExportHistoryAsync(ImportFileHistoryFilter filter,
+    public Task<ImportFileHistoryPage> HistoryAsync(ImportFileHistoryFilter filter, string? cursor, int take,
+        CancellationToken cancellationToken) => HistoryAsync(filter, null, null, cursor, take, cancellationToken);
+
+    public async IAsyncEnumerable<IReadOnlyList<string?>> ExportHistoryAsync(ImportFileHistoryFilter filter, string? sort, string? direction,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         string? cursor = null;
         do
         {
-            var page = await HistoryAsync(filter, cursor, 200, cancellationToken);
+            var page = await HistoryAsync(filter, sort, direction, cursor, 200, cancellationToken);
             foreach (var row in page.Items)
                 yield return [row.FileName, row.Format, row.Size.ToString(CultureInfo.InvariantCulture), row.OriginalHash,
                     row.ConvertedHash, row.UploaderName, row.UploadedAt.ToString("O", CultureInfo.InvariantCulture), row.Source,
@@ -94,21 +111,21 @@ public sealed class ImportQueries(SerialisationDbContext db, ImportService impor
         } while (cursor is not null);
     }
 
-    public async Task<FeedMessageHistoryPage> FeedMessagesAsync(ImportHistoryFilter filter, string? cursor, int take,
+    public IAsyncEnumerable<IReadOnlyList<string?>> ExportHistoryAsync(ImportFileHistoryFilter filter,
+        CancellationToken cancellationToken) => ExportHistoryAsync(filter, null, null, cancellationToken);
+
+    public async Task<FeedMessageHistoryPage> FeedMessagesAsync(ImportHistoryFilter filter, string? sort, string? direction,
+        string? cursor, int take,
         CancellationToken cancellationToken)
     {
-        take = Math.Clamp(take, 1, 200);
+        var paging = FeedPages.Parse(sort, direction, take, cursor);
         var query = db.ThreePlFeedMessages.AsNoTracking().Where(row => row.TenantId == tenant.TenantId);
         if (filter.From is { } from) query = query.Where(row => row.RecordedTime >= from);
         if (filter.To is { } to) query = query.Where(row => row.RecordedTime < to);
         if (!string.IsNullOrWhiteSpace(filter.Find))
             query = query.Where(row => row.MessageReference.Contains(filter.Find) || row.PayloadHash.Contains(filter.Find));
         if (!string.IsNullOrWhiteSpace(filter.Status)) query = query.Where(row => row.Status == filter.Status);
-        if (Parse(cursor) is { } after)
-            query = query.Where(row => row.RecordedTime < after.Time
-                || row.RecordedTime == after.Time && row.FeedMessageId.CompareTo(after.Id) < 0);
-        var rows = await query.OrderByDescending(row => row.RecordedTime).ThenByDescending(row => row.FeedMessageId)
-            .Take(take + 1).Select(row => new FeedProjection
+        var rows = await paging.Apply(query).Take(paging.Take + 1).Select(row => new FeedProjection
             {
                 FeedMessageId = row.FeedMessageId, MessageReference = row.MessageReference,
                 DocumentType = row.DocumentType, DocumentId = row.DocumentId, DocumentLine = row.DocumentLine,
@@ -116,7 +133,7 @@ public sealed class ImportQueries(SerialisationDbContext db, ImportService impor
                 Shipped = row.ShippedCount, AssetTags = row.AssetTagCount, Rejected = row.RejectedCount,
                 ActorRef = row.ActorRef, RecordedTime = row.RecordedTime,
             }).ToListAsync(cancellationToken);
-        var more = rows.Count > take;
+        var more = rows.Count > paging.Take;
         if (more) rows.RemoveAt(rows.Count - 1);
         var names = await users.DisplayNamesAsync(rows.Select(row => row.ActorRef).Distinct().ToList(), cancellationToken);
         var items = rows.Select(row => new FeedMessageHistoryRow(row.FeedMessageId, row.MessageReference,
@@ -124,16 +141,19 @@ public sealed class ImportQueries(SerialisationDbContext db, ImportService impor
             row.Shipped, row.AssetTags, row.Rejected, names.GetValueOrDefault(row.ActorRef, "Former user"),
             row.RecordedTime)).ToList();
         var last = more ? rows[^1] : null;
-        return new(items, last is null ? null : Cursor(last.RecordedTime, last.FeedMessageId));
+        return new(items, last is null ? null : paging.CursorFor(FeedCursorRow(last)));
     }
 
-    public async IAsyncEnumerable<IReadOnlyList<string?>> ExportFeedMessagesAsync(ImportHistoryFilter filter,
+    public Task<FeedMessageHistoryPage> FeedMessagesAsync(ImportHistoryFilter filter, string? cursor, int take,
+        CancellationToken cancellationToken) => FeedMessagesAsync(filter, null, null, cursor, take, cancellationToken);
+
+    public async IAsyncEnumerable<IReadOnlyList<string?>> ExportFeedMessagesAsync(ImportHistoryFilter filter, string? sort, string? direction,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         string? cursor = null;
         do
         {
-            var page = await FeedMessagesAsync(filter, cursor, 200, cancellationToken);
+            var page = await FeedMessagesAsync(filter, sort, direction, cursor, 200, cancellationToken);
             foreach (var row in page.Items)
                 yield return [row.MessageReference, row.DocumentType, row.DocumentId.ToString("D"),
                     row.DocumentLine.ToString(CultureInfo.InvariantCulture), row.ReceivedAt.ToString("O", CultureInfo.InvariantCulture),
@@ -144,10 +164,14 @@ public sealed class ImportQueries(SerialisationDbContext db, ImportService impor
         } while (cursor is not null);
     }
 
-    public async Task<ComparisonHistoryPage> ComparisonsAsync(ImportHistoryFilter filter, string? cursor, int take,
+    public IAsyncEnumerable<IReadOnlyList<string?>> ExportFeedMessagesAsync(ImportHistoryFilter filter,
+        CancellationToken cancellationToken) => ExportFeedMessagesAsync(filter, null, null, cancellationToken);
+
+    public async Task<ComparisonHistoryPage> ComparisonsAsync(ImportHistoryFilter filter, string? sort, string? direction,
+        string? cursor, int take,
         CancellationToken cancellationToken)
     {
-        take = Math.Clamp(take, 1, 200);
+        var paging = ComparisonPages.Parse(sort, direction, take, cursor);
         var query = db.ImportJobs.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
             && row.Mode == ImportMode.Compare && row.ParentJobId != null
             && row.OriginalFileReference == null && row.OriginalContent == null
@@ -164,17 +188,13 @@ public sealed class ImportQueries(SerialisationDbContext db, ImportService impor
                 && (input.JobId == row.ParentJobId || row.FileName.EndsWith(" versus " + input.FileName))));
         }
         if (!string.IsNullOrWhiteSpace(filter.Status)) query = query.Where(row => row.Status == filter.Status);
-        if (Parse(cursor) is { } after)
-            query = query.Where(row => row.RecordedTime < after.Time
-                || row.RecordedTime == after.Time && row.JobId.CompareTo(after.Id) < 0);
-        var rows = await query.OrderByDescending(row => row.RecordedTime).ThenByDescending(row => row.JobId)
-            .Take(take + 1).Select(row => new ComparisonProjection
+        var rows = await paging.Apply(query).Take(paging.Take + 1).Select(row => new ComparisonProjection
             {
                 JobId = row.JobId, ParentJobId = row.ParentJobId!.Value, FileName = row.FileName,
                 ComparisonHash = row.OriginalHash, Status = row.Status, Applied = row.AppliedCount,
                 Skipped = row.SkippedCount, Rejected = row.RejectedCount, RecordedTime = row.RecordedTime,
             }).ToListAsync(cancellationToken);
-        var more = rows.Count > take;
+        var more = rows.Count > paging.Take;
         if (more) rows.RemoveAt(rows.Count - 1);
         var firstIds = rows.Select(row => row.ParentJobId).Distinct().ToList();
         var firstFiles = await db.ImportJobs.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
@@ -215,16 +235,19 @@ public sealed class ImportQueries(SerialisationDbContext db, ImportService impor
                 row.Status, row.Applied, row.Skipped, row.Rejected, row.RecordedTime));
         }
         var last = more ? rows[^1] : null;
-        return new(items, last is null ? null : Cursor(last.RecordedTime, last.JobId));
+        return new(items, last is null ? null : paging.CursorFor(ComparisonCursorRow(last)));
     }
 
-    public async IAsyncEnumerable<IReadOnlyList<string?>> ExportComparisonsAsync(ImportHistoryFilter filter,
+    public Task<ComparisonHistoryPage> ComparisonsAsync(ImportHistoryFilter filter, string? cursor, int take,
+        CancellationToken cancellationToken) => ComparisonsAsync(filter, null, null, cursor, take, cancellationToken);
+
+    public async IAsyncEnumerable<IReadOnlyList<string?>> ExportComparisonsAsync(ImportHistoryFilter filter, string? sort, string? direction,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         string? cursor = null;
         do
         {
-            var page = await ComparisonsAsync(filter, cursor, 200, cancellationToken);
+            var page = await ComparisonsAsync(filter, sort, direction, cursor, 200, cancellationToken);
             foreach (var row in page.Items)
                 yield return [row.FirstFile.Id?.ToString("D"), row.FirstFile.Name, row.FirstFile.Hash,
                     row.SecondFile.Id?.ToString("D"), row.SecondFile.Name, row.SecondFile.Hash, row.Status,
@@ -234,6 +257,46 @@ public sealed class ImportQueries(SerialisationDbContext db, ImportService impor
             cursor = page.NextCursor;
         } while (cursor is not null);
     }
+
+    public IAsyncEnumerable<IReadOnlyList<string?>> ExportComparisonsAsync(ImportHistoryFilter filter,
+        CancellationToken cancellationToken) => ExportComparisonsAsync(filter, null, null, cancellationToken);
+
+    private static ImportJob ImportCursorRow(HistoryProjection row) => new()
+    {
+        JobId = row.JobId,
+        FileName = row.FileName,
+        RecordedTime = row.RecordedTime,
+        Status = row.Status,
+        Source = "",
+        OriginalHash = "",
+        Format = "",
+        Mode = "",
+        ActorRef = "",
+    };
+
+    private static ThreePlFeedMessage FeedCursorRow(FeedProjection row) => new()
+    {
+        FeedMessageId = row.FeedMessageId,
+        MessageReference = row.MessageReference,
+        RecordedTime = row.RecordedTime,
+        Status = row.Status,
+        DocumentType = "",
+        PayloadHash = "",
+        ActorRef = "",
+    };
+
+    private static ImportJob ComparisonCursorRow(ComparisonProjection row) => new()
+    {
+        JobId = row.JobId,
+        FileName = row.FileName,
+        RecordedTime = row.RecordedTime,
+        Status = row.Status,
+        Source = "",
+        OriginalHash = "",
+        Format = "",
+        Mode = "",
+        ActorRef = "",
+    };
 
     public async Task<ImportRowPage?> RowsAsync(Guid jobId, string? cursor, int take, CancellationToken cancellationToken)
     {

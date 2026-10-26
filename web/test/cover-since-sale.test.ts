@@ -87,8 +87,8 @@ test("unit screen has comparison, change selection, full named record and no ide
 });
 test("report uses server cursors, shared grid and exports with by-kind card before unit list", () => {
   const src = readFileSync(new URL("../src/entitlements/CoverChanges.tsx", import.meta.url), "utf8");
-  assert.match(src, /cursorStack/);
-  assert.match(src, /data\.nextCursor/);
+  assert.match(src, /useGridQuery/);
+  assert.match(src, /pageFacts: \(page\) => \(\{ continuation: page\.nextCursor \}\)/);
   assert.match(src, /DataGrid/);
   assert.match(src, /ExportButtons/);
   assert.match(src, /PartyField/);

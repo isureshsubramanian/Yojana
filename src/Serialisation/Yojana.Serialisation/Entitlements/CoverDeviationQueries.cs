@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Entities;
@@ -16,6 +17,10 @@ public sealed class CoverDeviationQueries(SerialisationDbContext db, ITenantCont
     IItemNamePort items, IPartyNamePort parties, IDocumentNumberPort documents, IUserDirectory people, ITenantCurrency currency,
     IItemFamilyNamePort itemFamilies)
 {
+    private static readonly SortedPage<UnitCoverDeviation, Guid> Pages = new("changed", row => row.UnitId,
+        new SortColumn<UnitCoverDeviation, DateTime>("changed", row => row.LastChangeAt, SortDirection.Descending),
+        new SortColumn<UnitCoverDeviation, DateOnly>("sold", row => row.SaleDate));
+
     public async Task<CoverSinceSale?> ForUnitAsync(Guid unitId, CancellationToken ct)
     {
         var unit = await db.Current.AsNoTracking().SingleOrDefaultAsync(c => c.TenantId == tenant.TenantId && c.UnitId == unitId, ct);
@@ -131,18 +136,14 @@ public sealed class CoverDeviationQueries(SerialisationDbContext db, ITenantCont
         return query;
     }
 
-    public async Task<CoverChangePage> PageAsync(CoverChangeFilters filter, string? cursor, int take, CancellationToken ct)
+    public async Task<CoverChangePage> PageAsync(CoverChangeFilters filter, string? sort, string? direction,
+        string? cursor, int take, CancellationToken ct)
     {
-        take = Math.Clamp(take, 1, 200);
+        var paging = Pages.Parse(sort, direction, take, cursor);
         var query = Filter(filter, true);
-        if (!string.IsNullOrEmpty(cursor))
-        {
-            var point = Decode(cursor);
-            query = query.Where(r => r.LastChangeAt < point.At || r.LastChangeAt == point.At && r.UnitId.CompareTo(point.Unit) < 0);
-        }
-        var rows = await query.OrderByDescending(r => r.LastChangeAt).ThenByDescending(r => r.UnitId).Take(take + 1).ToListAsync(ct);
-        var more = rows.Count > take;
-        rows = rows.Take(take).ToList();
+        var rows = await paging.Apply(query).Take(paging.Take + 1).ToListAsync(ct);
+        var more = rows.Count > paging.Take;
+        rows = rows.Take(paging.Take).ToList();
         var ids = rows.Select(r => r.UnitId).ToList();
         var values = await db.CoverDeviationValues.AsNoTracking().Where(r => r.TenantId == tenant.TenantId && ids.Contains(r.UnitId)).ToListAsync(ct);
         var kinds = await db.CoverDeviationChanges.AsNoTracking().Where(r => r.TenantId == tenant.TenantId && ids.Contains(r.UnitId)).Select(r => new { r.UnitId, r.Kind }).Distinct().ToListAsync(ct);
@@ -165,8 +166,11 @@ public sealed class CoverDeviationQueries(SerialisationDbContext db, ITenantCont
             r.ChangeCount, kinds.Where(k => k.UnitId == r.UnitId).Select(k => k.Kind).Order().ToList(),
             OrderMoney(values.Where(v => v.UnitId == r.UnitId).Select(v => new CoverMoney(v.Currency, v.Amount)), mainCurrency), r.LastChangeAt,
             labels.Where(c => c.UnitId == r.UnitId).OrderBy(c => c.FamilyName).ThenBy(c => c.Kind).Select(c => new CoverChangeLabel(c.Kind, c.FamilyName, c.PolicyName)).ToList())).ToList(),
-            more ? Encode(rows[^1].LastChangeAt, rows[^1].UnitId) : null);
+            more ? paging.CursorFor(rows[^1]) : null);
     }
+
+    public Task<CoverChangePage> PageAsync(CoverChangeFilters filter, string? cursor, int take, CancellationToken ct) =>
+        PageAsync(filter, null, null, cursor, take, ct);
 
     public async Task<CoverChangeSummary> SummaryAsync(CoverChangeFilters filter, CancellationToken ct)
     {
@@ -212,13 +216,14 @@ public sealed class CoverDeviationQueries(SerialisationDbContext db, ITenantCont
             && (filter.ChangeKind == null || c.Kind == filter.ChangeKind)).Take(100001).CountAsync(ct) > 100000;
     }
 
-    public async IAsyncEnumerable<IReadOnlyList<string?>> ExportAsync(CoverChangeFilters filter, [EnumeratorCancellation] CancellationToken ct)
+    public async IAsyncEnumerable<IReadOnlyList<string?>> ExportAsync(CoverChangeFilters filter, string? sort,
+        string? direction, [EnumeratorCancellation] CancellationToken ct)
     {
         string? cursor = null;
         var exported = 0;
         do
         {
-            var page = await PageAsync(filter, cursor, 200, ct);
+            var page = await PageAsync(filter, sort, direction, cursor, 200, ct);
             var ids = page.Rows.Select(r => r.UnitId).ToList();
             var changes = await db.CoverDeviationChanges.AsNoTracking().Where(c => c.TenantId == tenant.TenantId && ids.Contains(c.UnitId)
                     && (filter.ChangeKind == null || c.Kind == filter.ChangeKind)).OrderByDescending(c => c.EventTime).ThenByDescending(c => c.EventId)
@@ -267,6 +272,9 @@ public sealed class CoverDeviationQueries(SerialisationDbContext db, ITenantCont
             cursor = page.NextCursor;
         } while (cursor is not null && exported < 100000);
     }
+
+    public IAsyncEnumerable<IReadOnlyList<string?>> ExportAsync(CoverChangeFilters filter, CancellationToken ct) =>
+        ExportAsync(filter, null, null, ct);
 
     private Task<List<ExportFact>> ExportFactsAsync(UnitCoverDeviationChange[] changes, CancellationToken ct)
     {

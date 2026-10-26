@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { ScanInput, SelectionPreview, Shortcut, StatusBadge, useModEnter, type PreviewOutcome } from "../components";
+import { ScanInput, SelectionPreview, Shortcut, StatusBadge, useGridState, useModEnter, type PreviewOutcome } from "../components";
+import { useSession } from "../session/session";
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { previewPage } from "./fixtures";
@@ -8,11 +9,12 @@ import { Rail } from "../shell/Drawer";
 
 /** Form pattern: change on the left, the command's own preview on the right with find-within, routing in the rail. */
 export function Component() {
+  const session = useSession();
   const [query, setQuery] = useState("");
   const [outcome, setOutcome] = useState<PreviewOutcome | null>(null);
-  const [page, setPage] = useState(1);
+  const grid = useGridState("pattern-selection-preview", session.user.id, { key: "priority", dir: "asc" }, 50);
   const [submitted, setSubmitted] = useState(false);
-  const preview = previewPage(query, outcome, page);
+  const preview = previewPage(query, outcome, grid.page);
   const submit = () => setSubmitted(true);
   useModEnter(submit, submitted);
   return (
@@ -67,10 +69,13 @@ export function Component() {
             changeLabel="Amend"
             query={query}
             outcome={outcome}
-            onQuery={(q) => { setQuery(q); setPage(1); }}
-            onOutcome={(o) => { setOutcome(o); setPage(1); }}
-            onPage={setPage}
+            onQuery={(q) => { setQuery(q); grid.reset(); }}
+            onOutcome={(o) => { setOutcome(o); grid.reset(); }}
+            onPage={grid.onPage}
             onDownload={() => undefined}
+            grid={grid}
+            gridId="pattern-selection-preview"
+            userId={session.user.id}
           />
         </div>
       </main>

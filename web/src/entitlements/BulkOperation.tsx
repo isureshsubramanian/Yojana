@@ -4,7 +4,8 @@ import type { BulkExecutionResult, BulkOperationArguments, BulkPreviewResult, Se
 import { newCommandId, now, ranges, type SerialSchemeRow } from "../api/units";
 import { LegalEntityPicker, useLegalEntities } from "../api/legalEntities";
 import { DocumentField, ItemField, PartyField, useReferenceNames } from "../corrections/ReferenceFields";
-import { DataGrid, Shortcut, StatusBadge, useModEnter, type GridColumn } from "../components";
+import { DataGrid, Shortcut, StatusBadge, useGridState, useModEnter, type GridColumn } from "../components";
+import { useSession } from "../session/session";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { useHandoff, useLegacyParam } from "../shell/handoff";
@@ -32,6 +33,7 @@ export const BULK_REASONS = [
 ] as const;
 
 export function Component() {
+  const session = useSession();
   const actor = useActor();
   const { value: legalEntities } = useLegalEntities();
   const [params] = useSearchParams();
@@ -85,7 +87,7 @@ export function Component() {
   const [preview, setPreview] = useState<BulkPreviewResult | null>(null);
   const [find, setFind] = useState("");
   const [outcome, setOutcome] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
+  const grid = useGridState("bulk-entitlement-preview", session.user.id, { key: "priority", dir: "asc" }, PAGE);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -151,18 +153,18 @@ export function Component() {
 
   const resolve = async () => {
     setBusy(true); setError(null); setPreview(null); setExecuted(null); setRaised(null);
-    try { const result = await entitlementApi.resolveSelection(source, actor, newCommandId()); setSelectionId(result.selectionId); setResolvedCount(result.resolved); setPage(1); } catch (reason) { setError(reason); } finally { setBusy(false); }
+    try { const result = await entitlementApi.resolveSelection(source, actor, newCommandId()); setSelectionId(result.selectionId); setResolvedCount(result.resolved); grid.reset(); } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
 
   useEffect(() => {
     if (!selectionId || !args) return;
     const controller = new AbortController();
     setLoading(true); setError(null);
-    entitlementApi.previewSelection(selectionId, operation, args, (page - 1) * PAGE, PAGE, find || null, outcome, controller.signal)
+    entitlementApi.previewSelection(selectionId, operation, args, (grid.page - 1) * grid.pageSize, grid.pageSize, find || null, outcome, grid.sort.key, grid.sort.dir, controller.signal)
       .then((result) => { setPreview(result); setLoading(false); })
       .catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) { setError(reason); setLoading(false); } });
     return () => controller.abort();
-  }, [selectionId, operation, args, page, find, outcome]);
+  }, [selectionId, operation, args, grid.page, grid.pageSize, grid.sort, find, outcome]);
 
   const execute = async () => {
     if (!selectionId || !args) return;
@@ -197,11 +199,11 @@ export function Component() {
     openDrawer({ eyebrow: `Selected unit · ${humanise(row.outcome)}`, title: row.serial ?? shortId(row.unitId), mono: true }, <><h3>Outcome</h3><Kv rows={[["Operation", operation], ["Outcome", humanise(row.outcome)], ["Rule", row.reason ?? "—"], ["Detail", detail?.summary ?? row.detail ?? "—"], ["Now", detail?.now ?? "—"], ["After", detail?.after ?? "unchanged"], ["Days", detail?.days == null ? "—" : signed(detail.days)], ["Unit", shortId(row.unitId, 12)]]} /><div className="act"><Link className="btn primary block" to={`/units/${row.unitId}`}>Open unit</Link></div></>);
   };
   const columns: GridColumn<UnitOutcome>[] = [
-    { key: "serial", label: "Serial", width: 17, mono: true, render: (row) => row.serial ?? shortId(row.unitId) },
+    { key: "serial", label: "Serial", width: 17, mono: true, sort: { key: "serial", defaultDir: "asc" }, render: (row) => row.serial ?? shortId(row.unitId) },
     { key: "now", label: `Now in ${families.find((row) => row.familyCode === family)?.name.toLowerCase() ?? humanise(family).toLowerCase()}`, width: 25, render: (row) => { const value = previewDetail(row.detail); return <>{value?.now ?? (row.outcome === "skip" ? "none live" : "—")}<span className="sub">{value?.nowEnd ? `ends ${value.nowEnd}` : shortId(row.unitId, 12)}</span></>; } },
     { key: "after", label: "After", width: 20, render: (row) => { const value = previewDetail(row.detail); return <>{value?.after ?? "unchanged"}<span className="sub">{value?.afterEnd ? `ends ${value.afterEnd}` : ""}</span></>; } },
     { key: "days", label: "Days", width: 10, numeric: true, render: (row) => { const days = previewDetail(row.detail)?.days; return days == null ? "—" : signed(days); } },
-    { key: "outcome", label: "Outcome", width: 28, render: (row) => { const value = previewDetail(row.detail); return <><StatusBadge tone={outcomeTone(row.outcome)}>{row.outcome === "change" ? "Will change" : `${humanise(row.outcome)}${row.reason ? ` · ${humanise(row.reason)}` : ""}`}</StatusBadge>{value?.summary && <span className="sub">{value.summary}</span>}</>; } },
+    { key: "outcome", label: "Outcome", width: 28, sort: { key: "priority", defaultDir: "asc" }, render: (row) => { const value = previewDetail(row.detail); return <><StatusBadge tone={outcomeTone(row.outcome)}>{row.outcome === "change" ? "Will change" : `${humanise(row.outcome)}${row.reason ? ` · ${humanise(row.reason)}` : ""}`}</StatusBadge>{value?.summary && <span className="sub">{value.summary}</span>}</>; } },
   ];
 
   return <>
@@ -251,9 +253,9 @@ export function Component() {
         </div></div></section>
         <section className="card" aria-labelledby="bulk-preview"><div className="card-header"><h2 id="bulk-preview">Preview <span className="meta">computed by the command, not the screen</span></h2><span className="meta">Step 2 of 2</span></div>
           <div className="preview-summary"><Figure label="Resolved" value={preview?.total ?? resolvedCount} /><Figure label="Will change" value={preview?.change ?? 0} tone="ok" /><Figure label="Will skip" value={preview?.skip ?? 0} tone="warn" /><Figure label="Blocked" value={preview?.block ?? 0} tone="bad" /></div>
-          <div className="findbar compact"><input className="input" aria-label="Find within preview" placeholder="Find serial" value={find} onChange={(event) => { setFind(event.target.value); setPage(1); }} />{[[null, `All ${preview?.total ?? resolvedCount}`], ["change", `Change ${preview?.change ?? 0}`], ["skip", `Skip ${preview?.skip ?? 0}`], ["block", `Block ${preview?.block ?? 0}`]].map(([value, label]) => <button type="button" className={`chip${outcome === value ? " on" : ""}`} key={value ?? "all"} onClick={() => { setOutcome(value ?? null); setPage(1); }}>{label}</button>)}</div>
+          <div className="findbar compact"><input className="input" aria-label="Find within preview" placeholder="Find serial" value={find} onChange={(event) => { setFind(event.target.value); grid.reset(); }} />{[[null, `All ${preview?.total ?? resolvedCount}`], ["change", `Change ${preview?.change ?? 0}`], ["skip", `Skip ${preview?.skip ?? 0}`], ["block", `Block ${preview?.block ?? 0}`]].map(([value, label]) => <button type="button" className={`chip${outcome === value ? " on" : ""}`} key={value ?? "all"} onClick={() => { setOutcome(value ?? null); grid.reset(); }}>{label}</button>)}</div>
           {preview?.page.some((row) => row.outcome === "block" && row.reason === "approval_required") && <div className="note warn bulk-approval"><strong>Approval required.</strong>&nbsp;One or more changing units need a higher role. Request approval to send this exact preview to someone who holds it.</div>}
-          <DataGrid columns={columns} page={{ rows: preview?.page ?? [], total: preview?.total ?? 0, page, pageSize: PAGE, continuation: null }} rowId={(row) => row.unitId} onPage={setPage} onRowClick={openOutcome} activeRowId={active} loading={loading} emptyText={selectionId ? "No units match this preview filter." : "Resolve a selection to preview every unit."} viewportHeight={520} />
+          <DataGrid columns={columns} page={{ rows: preview?.page ?? [], total: preview?.total ?? 0, page: grid.page, pageSize: grid.pageSize, continuation: null }} rowId={(row) => row.unitId} onPage={grid.onPage} onRowClick={openOutcome} activeRowId={active} loading={loading} emptyText={selectionId ? "No units match this preview filter." : "Resolve a selection to preview every unit."} viewportHeight={520} gridId="bulk-entitlement-preview" userId={session.user.id} sort={grid.sort} defaultSort={{ key: "priority", dir: "asc" }} onSort={grid.onSort} pageSize={grid.pageSize} defaultPageSize={PAGE} onPageSize={grid.onPageSize} />
         </section>
       </div>
     </main>

@@ -1,6 +1,7 @@
 import { DataGrid, type GridColumn } from "./DataGrid";
 import { FindBar } from "./FindBar";
 import { StatusBadge } from "./StatusBadge";
+import { useGridState } from "./useGridQuery";
 import type { PreviewOutcome, PreviewResult, PreviewRow, Tone } from "./types";
 
 export interface SelectionPreviewProps {
@@ -19,6 +20,9 @@ export interface SelectionPreviewProps {
   onDownload?: (() => void) | undefined;
   /** Where the outcome rows link to, when they do. */
   rowHref?: ((row: PreviewRow) => string) | undefined;
+  grid: ReturnType<typeof useGridState>;
+  gridId: string;
+  userId: string;
 }
 
 const outcomeTone: Record<PreviewOutcome, Tone> = { change: "ok", skip: "warn", block: "bad" };
@@ -28,14 +32,14 @@ const outcomeTone: Record<PreviewOutcome, Tone> = { change: "ok", skip: "warn", 
  * each, and which are skipped or blocked and why, exactly as the command computed it. The per-unit outcome
  * list before commit is the user's partial-failure report; the find bar keeps a thousand rows searchable.
  */
-export function SelectionPreview({ preview, loading, currentLabel, nextLabel, changeLabel, query, outcome, onQuery, onOutcome, onPage, onDownload }: SelectionPreviewProps) {
+export function SelectionPreview({ preview, loading, currentLabel, nextLabel, changeLabel, query, outcome, onQuery, onOutcome, onPage, onDownload, grid, gridId, userId }: SelectionPreviewProps) {
   const summary = preview?.summary ?? { resolved: 0, change: 0, skip: 0, block: 0 };
   const outcomeLabel: Record<PreviewOutcome, string> = { change: changeLabel, skip: "Skipped", block: "Blocked" };
   const columns: GridColumn<PreviewRow>[] = [
-    { key: "serial", label: "Serial", width: 22, mono: true, render: (r) => r.serial },
+    { key: "serial", label: "Serial", width: 22, mono: true, sort: { key: "serial", defaultDir: "asc" }, render: (r) => r.serial },
     { key: "current", label: currentLabel, width: 17, numeric: true, render: (r) => r.current ?? <span className="muted">—</span> },
     { key: "next", label: nextLabel, width: 17, numeric: true, render: (r) => r.next ?? <span className="muted">—</span> },
-    { key: "outcome", label: "Outcome", width: 44, render: (r) => <StatusBadge tone={outcomeTone[r.outcome]}>{outcomeLabel[r.outcome]}{r.reason && <> · {r.reason}</>}</StatusBadge> },
+    { key: "outcome", label: "Outcome", width: 44, sort: { key: "priority", defaultDir: "asc" }, render: (r) => <StatusBadge tone={outcomeTone[r.outcome]}>{outcomeLabel[r.outcome]}{r.reason && <> · {r.reason}</>}</StatusBadge> },
   ];
   return (
     <section className="card" aria-labelledby="h-preview">
@@ -73,6 +77,14 @@ export function SelectionPreview({ preview, loading, currentLabel, nextLabel, ch
         loading={loading}
         emptyText={preview ? "No units match." : "Resolve a selection set to see its preview."}
         viewportHeight={520}
+        gridId={gridId}
+        userId={userId}
+        sort={grid.sort}
+        defaultSort={{ key: "priority", dir: "asc" }}
+        onSort={grid.onSort}
+        pageSize={grid.pageSize}
+        defaultPageSize={50}
+        onPageSize={grid.onPageSize}
       />
     </section>
   );

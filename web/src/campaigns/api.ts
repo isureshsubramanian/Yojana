@@ -21,7 +21,7 @@ const campaignCommandSchema = z.object({
   reasonNote: nullableText, runsUntil: nullableText, criteria: z.array(campaignCriterionInputSchema), eventTime: z.string(),
 });
 const updateCampaignCommandSchema = z.extend(campaignCommandSchema, { campaignId: z.string(), status: campaignDraftSchema.shape.status, expectedVersion: z.string() });
-const previewCampaignSchema = z.object({ campaignId: z.string(), skip: z.number(), take: z.number() });
+const previewCampaignSchema = z.object({ campaignId: z.string(), skip: z.number(), take: z.number(), sort: z.string(), direction: z.enum(["asc", "desc"]) });
 const selectCampaignSchema = z.object({ commandId: z.string(), campaignId: z.string(), eventTime: z.string() });
 const campaignResultSchema = z.object({ campaign: campaignSchema, replayed: z.boolean() });
 
@@ -47,13 +47,13 @@ export const campaignApi = {
   detail: (id: string, signal?: AbortSignal) => apiParsed(`/api/campaigns/${id}`, campaignSchema, { signal }),
   create: (draft: CampaignDraft) => { const body = { commandId: newCommandId(), ...command(draft) }; return apiParsed("/api/campaigns/", campaignResultSchema, { method: "POST", body: checkedBody(campaignCommandSchema, body) }); },
   update: (id: string, draft: CampaignDraft, expectedVersion: string) => { const body = { commandId: newCommandId(), campaignId: id, status: draft.status, expectedVersion, ...command(draft) }; return apiParsed(`/api/campaigns/${id}`, campaignResultSchema, { method: "PUT", body: checkedBody(updateCampaignCommandSchema, body) }); },
-  preview: (id: string, skip: number, take: number, signal?: AbortSignal) => { const body = { campaignId: id, skip, take }; return apiParsed(`/api/campaigns/${id}/preview`, campaignPreviewSchema, { method: "POST", body: checkedBody(previewCampaignSchema, body), signal }); },
+  preview: (id: string, skip: number, take: number, sort: string, direction: "asc" | "desc", signal?: AbortSignal) => { const body = { campaignId: id, skip, take, sort, direction }; return apiParsed(`/api/campaigns/${id}/preview`, campaignPreviewSchema, { method: "POST", body: checkedBody(previewCampaignSchema, body), signal }); },
   funnel: (id: string, signal?: AbortSignal) => apiParsed(`/api/campaigns/${id}/funnel`, z.array(campaignFunnelStepSchema), { signal }),
   match: (id: string, unitId: string, signal?: AbortSignal) => apiParsed(`/api/campaigns/${id}/units/${unitId}/match`, z.array(campaignMatchEvidenceSchema), { signal }),
   select: (id: string) => { const body = { commandId: newCommandId(), campaignId: id, eventTime: now() }; return apiParsed(`/api/campaigns/${id}/select`, selectCampaignResultSchema, { method: "POST", body: checkedBody(selectCampaignSchema, body) }); },
   units: (id: string, filters: Record<string, string | number | boolean | null | undefined>, signal?: AbortSignal) => apiParsed(`/api/campaigns/${id}/units${query(filters)}`, pageSchema(campaignUnitRowSchema), { signal }),
   unitsSummary: (id: string, signal?: AbortSignal) => apiParsed(`/api/campaigns/${id}/units/summary`, campaignUnitsSummarySchema, { signal }),
-  exportUrl: (id: string) => `/api/campaigns/${id}/units/export`,
+  exportUrl: (id: string, sort = "serial", dir: "asc" | "desc" = "asc") => `/api/campaigns/${id}/units/export${query({ sort, dir })}`,
 };
 
 function guid(value: string | null): string | null { return value && GUID.test(value) ? value : null; }

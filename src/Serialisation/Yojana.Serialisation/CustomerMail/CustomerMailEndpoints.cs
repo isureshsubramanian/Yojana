@@ -12,6 +12,9 @@ using Yojana.Serialisation.Documents;
 
 namespace Yojana.Serialisation.CustomerMail;
 
+// Sent-log endpoints only bind paging inputs. SentMailQueries declares its columns through SortedPage<TRow, TTie>,
+// keeping ordering, size validation and cursor compatibility out of this HTTP boundary.
+
 /// <summary>
 /// Customer e-mail (P9-T20): templates and their versions, the compose flow from a unit's What's covered page, and the
 /// sent log. The sender and every actor are taken from the session's claims, never from the request body.
@@ -66,12 +69,13 @@ public static class CustomerMailEndpoints
         });
 
         var sent = app.MapGroup("/api/customer-mail").RequireAuthorization(YojanaPolicy.CustomerMailSender);
-        sent.MapGet("", (string? status, string? kind, string? sentBy, Guid? unitId, string? q, string? cursor, int? take, SentMailQueries queries,
-            CancellationToken ct) => Invoke(() => queries.ListAsync(status, kind, sentBy, unitId, q, cursor, take ?? 25, ct)));
-        sent.MapGet("/export", (string? format, string? status, string? kind, string? sentBy, string? q, HttpContext http, SentMailQueries queries,
+        sent.MapGet("", (string? status, string? kind, string? sentBy, Guid? unitId, string? q, string? sort, string? dir,
+            string? cursor, int? take, SentMailQueries queries, CancellationToken ct) =>
+            Invoke(() => queries.ListAsync(status, kind, sentBy, unitId, q, sort, dir, cursor, take ?? 25, ct)));
+        sent.MapGet("/export", (string? format, string? status, string? kind, string? sentBy, string? q, string? sort, string? dir, HttpContext http, SentMailQueries queries,
             ITabularExporter exporter) => SerialisationEndpoints.DirectExport(format, "sent-log", http, exporter,
                 ["Queued (UTC)", "To", "Name", "Cc", "Customer", "Subject", "Template", "Version", "Language", "Kind", "About", "Sent by", "Status", "Attempts", "Last error"],
-                ExportRows(queries.AllAsync(status, kind, sentBy, q, http.RequestAborted))));
+                ExportRows(queries.AllAsync(status, kind, sentBy, q, sort, dir, http.RequestAborted))));
         sent.MapGet("/{messageId:guid}", async (Guid messageId, SentMailQueries queries, CancellationToken ct) =>
             await queries.GetAsync(messageId, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
     }
@@ -101,7 +105,9 @@ public static class CustomerMailEndpoints
         }
         catch (PlatformCommandRefusedException ex)
         {
-            var status = ex.Rule.EndsWith("_unknown", StringComparison.Ordinal) ? StatusCodes.Status404NotFound
+            var status = ex.Rule is "sort_not_supported" or "sort_changed" or "page_size_too_large" or "page_size_invalid" or "cursor_invalid"
+                ? StatusCodes.Status400BadRequest
+                : ex.Rule.EndsWith("_unknown", StringComparison.Ordinal) ? StatusCodes.Status404NotFound
                 : ex.Rule.EndsWith("_forbidden", StringComparison.Ordinal) ? StatusCodes.Status403Forbidden : StatusCodes.Status409Conflict;
             return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: status,
                 extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule, ["unblockingStep"] = ex.UnblockingStep });

@@ -224,8 +224,8 @@ export const ranges = {
 
 export const selections = {
   resolve: (source: SelectionSource, actorRef: string) => apiParsed("/api/selections/", resolveSelectionSetResult, { method: "POST", body: { commandId: newCommandId(), source: checkedBody(selectionSource, source), actorRef } }),
-  preview: (selectionId: string, operation: string, args: BulkOperationArguments, skip: number, take: number, find: string | null, outcomeFilter: string | null, signal?: AbortSignal) =>
-    apiParsed(`/api/selections/${selectionId}/preview`, bulkPreviewResult, { method: "POST", body: { selectionId, operation, arguments: checkedBody(bulkOperationArguments, args), skip, take, find, outcomeFilter }, signal }),
+  preview: (selectionId: string, operation: string, args: BulkOperationArguments, skip: number, take: number, find: string | null, outcomeFilter: string | null, sort = "priority", direction: "asc" | "desc" = "asc", signal?: AbortSignal) =>
+    apiParsed(`/api/selections/${selectionId}/preview`, bulkPreviewResult, { method: "POST", body: { selectionId, operation, arguments: checkedBody(bulkOperationArguments, args), skip, take, find, outcomeFilter, sort, direction }, signal }),
   execute: (selectionId: string, operation: string, args: BulkOperationArguments, approverRef: string | null) =>
     apiParsed(`/api/selections/${selectionId}/execute`, bulkExecutionResult, { method: "POST", body: { commandId: newCommandId(), selectionId, operation, arguments: checkedBody(bulkOperationArguments, args), approval: { approverRef, required: false } } }),
 };

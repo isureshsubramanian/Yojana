@@ -6,6 +6,7 @@ using Yojana.Platform.Contracts.Mail;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Platform.Mail;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
@@ -227,14 +228,17 @@ public static class CustomerMailDeliveryRecordedHandler
 public sealed class SentMailQueries(SerialisationDbContext db, ITenantContext tenant, IClock clock, CustomerMailKinds kinds,
     IUserDirectory people)
 {
+    private static readonly SortedPage<CustomerMailMessage, Guid> Pages = new("queued", row => row.MessageId,
+        new SortColumn<CustomerMailMessage, DateTime>("queued", row => row.QueuedAt, SortDirection.Descending),
+        new SortColumn<CustomerMailMessage, string>("status", row => row.Status));
     public const string Automatic = "automatic";
 
     /// <param name="text">Part of the recipient, subject, record label or customer name; applied after the 30-day figures, which
     /// describe the log rather than the search.</param>
-    public async Task<SentMailPage> ListAsync(string? status, string? kind, string? sentBy, Guid? unitId, string? text, string? cursor,
-        int take, CancellationToken cancellationToken)
+    public async Task<SentMailPage> ListAsync(string? status, string? kind, string? sentBy, Guid? unitId, string? text,
+        string? sort, string? direction, string? cursor, int take, CancellationToken cancellationToken)
     {
-        var size = Math.Clamp(take, 1, 100);
+        var paging = Pages.Parse(sort, direction, take, cursor, defaultTake: 25);
         var tenantId = tenant.TenantId;
         var query = db.CustomerMailMessages.AsNoTracking().Where(x => x.TenantId == tenantId && !x.CopyToSelf);
         if (unitId is { } unit) query = query.Where(x => x.UnitId == unit);
@@ -250,11 +254,9 @@ public sealed class SentMailQueries(SerialisationDbContext db, ITenantContext te
             query = query.Where(x => x.ToAddress.Contains(find) || (x.ToName != null && x.ToName.Contains(find)) || x.Subject.Contains(find)
                 || x.AboutLabel.Contains(find) || (x.CustomerName != null && x.CustomerName.Contains(find)));
         var total = await query.CountAsync(cancellationToken);
-        if (Cursor(cursor) is { } after)
-            query = query.Where(x => x.QueuedAt < after.QueuedAt || (x.QueuedAt == after.QueuedAt && x.MessageId.CompareTo(after.MessageId) < 0));
-        var rows = await query.OrderByDescending(x => x.QueuedAt).ThenByDescending(x => x.MessageId).Take(size + 1).ToListAsync(cancellationToken);
-        var next = rows.Count > size ? rows[size - 1] : null;
-        var page = rows.Take(size).ToList();
+        var rows = await paging.Apply(query).Take(paging.Take + 1).ToListAsync(cancellationToken);
+        var next = rows.Count > paging.Take ? rows[paging.Take - 1] : null;
+        var page = rows.Take(paging.Take).ToList();
         var names = await NamesAsync(page.Select(x => x.SentBy), cancellationToken);
         var sent = counts.Where(x => x.Status == CustomerMailStatus.Sent).Sum(x => x.Count);
         var failed = counts.Where(x => x.Status == CustomerMailStatus.Failed).Sum(x => x.Count);
@@ -264,9 +266,13 @@ public sealed class SentMailQueries(SerialisationDbContext db, ITenantContext te
             counts.Sum(x => x.Count) == 0 ? null : Math.Round(100m * sent / counts.Sum(x => x.Count), 1),
             most is null ? null : KindName(most.Kind), most?.Count ?? 0);
         return new SentMailPage(page.Select(x => Row(x, names)).ToList(), total,
-            next is null ? null : $"{next.QueuedAt.Ticks.ToString(CultureInfo.InvariantCulture)}_{next.MessageId:N}", kpis,
+            next is null ? null : paging.CursorFor(next), kpis,
             kinds.Views.Select(x => new MailKindName(x.Kind, x.Name)).ToList());
     }
+
+    public Task<SentMailPage> ListAsync(string? status, string? kind, string? sentBy, Guid? unitId, string? text,
+        string? cursor, int take, CancellationToken cancellationToken) =>
+        ListAsync(status, kind, sentBy, unitId, text, null, null, cursor, take, cancellationToken);
 
     public async Task<SentMailDetail?> GetAsync(Guid messageId, CancellationToken cancellationToken)
     {
@@ -287,16 +293,20 @@ public sealed class SentMailQueries(SerialisationDbContext db, ITenantContext te
     }
 
     public async IAsyncEnumerable<SentMailRow> AllAsync(string? status, string? kind, string? sentBy, string? text,
+        string? sort, string? direction,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         string? cursor = null;
         do
         {
-            var page = await ListAsync(status, kind, sentBy, null, text, cursor, 100, cancellationToken);
+            var page = await ListAsync(status, kind, sentBy, null, text, sort, direction, cursor, 200, cancellationToken);
             foreach (var row in page.Rows) yield return row;
             cursor = page.NextCursor;
         } while (cursor is not null);
     }
+
+    public IAsyncEnumerable<SentMailRow> AllAsync(string? status, string? kind, string? sentBy, string? text,
+        CancellationToken cancellationToken) => AllAsync(status, kind, sentBy, text, null, null, cancellationToken);
 
     private sealed record CcRow(string Address, string? Name);
 

@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Documents;
@@ -73,6 +74,11 @@ public sealed class RecoveryQueries(SerialisationDbContext db, ITenantContext te
         public byte[] RowVersion { get; init; } = [];
     }
 
+    private static readonly SortedPage<RecoveryFact, Guid> Pages = new("raised", row => row.RecoveryClaimId,
+        new SortColumn<RecoveryFact, string>("number", row => row.RecoveryNumber),
+        new SortColumn<RecoveryFact, DateTime>("raised", row => row.RaisedAt),
+        new SortColumn<RecoveryFact, string>("status", row => row.Status));
+
     private sealed class NotRaisedFact
     {
         public Guid CustomerClaimId { get; init; }
@@ -93,11 +99,12 @@ public sealed class RecoveryQueries(SerialisationDbContext db, ITenantContext te
         public DateTime? RemovedAt { get; init; }
     }
 
-    public async Task<RecoveryClaimPage> PageAsync(string? status, Guid? vendor, Guid? childItem, string? find, List<Guid>? matchingVendors, DateOnly asOf, int skip, int take, CancellationToken cancellationToken)
+    public async Task<RecoveryClaimPage> PageAsync(string? status, Guid? vendor, Guid? childItem, string? find,
+        List<Guid>? matchingVendors, DateOnly asOf, string? sort, string? direction, string? cursor, int skip, int take,
+        CancellationToken cancellationToken)
     {
         var parsedStatus = RecoveryClaimFilter.Parse(status);
-        skip = Math.Max(0, skip);
-        take = Math.Clamp(take, 1, 500);
+        var paging = Pages.Parse(sort, direction, take, cursor, skip);
         var query = Query();
         if (parsedStatus == RecoveryClaimFilter.Open) query = query.Where(row => row.Status == RecoveryClaimStatus.Raised);
         else if (parsedStatus == RecoveryClaimFilter.Approved) query = query.Where(row => row.Status == RecoveryClaimStatus.Approved);
@@ -112,8 +119,7 @@ public sealed class RecoveryQueries(SerialisationDbContext db, ITenantContext te
         }
 
         var total = await query.CountAsync(cancellationToken);
-        var facts = await query.OrderBy(row => row.Status == RecoveryClaimStatus.Approved).ThenBy(row => row.RaisedAt).ThenBy(row => row.RecoveryClaimId)
-            .Skip(skip).Take(take).ToListAsync(cancellationToken);
+        var facts = await paging.Apply(query).Take(paging.Take).ToListAsync(cancellationToken);
         var unitIds = facts.Select(row => row.ChildUnitId).Concat(facts.Select(row => row.ParentUnitId).OfType<Guid>()).Distinct().ToList();
         var serials = await SerialsAsync(unitIds, cancellationToken);
         var rows = facts.Select(row => new RecoveryClaimListRow(
@@ -122,8 +128,12 @@ public sealed class RecoveryQueries(SerialisationDbContext db, ITenantContext te
             row.VendorPartyRef, row.VendorTermStart, row.VendorTermEnd, TermMonths(row.DurationValue, row.DurationUnit), MonthOfTerm(row.VendorTermStart, row.ClaimDate),
             row.RequestedAmount, row.ApprovedAmount, row.Currency, row.Status, Math.Max(0, asOf.DayNumber - DateOnly.FromDateTime(row.RaisedAt).DayNumber),
             row.ApprovedAt, row.ApprovedBy, row.VendorReference, row.VendorNote, DocumentVersion.Encode(row.RowVersion))).ToList();
-        return new(rows, total, skip, take);
+        return new(rows, total, paging.Skip, paging.Take);
     }
+
+    public Task<RecoveryClaimPage> PageAsync(string? status, Guid? vendor, Guid? childItem, string? find,
+        List<Guid>? matchingVendors, DateOnly asOf, int skip, int take, CancellationToken cancellationToken) =>
+        PageAsync(status, vendor, childItem, find, matchingVendors, asOf, null, null, null, skip, take, cancellationToken);
 
     public async Task<RecoveryClaimSummary> SummaryAsync(DateOnly asOf, CancellationToken cancellationToken)
     {

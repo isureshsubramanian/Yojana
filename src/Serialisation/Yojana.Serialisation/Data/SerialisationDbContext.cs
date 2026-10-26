@@ -945,6 +945,9 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(e => e.ResolvedBy).HasMaxLength(200);
             b.HasIndex(e => new { e.TenantId, e.DocumentType, e.DocumentId, e.DocumentLine }).IsUnique();
             b.HasIndex(e => new { e.TenantId, e.Status, e.RaisedAt });
+            b.HasIndex(e => new { e.TenantId, e.RaisedAt, e.ExceptionId });
+            b.HasIndex(e => new { e.TenantId, e.TriggerAt, e.ExceptionId });
+            b.HasIndex(e => new { e.TenantId, e.Status, e.ExceptionId });
             b.HasIndex(e => new { e.TenantId, e.TargetDocumentType, e.TargetDocumentId, e.Status });
         });
 
@@ -1040,6 +1043,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(c => new { c.TenantId, c.UnitId, c.Status, c.ClaimDate });
             b.HasIndex(c => new { c.TenantId, c.CampaignId });
             b.HasIndex(c => new { c.TenantId, c.Status, c.SubmittedAt });
+            b.HasIndex(c => new { c.TenantId, c.SubmittedAt, c.ClaimId });
+            b.HasIndex(c => new { c.TenantId, c.Status, c.ClaimId });
             b.HasIndex(c => new { c.TenantId, c.ListOrderBucket, c.SubmittedAt, c.ClaimId })
                 .HasDatabaseName("ix_claim_tenant_id_list_order_bucket_submitted_at_claim_id");
         });
@@ -1168,6 +1173,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(r => new { r.TenantId, r.RecoveryNumber }).IsUnique();
             b.HasIndex(r => new { r.TenantId, r.CustomerClaimId, r.ClaimLineId, r.InboundEntitlementId, r.ChildUnitId }).IsUnique();
             b.HasIndex(r => new { r.TenantId, r.Status, r.RaisedAt });
+            b.HasIndex(r => new { r.TenantId, r.RaisedAt, r.RecoveryClaimId });
+            b.HasIndex(r => new { r.TenantId, r.Status, r.RecoveryClaimId });
             b.HasIndex(r => new { r.TenantId, r.VendorPartyRef, r.Status });
             b.HasOne<Claim>().WithMany().HasForeignKey(r => new { r.TenantId, r.CustomerClaimId }).OnDelete(DeleteBehavior.Cascade);
         });
@@ -1219,6 +1226,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(c => c.RowVersion).IsRowVersion();
             b.HasIndex(c => new { c.TenantId, c.Code }).IsUnique();
             b.HasIndex(c => new { c.TenantId, c.Status, c.UpdatedAt });
+            b.HasIndex(c => new { c.TenantId, c.UpdatedAt, c.CampaignId });
+            b.HasIndex(c => new { c.TenantId, c.Status, c.CampaignId });
         });
 
         modelBuilder.Entity<CampaignCriterion>(b =>
@@ -1253,6 +1262,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(u => u.SelectedBy).HasMaxLength(200);
             b.HasOne<Campaign>().WithMany().HasForeignKey(u => new { u.TenantId, u.CampaignId }).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(u => new { u.TenantId, u.CampaignId, u.SelectedAt });
+            b.HasIndex(u => new { u.TenantId, u.SelectedAt, u.UnitId });
             b.HasIndex(u => new { u.TenantId, u.OwnerPartyRef, u.CampaignId });
             b.HasIndex(u => new { u.TenantId, u.CustodianPartyRef, u.CampaignId });
             b.HasIndex(u => new { u.TenantId, u.SelectionCommandId });
@@ -1276,6 +1286,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(r => r.RowVersion).IsRowVersion();
             b.HasIndex(r => new { r.TenantId, r.CommandId }).IsUnique();
             b.HasIndex(r => new { r.TenantId, r.RmaNumber }).IsUnique().HasFilter("[rma_number] IS NOT NULL");
+            b.HasIndex(r => new { r.TenantId, r.RequestedAt, r.RmaId });
+            b.HasIndex(r => new { r.TenantId, r.Stage, r.RmaId });
             b.HasIndex(r => new { r.TenantId, r.HasException, r.RequestedAt, r.RmaId })
                 .IsDescending(false, true, false, false)
                 .IncludeProperties(r => new { r.RmaNumber, r.Stage, r.RequestDate, r.ReturningPartyRef, r.ClosedAt,
@@ -1490,6 +1502,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(w => new { w.TenantId, w.WorkOrderNumber }).IsUnique();
             b.HasIndex(w => new { w.TenantId, w.TargetUnitId, w.OpenedAt });
             b.HasIndex(w => new { w.TenantId, w.Status, w.OpenedAt });
+            b.HasIndex(w => new { w.TenantId, w.OpenedAt, w.WorkOrderId });
+            b.HasIndex(w => new { w.TenantId, w.Status, w.WorkOrderId });
             b.HasIndex(w => new { w.TenantId, w.SourceRmaLineId });
             b.HasIndex(w => new { w.TenantId, w.ReleaseCommandId }).IsUnique().HasFilter("[release_command_id] IS NOT NULL");
             b.HasIndex(w => new { w.TenantId, w.CancelCommandId }).IsUnique().HasFilter("[cancel_command_id] IS NOT NULL");
@@ -1639,6 +1653,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(row => new { row.TenantId, row.MigrationLoadId, row.ReplacementLinkId })
                 .HasFilter("[migration_load_id] IS NOT NULL");
             b.HasIndex(row => new { row.TenantId, row.State, row.ReturnDue });
+            b.HasIndex(row => new { row.TenantId, row.ReturnDue, row.ReplacementLinkId });
+            b.HasIndex(row => new { row.TenantId, row.State, row.ReplacementLinkId });
             b.HasIndex(row => new { row.TenantId, row.PreviousReplacementLinkId });
             b.HasIndex(row => new { row.TenantId, row.OverdueEventId }).IsUnique().HasFilter("[overdue_event_id] IS NOT NULL");
             b.HasIndex(row => new { row.TenantId, row.ReturnDueCommandId }).IsUnique().HasFilter("[return_due_command_id] IS NOT NULL");
@@ -2033,6 +2049,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
                 .HasFilter("[batch_command_id] IS NOT NULL");
             b.HasIndex(row => new { row.TenantId, row.SourceEventId }).IsUnique().HasFilter("[source_event_id] IS NOT NULL");
             b.HasIndex(row => new { row.TenantId, row.Status, row.RequestedAt });
+            b.HasIndex(row => new { row.TenantId, row.RequestedAt, row.JobId });
+            b.HasIndex(row => new { row.TenantId, row.Status, row.JobId });
             b.HasIndex(row => new { row.TenantId, row.TemplateVersionId, row.RequestedAt });
             b.HasIndex(row => new { row.TenantId, row.UnitId, row.RequestedAt });
             b.HasIndex(row => new { row.TenantId, row.IdentifierId });
@@ -2070,6 +2088,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(row => new { row.TenantId, row.Source, row.OriginalHash, row.Mode, row.TargetType, row.TargetId, row.TargetLine })
                 .IsUnique().HasFilter(null).HasDatabaseName("ux_import_job_replay_key");
             b.HasIndex(row => new { row.TenantId, row.Status, row.RecordedTime });
+            b.HasIndex(row => new { row.TenantId, row.FileName, row.JobId });
+            b.HasIndex(row => new { row.TenantId, row.Status, row.JobId });
             b.HasIndex(row => new { row.TenantId, row.RecordedTime, row.JobId });
             b.HasIndex(row => new { row.TenantId, row.TargetType, row.TargetId, row.TargetLine });
         });
@@ -2128,6 +2148,8 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(row => row.ActorRef).HasMaxLength(200);
             b.HasIndex(row => new { row.TenantId, row.CommandId }).IsUnique();
             b.HasIndex(row => new { row.TenantId, row.MessageReference }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.RecordedTime, row.FeedMessageId });
+            b.HasIndex(row => new { row.TenantId, row.Status, row.FeedMessageId });
             b.HasIndex(row => new { row.TenantId, row.DocumentType, row.DocumentId, row.DocumentLine });
             b.HasOne<ImportJob>().WithMany().HasForeignKey(row => new { row.TenantId, row.ImportJobId }).OnDelete(DeleteBehavior.Restrict);
         });

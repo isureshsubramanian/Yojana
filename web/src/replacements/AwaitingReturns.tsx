@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ActionDialog, DataGrid, KpiStrip, ScanInput, StatusBadge, type GridColumn } from "../components";
 import { isUrlScanFormat } from "../components/scan";
 import { units } from "../api/units";
 import { useReferenceNames } from "../corrections/ReferenceFields";
+import { useGridQuery } from "../components/useGridQuery";
+import { useSession } from "../session/session";
 import { Rail } from "../shell/Drawer";
 import { openDrawer, updateDrawer } from "../shell/drawerStore";
 import { Breadcrumbs } from "../shell/PageHeader";
@@ -10,20 +12,18 @@ import { ErrorNote, Kv, Section, UnitLink } from "../units/common";
 import { fmtDate, fmtDateTime } from "../units/format";
 import { replacementLinksApi } from "./api";
 import { dueText, filterCount, filterTitle, humanise, money, replacementStatus, replacementTone } from "./format";
-import type { AwaitingFilter, ReplacementLinkPage, ReplacementLinkRow } from "./types";
+import { replacementLinkPage, type AwaitingFilter, type ReplacementLinkRow } from "./types";
 import "./replacements.css";
 
 const PAGE_SIZE = 50;
 type Dialog = { kind: "extend" | "bill" | "lift"; row: ReplacementLinkRow } | null;
 
 export function Component() {
+  const session = useSession();
   const [filter, setFilter] = useState<AwaitingFilter>("overdue");
   const [find, setFind] = useState("");
   const [findInput, setFindInput] = useState("");
-  const [pageNumber, setPageNumber] = useState(1);
-  const [page, setPage] = useState<ReplacementLinkPage | null>(null);
   const [active, setActive] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [reason, setReason] = useState("");
@@ -32,17 +32,22 @@ export function Component() {
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true); setError(null);
-    try { setPage(await replacementLinksApi.list(filter, find, (pageNumber - 1) * PAGE_SIZE, PAGE_SIZE, signal)); }
-    catch (reason) { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason); }
-    finally { setLoading(false); }
-  }, [filter, find, pageNumber]);
-  useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort(); }, [load]);
+  const params = useMemo(() => {
+    const value = new URLSearchParams({ state: "awaiting_return" });
+    if (filter === "overdue") value.set("overdue", "true");
+    if (filter === "due_soon") value.set("dueWithinDays", "7");
+    if (find) value.set("q", find);
+    return value;
+  }, [filter, find]);
+  const query = useGridQuery("/api/replacement-links/", replacementLinkPage, {
+    gridId: "awaiting-returns", userId: session.user.id, defaultSort: { key: "due", dir: "asc" },
+    defaultSize: PAGE_SIZE, params, sortKeys: ["due", "status"],
+  });
+  const page = query.data;
 
   const rows = page?.rows ?? [];
   const names = useReferenceNames({ items: rows.flatMap((row) => [row.originalItemId, row.replacementItemId]), parties: rows.map((row) => row.counterpartyPartyRef) });
-  const setView = (next: AwaitingFilter) => { setFilter(next); setPageNumber(1); setActive(null); };
+  const setView = (next: AwaitingFilter) => { setFilter(next); setActive(null); };
   const showAction = (kind: NonNullable<Dialog>["kind"], row: ReplacementLinkRow) => {
     setDialog({ kind, row }); setReason(""); setDue(row.returnDue ?? ""); setBasis(row.nonReturnPriceBasis ?? "list");
     setAmount(row.nonReturnAmount === null ? "" : String(row.nonReturnAmount));
@@ -52,7 +57,7 @@ export function Component() {
     try {
       const parsed = await units.scan(value);
       if (isUrlScanFormat(parsed.format)) { setError(new Error("This is a web address, not a serial")); return; }
-      setFind(value.trim()); setPageNumber(1);
+      setFind(value.trim());
     } catch (reason) { setError(reason); }
   };
   const drawer = (row: ReplacementLinkRow) => <ReplacementDrawer row={row} customer={names.party(row.counterpartyPartyRef)} onAction={showAction} />;
@@ -64,7 +69,7 @@ export function Component() {
       if (dialog.kind === "extend") await replacementLinksApi.extendDue(dialog.row.replacementLinkId, due, reason.trim());
       else if (dialog.kind === "bill") await replacementLinksApi.bill(dialog.row.replacementLinkId, basis, Number(amount), new Date().toISOString().slice(0, 10), reason.trim());
       else if (dialog.row.counterpartyPartyRef) await replacementLinksApi.liftHold(dialog.row.counterpartyPartyRef, reason.trim());
-      setDialog(null); await load();
+      setDialog(null); query.reload();
       updateDrawer({ eyebrow: "Advance replacement", title: dialog.row.replacementNumber, mono: true }, <p className="muted">Action recorded. Select the row again for current facts.</p>);
     } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
@@ -74,17 +79,17 @@ export function Component() {
     { key: "original", label: "Unit to come back", width: 18, render: (row) => <><UnitLink unitId={row.originalUnitId}>{row.originalSerial ?? "Serial unavailable"}</UnitLink><span className="sub">{names.item(row.originalItemId)}</span></> },
     { key: "replacementUnit", label: "Sent in its place", width: 18, render: (row) => <><UnitLink unitId={row.replacementUnitId}>{row.replacementSerial ?? "Serial unavailable"}</UnitLink><span className="sub">{row.shippedAt ? `shipped ${fmtDate(row.shippedAt)}` : names.item(row.replacementItemId)}</span></> },
     { key: "customer", label: "Customer", width: 20, render: (row) => names.party(row.counterpartyPartyRef) },
-    { key: "due", label: "Return due", width: 12, numeric: true, render: (row) => <span className={`replacement-due${row.daysOverdue !== null ? row.daysOverdue > 10 ? " bad-text" : " warn-text" : ""}`}>{dueText(row)}</span> },
+    { key: "due", label: "Return due", width: 12, numeric: true, sort: { key: "due", value: (row) => row.returnDue ?? "" }, render: (row) => <span className={`replacement-due${row.daysOverdue !== null ? row.daysOverdue > 10 ? " bad-text" : " warn-text" : ""}`}>{dueText(row)}</span> },
     { key: "price", label: "If not returned", width: 10, numeric: true, render: (row) => <>{money(row.nonReturnAmount, row.currency)}<span className="sub">{humanise(row.nonReturnPriceBasis)}</span></> },
-    { key: "status", label: "Status", width: 12, render: (row) => <StatusBadge tone={replacementTone(row)}>{replacementStatus(row)}</StatusBadge> },
+    { key: "status", label: "Status", width: 12, sort: { key: "status", value: (row) => row.state }, render: (row) => <StatusBadge tone={replacementTone(row)}>{replacementStatus(row)}</StatusBadge> },
   ], [names]);
 
-  const gridPage = { rows, total: page?.total ?? 0, page: pageNumber, pageSize: PAGE_SIZE, continuation: null };
+  const gridPage = { rows, total: page?.total ?? 0, page: query.page, pageSize: query.pageSize, continuation: null };
   return <>
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Replacements" }, { label: "Awaiting return" }]} />
       <div className="page-header"><div><h1>Advance replacements awaiting return</h1><p className="sub">Replacements shipped before the failed unit came back · each link closes when that physical unit is received · the nightly check flags overdue returns</p></div></div>
-      <ErrorNote error={error} />
+      <ErrorNote error={error ?? query.error} />
       <div className="stack">
         <KpiStrip label="Awaiting return figures" kpis={[
           { label: "Awaiting return", value: page?.kpis.awaiting.toLocaleString() ?? "—", detail: "open advance-replacement links" },
@@ -97,7 +102,7 @@ export function Component() {
           <div className="segmented plain" role="group" aria-label="Due status">{(["overdue", "due_soon", "all"] as const).map((value) => <button type="button" key={value} aria-pressed={filter === value} onClick={() => setView(value)}>{filterTitle(value)}<span className="n">{filterCount(value, page?.kpis ?? null)?.toLocaleString() ?? "—"}</span></button>)}</div>
         </div></section>
         <section className="card" aria-labelledby="awaiting-list"><div className="card-header"><h2 id="awaiting-list">{filterTitle(filter)} <span className="meta">{page?.total.toLocaleString() ?? "—"} links</span></h2><span className="meta nowrap">{filter === "overdue" ? "Most overdue first" : "Earliest due first"}</span></div>
-          <DataGrid columns={columns} page={gridPage} rowId={(row) => row.replacementLinkId} onPage={setPageNumber} loading={loading} viewportHeight={520} emptyText="No advance replacements match this view." onRowClick={open} activeRowId={active} describedBy="awaiting-list" footerNote="Nightly check publishes Replacement.ReturnOverdue once per link" />
+          <DataGrid columns={columns} page={gridPage} rowId={(row) => row.replacementLinkId} onPage={query.onPage} loading={query.loading} viewportHeight={520} emptyText="No advance replacements match this view." onRowClick={open} activeRowId={active} describedBy="awaiting-list" footerNote="Nightly check publishes Replacement.ReturnOverdue once per link" gridId="awaiting-returns" userId={session.user.id} sort={query.sort} onSort={query.onSort} defaultSort={{ key: "due", dir: "asc" }} pageSize={query.pageSize} onPageSize={query.onPageSize} defaultPageSize={PAGE_SIZE} />
         </section>
       </div>
     </main>

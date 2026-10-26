@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
@@ -9,6 +10,13 @@ namespace Yojana.Serialisation.Campaigns;
 
 public sealed class CampaignQueries(SerialisationDbContext db, CampaignSelectionFacts facts, ITenantContext tenant)
 {
+    private static readonly SortedPage<Campaign, Guid> CampaignPages = new("updated", row => row.CampaignId,
+        new SortColumn<Campaign, string>("code", row => row.Code),
+        new SortColumn<Campaign, DateTime>("updated", row => row.UpdatedAt, SortDirection.Descending),
+        new SortColumn<Campaign, string>("status", row => row.Status));
+    private static readonly SortedPage<UnitFact, Guid> UnitPages = new("serial", row => row.UnitId,
+        new SortColumn<UnitFact, string>("serial", row => row.Serial ?? ""),
+        new SortColumn<UnitFact, DateTime>("selected", row => row.SelectedAt, SortDirection.Descending));
     private static readonly string[] FunnelOrder =
     [
         CampaignCriterionKind.IdentifierRange,
@@ -17,20 +25,22 @@ public sealed class CampaignQueries(SerialisationDbContext db, CampaignSelection
         CampaignCriterionKind.Lot,
     ];
 
-    public async Task<Page<CampaignListRow>> ListAsync(string? status, int skip, int take, CancellationToken cancellationToken)
+    public async Task<Page<CampaignListRow>> ListAsync(string? status, string? sort, string? direction, string? cursor, int skip, int take, CancellationToken cancellationToken)
     {
-        skip = Math.Max(0, skip);
-        take = Math.Clamp(take, 1, 200);
+        var paging = CampaignPages.Parse(sort, direction, take, cursor, skip, defaultTake: 50);
         var query = db.Campaigns.AsNoTracking().Where(c => c.TenantId == tenant.TenantId);
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(c => c.Status == status);
         var total = await query.CountAsync(cancellationToken);
-        var rows = await query.OrderByDescending(c => c.UpdatedAt).ThenBy(c => c.Code).Skip(skip).Take(take)
+        var rows = await paging.Apply(query).Take(paging.Take)
             .Select(c => new CampaignListRow(c.CampaignId, c.Code, c.Name, c.CoverageSource, c.Status,
                 db.CampaignUnits.Count(u => u.TenantId == tenant.TenantId && u.CampaignId == c.CampaignId),
-                c.SelectedAt, c.ReserveTag, c.ReasonCode, c.RunsUntil, c.PartsPct, c.LabourPct, c.TravelPct))
+                c.SelectedAt, c.ReserveTag, c.ReasonCode, c.RunsUntil, c.PartsPct, c.LabourPct, c.TravelPct, c.UpdatedAt))
             .ToListAsync(cancellationToken);
-        return new(rows, total, skip, take);
+        return new(rows, total, paging.Skip, paging.Take);
     }
+
+    public Task<Page<CampaignListRow>> ListAsync(string? status, int skip, int take, CancellationToken cancellationToken) =>
+        ListAsync(status, null, null, null, skip, take, cancellationToken);
 
     public async Task<CampaignRow?> DetailAsync(Guid campaignId, CancellationToken cancellationToken)
     {
@@ -89,10 +99,10 @@ public sealed class CampaignQueries(SerialisationDbContext db, CampaignSelection
     }
 
     public async Task<Page<CampaignUnitDetailRow>?> UnitsAsync(Guid campaignId, string? serial, Guid? owner,
-        string? custody, bool? ownerDiffersInvoice, string? repair, int skip, int take, CancellationToken cancellationToken)
+        string? custody, bool? ownerDiffersInvoice, string? repair, string? sort, string? direction, string? cursor,
+        int skip, int take, CancellationToken cancellationToken)
     {
-        skip = Math.Max(0, skip);
-        take = Math.Clamp(take, 1, 200);
+        var paging = UnitPages.Parse(sort, direction, take, cursor, skip, defaultTake: 50);
         var campaign = await db.Campaigns.AsNoTracking().SingleOrDefaultAsync(c => c.TenantId == tenant.TenantId && c.CampaignId == campaignId, cancellationToken);
         if (campaign is null) return null;
 
@@ -106,13 +116,17 @@ public sealed class CampaignQueries(SerialisationDbContext db, CampaignSelection
         if (repair == "repaired") query = query.Where(row => row.ClaimStatus == ClaimStatus.Settled || row.ClaimStatus == ClaimStatus.Closed);
 
         var total = await query.CountAsync(cancellationToken);
-        var rows = await query.OrderBy(row => row.Serial).ThenBy(row => row.UnitId).Skip(skip).Take(take)
+        var rows = await paging.Apply(query).Take(paging.Take)
             .Select(row => new CampaignUnitDetailRow(row.UnitId, row.Serial, row.OwnerPartyRef, row.OwnerPartyType,
                 row.OwnerSince, row.CustodianPartyRef, row.CustodianPartyType, row.CustodyKind, row.CustodyAtSelection, row.CustodySince,
                 row.InvoicePartyRef, row.SelectedAt, row.SelectedBy, row.ClaimId, row.ClaimNumber, row.ClaimStatus))
             .ToListAsync(cancellationToken);
-        return new(rows, total, skip, take);
+        return new(rows, total, paging.Skip, paging.Take);
     }
+
+    public Task<Page<CampaignUnitDetailRow>?> UnitsAsync(Guid campaignId, string? serial, Guid? owner,
+        string? custody, bool? ownerDiffersInvoice, string? repair, int skip, int take, CancellationToken cancellationToken) =>
+        UnitsAsync(campaignId, serial, owner, custody, ownerDiffersInvoice, repair, null, null, null, skip, take, cancellationToken);
 
     public async Task<CampaignUnitsSummary?> UnitsSummaryAsync(Guid campaignId, CancellationToken cancellationToken)
     {
@@ -131,12 +145,12 @@ public sealed class CampaignQueries(SerialisationDbContext db, CampaignSelection
         return new(units, campaign.SelectedAt, added, owners + custodians, owners, custodians, differs, repaired, inOurHands);
     }
 
-    public async IAsyncEnumerable<CampaignUnitDetailRow> ExportUnitsAsync(Guid campaignId,
+    public async IAsyncEnumerable<CampaignUnitDetailRow> ExportUnitsAsync(Guid campaignId, string? sort, string? direction,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         const int batchSize = 200;
         var skip = 0;
-        while (await UnitsAsync(campaignId, null, null, null, null, null, skip, batchSize, cancellationToken) is { } page)
+        while (await UnitsAsync(campaignId, null, null, null, null, null, sort, direction, null, skip, batchSize, cancellationToken) is { } page)
         {
             foreach (var row in page.Items) yield return row;
             skip += page.Items.Count;

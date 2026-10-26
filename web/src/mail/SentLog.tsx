@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { DataGrid, type GridColumn } from "../components/DataGrid";
+import { useGridQuery } from "../components/useGridQuery";
 import { KpiStrip } from "../components/KpiStrip";
 import { StatusBadge } from "../components/StatusBadge";
 import { useTenantTime } from "../components/tenantTime";
-import type { PageResult } from "../components/types";
 import { useSession } from "../session/session";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { openDrawer, updateDrawer } from "../shell/drawerStore";
 import { ErrorNote, Kv, Section } from "../units/common";
-import { mailApi, type SentMailDetail, type SentMailFilter, type SentMailPage, type SentMailRow } from "./api";
+import { mailApi, sentMailPage, type SentMailDetail, type SentMailFilter, type SentMailRow } from "./api";
 import { SENDER_ROLES, deliveryState, holds, languageName } from "./format";
 import { MailTabs } from "./MailTabs";
 import "./mail.css";
@@ -28,30 +28,22 @@ export function Component() {
   const [sentBy, setSentBy] = useState("");
   const [typed, setTyped] = useState("");
   const [text, setText] = useState("");
-  const [cursors, setCursors] = useState<(string | null)[]>([null]);
-  const [page, setPage] = useState<SentMailPage | null>(null);
   const [active, setActive] = useState<string | null>(null);
-  const [error, setError] = useState<unknown>(null);
   useEffect(() => { const timer = window.setTimeout(() => setText(typed.trim()), 350); return () => window.clearTimeout(timer); }, [typed]);
   const filter = useMemo<SentMailFilter>(() => ({
     ...(status ? { status } : {}), ...(kind ? { kind } : {}), ...(sentBy ? { sentBy } : {}), ...(unitId ? { unitId } : {}), ...(text ? { q: text } : {}),
   }), [status, kind, sentBy, unitId, text]);
-  useEffect(() => setCursors([null]), [filter]);
-  const cursor = cursors[cursors.length - 1] ?? null;
-  useEffect(() => {
-    if (!permitted) return;
-    const controller = new AbortController();
-    mailApi.sent(filter, cursor, controller.signal).then(setPage).catch((reason) => { if (!controller.signal.aborted) setError(reason); });
-    return () => controller.abort();
-  }, [permitted, filter, cursor]);
+  const filterParams = useMemo(() => { const value = new URLSearchParams(); Object.entries(filter).forEach(([key, entry]) => { if (entry) value.set(key, entry); }); return value; }, [filter]);
+  const query = useGridQuery("/api/customer-mail", sentMailPage, { gridId: "sent-mail", userId: session.user.id, defaultSort: { key: "queued", dir: "desc" }, defaultSize: PAGE_SIZE, params: filterParams, paging: "cursor", pageFacts: (data) => ({ continuation: data.nextCursor }), enabled: permitted, sortKeys: ["queued", "status"] });
+  const page = query.data;
 
   const columns = useMemo<GridColumn<SentMailRow>[]>(() => [
-    { key: "sent", label: "Sent", width: 11, render: (row) => tenantTime.dateTime(row.queuedAt) },
+    { key: "sent", label: "Sent", width: 11, sort: { key: "queued", defaultDir: "desc" }, render: (row) => tenantTime.dateTime(row.queuedAt) },
     { key: "to", label: "To", width: 20, render: (row) => <>{row.toName ?? row.to}<span className="sub">{row.ccCount ? `+${row.ccCount} in Cc · ` : ""}{row.customerName ?? row.to}</span></> },
     { key: "subject", label: "Subject", width: 31, render: (row) => <>{row.subject}<span className="sub">{row.templateName} v{row.templateVersion} · {row.language.toUpperCase()}</span></> },
     { key: "about", label: "About", width: 14, mono: true, render: (row) => row.aboutLabel },
     { key: "by", label: "Sent by", width: 12, render: (row) => row.automatic ? <span className="muted">Sent automatically</span> : row.sentBy },
-    { key: "status", label: "Status", width: 12, render: (row) => { const state = deliveryState(row); return <span title={row.lastError ?? undefined}><StatusBadge tone={state.tone}>{state.text}</StatusBadge></span>; } },
+    { key: "status", label: "Status", width: 12, sort: { key: "status", defaultDir: "asc" }, render: (row) => { const state = deliveryState(row); return <span title={row.lastError ?? undefined}><StatusBadge tone={state.tone}>{state.text}</StatusBadge></span>; } },
   ], [tenantTime]);
 
   const open = (row: SentMailRow) => {
@@ -63,25 +55,20 @@ export function Component() {
   };
 
   const kpis = page?.kpis;
-  const pageNumber = cursors.length;
-  const grid: PageResult<SentMailRow> = { rows: page?.rows ?? [], total: page?.total ?? 0, page: pageNumber, pageSize: PAGE_SIZE, continuation: page?.nextCursor ?? null };
-  const onPage = (next: number) => {
-    if (next > pageNumber && page?.nextCursor) setCursors([...cursors, page.nextCursor]);
-    else if (next < pageNumber) setCursors(cursors.slice(0, Math.max(1, next)));
-  };
+  const grid = { rows: page?.rows ?? [], total: page?.total ?? 0, page: query.page, pageSize: query.pageSize, continuation: page?.nextCursor ?? null };
   const clearUnit = () => { const next = new URLSearchParams(params); next.delete("unitId"); next.delete("queued"); setParams(next); };
 
   return <main className="content" id="main" tabIndex={-1}>
     <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Customer e-mail" }, { label: "Sent log" }]} />
     <PageHeader eyebrow="Customer e-mail · last 30 days" title="Sent log"
       sub="Every e-mail sent to a customer: to whom, from which template version, about which record, and how delivery went. The copy shown is the one that was sent, not today's template."
-      actions={permitted ? <a className="btn" href={mailApi.exportUrl(filter)}>Export</a> : undefined} />
+      actions={permitted ? <a className="btn" href={mailApi.exportUrl(filter, query.sort.key, query.sort.dir)}>Export</a> : undefined} />
     {!permitted && <div className="note bad"><strong>The sent log is for the service desk, service supervisors and managers, customer service and tenant administrators.</strong></div>}
     {permitted && <div className="stack">
       <MailTabs sent={kpis?.total} />
       {queued > 0 && <div className="note ok" role="status"><strong>{queued === 1 ? "Message queued." : `${queued} messages queued.`}</strong>&nbsp;Delivery usually takes under a minute; the status below updates when you reload.</div>}
       {unitId && <div className="note">Showing the messages about one unit. <button type="button" className="btn sm" onClick={clearUnit}>Show all</button> <Link className="btn sm" to={`/units/${unitId}?tab=whats-covered`}>Back to the unit</Link></div>}
-      <ErrorNote error={error} />
+      <ErrorNote error={query.error} />
       {kpis && <KpiStrip kpis={[
         { label: "Sent", value: kpis.sent.toLocaleString(), detail: kpis.deliveredShare === null ? null : `${kpis.deliveredShare}% of ${kpis.total.toLocaleString()}`, trend: kpis.deliveredShare !== null && kpis.deliveredShare >= 95 ? "up" : null },
         { label: "Retrying now", value: kpis.retrying.toLocaleString(), detail: kpis.retrying ? "the mail server was busy; it tries again by itself" : "nothing waiting" },
@@ -105,8 +92,8 @@ export function Component() {
             <option value="">Anyone</option><option value={session.user.id}>Sent by me</option><option value="automatic">Sent automatically</option>
           </select>
         </div>
-        <DataGrid columns={columns} page={grid} rowId={(row) => row.messageId} onPage={onPage} onRowClick={open} activeRowId={active}
-          loading={!page && !error} emptyText={text || status || kind || sentBy ? "No message matches." : "No customer e-mail in the last 30 days."} />
+        <DataGrid columns={columns} page={grid} rowId={(row) => row.messageId} onPage={query.onPage} onRowClick={open} activeRowId={active}
+          loading={query.loading} emptyText={text || status || kind || sentBy ? "No message matches." : "No customer e-mail in the last 30 days."} gridId="sent-mail" userId={session.user.id} sort={query.sort} defaultSort={{ key: "queued", dir: "desc" }} onSort={query.onSort} pageSize={query.pageSize} defaultPageSize={PAGE_SIZE} onPageSize={query.onPageSize} />
       </section>
     </div>}
   </main>;
