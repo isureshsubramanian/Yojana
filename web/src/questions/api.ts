@@ -1,6 +1,6 @@
 import * as z from "zod/mini";
 import { apiParsed, checkedBody } from "../api/client";
-import { addresseePage, entryDraftRequest, trainingWelcome, entryFieldChange, entryReviewPage, entryTagChoices, knowledgeEntry, knowledgeEntryPage, knowledgeReport, knowledgeScreenReferencePage, myQuestionPage, policyVersionChoicePage, questionBellSummary, questionNotificationPreference, questionPage, questionThread, referenceChoicePage, revision, searchPage, trainingPath, trainingPathList, trainingTeam, type EntryDraftRequest, type KnowledgeReportFilters, type QuestionNotificationMode } from "./types";
+import { addresseePage, entryDraftRequest, trainingWelcome, entryFieldChange, entryTagChoices, knowledgeEntry, knowledgeEntryPage, knowledgeReport, knowledgeScreenReferencePage, policyVersionChoicePage, questionBellSummary, questionNotificationPreference, questionPage, questionThread, referenceChoicePage, revision, searchPage, trainingPath, trainingPathList, trainingTeam, type EntryDraftRequest, type KnowledgeReportFilters, type QuestionNotificationMode } from "./types";
 
 const root = "/api/questions";
 const qs = (values: Record<string, string | number | boolean | null | undefined>) => {
@@ -25,7 +25,6 @@ export const questionsApi = {
   revisions: (id: string, replyId?: string, signal?: AbortSignal) => apiParsed(replyId ? `${root}/${id}/replies/${replyId}/revisions` : `${root}/${id}/revisions`, z.array(revision), { signal }),
   addressees: (search?: string, cursor?: string, signal?: AbortSignal) => apiParsed(`${root}/addressees${qs({ search, cursor, take: 50 })}`, addresseePage, { signal }),
   search: (query: string, answeredOnly = false, cursor?: string, signal?: AbortSignal) => apiParsed(`${root}/search${qs({ query, answeredOnly, cursor, take: 6 })}`, searchPage, { signal }),
-  mine: (filters: { scope: string; status: string; recordKind: string; age: string; search: string }, cursor?: string, signal?: AbortSignal) => apiParsed(`${root}/mine${qs({ ...filters, cursor, take: 12 })}`, myQuestionPage, { signal }),
   bell: (signal?: AbortSignal) => apiParsed(`${root}/notifications/bell?take=5`, questionBellSummary, { signal }),
   notificationPreference: (signal?: AbortSignal) => apiParsed(`${root}/notifications/preference`, questionNotificationPreference, { signal }),
   updateNotificationPreference: (mode: QuestionNotificationMode | null) => apiParsed(`${root}/notifications/preference`, questionNotificationPreference, { method: "PUT", body: { mode } }),
@@ -33,9 +32,8 @@ export const questionsApi = {
 
 const entriesRoot = "/api/knowledge/entries";
 export const knowledgeApi = {
-  browse: (filters: { query: string; role: string; task: string }, cursor?: string, signal?: AbortSignal) => apiParsed(`${entriesRoot}${qs({ ...filters, cursor, take: 12 })}`, knowledgeEntryPage, { signal }),
+  browse: (filters: { query: string; role: string; task: string }, cursor?: string, signal?: AbortSignal) => apiParsed(`${entriesRoot}${qs({ ...filters, cursor, take: 12 })}`, knowledgeEntryPage, { signal }), // grid-gate: picker
   entry: (id: string, signal?: AbortSignal) => apiParsed(`${entriesRoot}/${id}`, knowledgeEntry, { signal }),
-  review: (filter: "pending" | "needs_review", cursor?: string, signal?: AbortSignal) => apiParsed(`${entriesRoot}/review${qs({ filter, cursor, take: 20 })}`, entryReviewPage, { signal }),
   tagChoices: (signal?: AbortSignal) => apiParsed(`${entriesRoot}/tag-choices`, entryTagChoices, { signal }),
   changes: (id: string, signal?: AbortSignal) => apiParsed(`${entriesRoot}/${id}/changes-since-last-round`, z.array(entryFieldChange), { signal }),
   save: (id: string, body: EntryDraftRequest) => apiParsed(`${entriesRoot}/${id}`, z.unknown(), { method: "PUT", body: checkedBody(entryDraftRequest, body) }),

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { DataGrid, Shortcut, StatusBadge, useGridQuery, useModEnter, type GridColumn, type PageResult } from "../components";
+import { DataGrid, Shortcut, StatusBadge, useGridQuery, useModEnter, type GridColumn, type PageResult, sortCaption } from "../components";
 import { ApiError } from "../api/client";
 import { openDrawer } from "../shell/drawerStore";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
@@ -76,11 +76,11 @@ export function Component() {
       actions={<button type="button" className="btn primary" disabled={!selected || busy || !erpNumber.trim()} onClick={() => void complete(false)}>Record ERP number <Shortcut keys="mod+enter" /></button>} />
     <IntegrationTabs attention={tabCounts.attention} manual={totalOpen} />
     <IntegrationAccess><ErrorNote error={error ?? query.error} /><div className="integration-split">
-      <section className="card" aria-labelledby="manual-list"><div className="card-header"><h2 id="manual-list">Waiting</h2><span className="meta">oldest first</span></div>
+      <section className="card" aria-labelledby="manual-list"><div className="card-header"><h2 id="manual-list">Waiting</h2><span className="meta">{sortCaption(columns, query, "oldest first")}</span></div>
         <div className="segmented integration-desks" role="group" aria-label="Desk"><button type="button" aria-pressed={!desk} onClick={() => setDesk("")}>All<span className="n">{totalOpen}</span></button>{result.desks.map((item) => <button type="button" key={item.desk} aria-pressed={desk === item.desk} onClick={() => setDesk(item.desk)}>{item.label}<span className="n">{counts.get(item.desk) ?? 0}</span></button>)}</div>
         <DataGrid columns={columns} page={pageOf(result, query.page, query.pageSize)} rowId={(row) => row.manualOutboundTaskId} onPage={query.onPage} loading={busy || query.loading} onRowClick={(row) => void select(row)} activeRowId={selected?.manualOutboundTaskId} viewportHeight={522} emptyText="No ERP entries are waiting."
           gridId="integration-manual-tasks" userId={session.user.id} sort={query.sort} defaultSort={{ key: "created", dir: "asc" }} onSort={query.onSort}
-          pageSize={query.pageSize} defaultPageSize={12} pageSizeOptions={[12, 25, 50]} onPageSize={query.onPageSize} footerNote="Sorted by age, oldest first" />
+          pageSize={query.pageSize} defaultPageSize={12} pageSizeOptions={[12, 25, 50]} onPageSize={query.onPageSize} footerNote={sortCaption(columns, query, "Sorted by age, oldest first")} />
       </section>
       <div className="stack">{selected ? <DraftDetail task={selected} erpNumber={erpNumber} setErpNumber={(value) => { setErpNumber(value); setUnverified(false); }} unverified={unverified} complete={complete} busy={busy} cancelReason={cancelReason} setCancelReason={setCancelReason} cancel={cancel} /> : <section className="card integration-empty"><div className="card-body"><h2>No draft selected</h2><p className="muted">Choose a waiting draft to see its copy-ready fields.</p></div></section>}</div>
     </div></IntegrationAccess>

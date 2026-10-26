@@ -2,8 +2,8 @@ import * as z from "zod/mini";
 import { apiParsed, checkedBody } from "../api/client.ts";
 import { newCommandId, now } from "../api/units.ts";
 import {
-  certificatePageSchema, compareResultSchema, comparisonHistoryPageSchema, disclosurePolicySchema, documentRefSchema,
-  disclosureRowSchema, feedMessageHistoryPageSchema, importFileHistoryPageSchema, importJobSchema, importPageSchema,
+  certificatePageSchema, compareResultSchema, disclosurePolicySchema, documentRefSchema,
+  disclosureRowSchema, importJobSchema, importPageSchema,
   importRowPageSchema, importRunResultSchema, installedBasePageSchema, internalLookupSchema, portalContextSchema,
   portalLookupSchema, portalRegistrationResultSchema, portalRmaResultSchema, portalUnitSchema, publicLookupSchema,
   reconciliationPageSchema, referenceOptionSchema, serialListResultSchema, serviceHistoryPageSchema,
@@ -40,9 +40,6 @@ export async function fileBytes(file: File): Promise<string> {
 
 export const p7Api = {
   imports: (cursor?: string, signal?: AbortSignal) => apiParsed(`/api/imports/${query({ cursor, take: 50 })}`, importPageSchema, { signal }),
-  importHistory: (filters: Record<string, string | undefined>, cursor?: string, signal?: AbortSignal) => apiParsed(`/api/imports/history${query({ ...filters, cursor, take: 50 })}`, importFileHistoryPageSchema, { signal }),
-  feedMessageHistory: (filters: Record<string, string | undefined>, cursor?: string, signal?: AbortSignal) => apiParsed(`/api/imports/history/feed-messages${query({ ...filters, cursor, take: 50 })}`, feedMessageHistoryPageSchema, { signal }),
-  comparisonHistory: (filters: Record<string, string | undefined>, cursor?: string, signal?: AbortSignal) => apiParsed(`/api/imports/history/comparisons${query({ ...filters, cursor, take: 50 })}`, comparisonHistoryPageSchema, { signal }),
   importJob: (id: string, signal?: AbortSignal) => apiParsed(`/api/imports/${id}`, importJobSchema, { signal }),
   importRows: (id: string, cursor?: string, signal?: AbortSignal) => apiParsed(`/api/imports/${id}/rows${query({ cursor, take: 100 })}`, importRowPageSchema, { signal }),
   runImport: async (file: File, mode: "apply" | "compare" = "apply") => { const body = { commandId: newCommandId(), source: "user_upload" as const, file: { fileName: file.name, format: file.name.split(".").pop()?.toLowerCase() ?? "", content: await fileBytes(file) }, eventTime: now(), mapping: { serial: "Serial", orderNumber: "Order" }, mappingName: "standard_serial_list", mode }; return apiParsed("/api/imports/run", importRunResultSchema, { method: "POST", body: checkedBody(runImportRequestSchema, body) }); },

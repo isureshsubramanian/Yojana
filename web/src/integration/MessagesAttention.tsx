@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { DataGrid, FindBar, KpiStrip, Shortcut, StatusBadge, useGridQuery, useModEnter, type GridColumn, type PageResult } from "../components";
+import { DataGrid, FindBar, KpiStrip, Shortcut, StatusBadge, useGridQuery, useModEnter, type GridColumn, type PageResult, sortCaption } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { useSession } from "../session/session";
@@ -90,11 +90,11 @@ export function Component() {
           <select className="select sm" aria-label="Connection" value={connectionId} onChange={(event) => setConnectionId(event.target.value)}><option value="">All connections</option>{connections.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
           <select className="select sm" aria-label="Reason" value={reason} onChange={(event) => setReason(event.target.value)}><option value="">All reasons</option><option value="item_not_mapped">Unknown item</option><option value="serial_not_found">Serial not found</option><option value="party_not_mapped">Customer or supplier not linked</option><option value="max_outbox_age">Could not send</option></select>
           <select className="select sm" aria-label="Record type" value={recordType} onChange={(event) => setRecordType(event.target.value)}><option value="">All record types</option>{recordTypes.map((value) => <option key={value} value={value}>{recordTitle({ recordType: value })}</option>)}</select>
-          <span className="grow" /><span className="hint">Sorted by age, oldest first</span>
+          <span className="grow" /><span className="hint">{sortCaption(columns, query, "Sorted by age, oldest first")}</span>
         </div>
         <DataGrid columns={columns} page={pageOf(result, query.page, query.pageSize)} rowId={(row) => row.deadLetterItemId} onPage={query.onPage} loading={busy || query.loading} onRowClick={(row) => void open(row)} activeRowId={detail?.deadLetterItemId} viewportHeight={396} emptyText="No messages need attention."
           gridId="integration-attention" userId={session.user.id} sort={query.sort} defaultSort={{ key: "received", dir: "asc" }} onSort={query.onSort}
-          pageSize={query.pageSize} defaultPageSize={25} onPageSize={query.onPageSize} footerNote="Sorted by age, oldest first" />
+          pageSize={query.pageSize} defaultPageSize={25} onPageSize={query.onPageSize} footerNote={sortCaption(columns, query, "Sorted by age, oldest first")} />
       </section>
       {detail && <MessageDetail detail={detail} discardReason={discardReason} setDiscardReason={setDiscardReason} map={map} provisional={provisional} discard={discard} busy={busy} />}
     </div></IntegrationAccess>

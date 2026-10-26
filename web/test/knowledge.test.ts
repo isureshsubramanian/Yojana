@@ -123,7 +123,7 @@ test("Entry editor uses policy-version and screen pickers and marks unknown lega
 });
 
 test("Knowledge mutations are actor-free and use the entry endpoints", () => {
-  for (const operation of ["browse", "entry", "review", "tagChoices", "changes", "save", "submit", "approve", "sendBack", "retire", "stillCorrect", "screens", "markScreenChanged", "policyVersionChoices", "screenChoices"])
+  for (const operation of ["browse", "entry", "tagChoices", "changes", "save", "submit", "approve", "sendBack", "retire", "stillCorrect", "screens", "markScreenChanged", "policyVersionChoices", "screenChoices"])
     assert.match(api, new RegExp(`${operation}:`));
   assert.doesNotMatch(api, /actor|authorId|reviewerId|submittedBy/i);
 });

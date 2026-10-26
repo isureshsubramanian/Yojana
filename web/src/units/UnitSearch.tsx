@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { units, unitSearchResult, type UnitSearchRow } from "../api/units";
-import { DataGrid, ScanInput, StatusBadge, useGridQuery, type GridColumn } from "../components";
+import { DataGrid, ScanInput, StatusBadge, useGridQuery, type GridColumn, sortCaption } from "../components";
 import { isUrlScanFormat } from "../components/scan";
 import { openDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
@@ -143,7 +143,7 @@ export function Component() {
                 {q ? <>Matches for <span className="serial">{q}</span></> : docRef ? <>Units on {documentLabel(docRef)}</> : "Matches"}
                 {result && <span className="meta">{resolution === "ambiguous" ? "ambiguous · " : "prefix · "}{resultCount} results · page sample: {result.units.toLocaleString()} units · {result.items} items · {result.identifierTypes} identifier types{result.superseded ? ` · ${result.superseded} superseded` : ""}</span>}
               </h2>
-              <span className="meta nowrap">{result ? `Served in ${result.servedInMilliseconds} ms` : "Sorted by identifier"}</span>
+              <span className="meta nowrap">{result ? `Served in ${result.servedInMilliseconds} ms` : sortCaption(columns, query, "Sorted by identifier")}</span>
             </div>
             <DataGrid columns={columns} page={grid} rowId={rowId} onPage={query.onPage} loading={query.loading} viewportHeight={560}
               gridId="units-search" userId={session.user.id} sort={query.sort} defaultSort={{ key: "identifier", dir: "asc" }} onSort={query.onSort}

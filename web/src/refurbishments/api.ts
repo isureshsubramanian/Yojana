@@ -12,7 +12,7 @@ function query(values: Record<string, string | number | null | undefined>): stri
 const base = (workOrderId: string) => `/api/refurbishments/${workOrderId}`;
 export const refurbishmentsApi = {
   list: (status: string, kind: string, skip: number, take: number, signal?: AbortSignal) => apiParsed(`/api/refurbishments/${query({ status, kind, skip, take })}`, refurbishmentWorkOrderPage, { signal }),
-  forUnit: (unitId: string, signal?: AbortSignal) => apiParsed(`/api/refurbishments/${query({ unitId, skip: 0, take: 50 })}`, refurbishmentWorkOrderPage, { signal }),
+  forUnit: (unitId: string, signal?: AbortSignal) => apiParsed(`/api/refurbishments/${query({ unitId, sort: "opened", dir: "desc", skip: 0, take: 50 })}`, refurbishmentWorkOrderPage, { signal }),
   detail: (id: string, signal?: AbortSignal) => apiParsed(base(id), refurbishmentWorkOrderRow, { signal }),
   addOperation: (id: string, sequence: number, description: string, plannedHours: number) => apiParsed(`${base(id)}/operations`, z.unknown(), { method: "POST", body: { commandId: newCommandId(), sequence, description, technicianRef: null, plannedHours, eventTime: now() } }),
   completeOperation: (id: string, operationId: string, actualHours: number) => apiParsed(`${base(id)}/operations/${operationId}/complete`, z.unknown(), { method: "POST", body: { commandId: newCommandId(), actualHours, completedAt: now() } }),

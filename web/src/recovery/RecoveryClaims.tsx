@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router";
-import { DataGrid, KpiStrip, StatusBadge, useGridQuery, type GridColumn } from "../components";
+import { DataGrid, KpiStrip, StatusBadge, useGridQuery, type GridColumn, sortCaption } from "../components";
 import { useSession } from "../session/session";
 import { useReferenceNames } from "../corrections/ReferenceFields";
 import { usePeople } from "../people/people";
@@ -109,7 +109,7 @@ export function Component() {
           <label className="chip-field"><span className="chip-k">Child item</span><select className={`chip-select${childItem ? " on" : ""}`} aria-label="Child item" value={childItem} onChange={(event) => setChildItem(event.target.value)}><option value="">All</option>{summary?.childItems.map((option) => <option key={option.id} value={option.id}>{names.item(option.id)} · {option.count}</option>)}</select></label>
         </div></div></section>
 
-        <section className="card" aria-labelledby="recovery-list"><div className="card-header"><h2 id="recovery-list">{title} <span className="meta">{data?.total.toLocaleString() ?? "…"} claims · {summary?.vendors.length.toLocaleString() ?? "…"} vendors</span></h2><span className="meta nowrap">Sorted by age, oldest first</span></div>
+        <section className="card" aria-labelledby="recovery-list"><div className="card-header"><h2 id="recovery-list">{title} <span className="meta">{data?.total.toLocaleString() ?? "…"} claims · {summary?.vendors.length.toLocaleString() ?? "…"} vendors</span></h2><span className="meta nowrap">{sortCaption(columns, query, "Sorted by age, oldest first")}</span></div>
           <DataGrid columns={columns} page={gridPage} rowId={(row) => row.recoveryClaimId} onPage={query.onPage} onRowClick={openRow} activeRowId={selectedId} loading={query.loading} emptyText="No recovery claims match these filters." viewportHeight={330} gridId="recovery-claims" userId={session.user.id} sort={query.sort} defaultSort={{ key: "raised", dir: "asc" }} onSort={query.onSort} pageSize={query.pageSize} defaultPageSize={PAGE_SIZE} onPageSize={query.onPageSize} />
         </section>
 

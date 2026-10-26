@@ -132,9 +132,7 @@ export const mailApi = {
     apiParsed(`/api/units/${unitId}/coverage-mail/preview`, mailPreviewView, { method: "POST", body: { templateVersionId, language, recipientName, note, signedBy }, signal }),
   send: (unitId: string, command: SendCoverageMail) => apiParsed(`/api/units/${unitId}/coverage-mail/send`, mailQueuedView, { method: "POST", body: checkedBody(sendCoverageMail, command) }),
 
-  sent: (filter: SentMailFilter, cursor: string | null, signal?: AbortSignal) =>
-    apiParsed(`/api/customer-mail${query({ ...filter, cursor, take: 25 })}`, sentMailPage, options(signal)),
-  aboutUnit: (unitId: string, signal?: AbortSignal) => apiParsed(`/api/customer-mail${query({ unitId, take: 5 })}`, sentMailPage, options(signal)),
+  aboutUnit: (unitId: string, signal?: AbortSignal) => apiParsed(`/api/customer-mail${query({ unitId, sort: "queued", dir: "desc", take: 5 })}`, sentMailPage, options(signal)),
   sentMessage: (id: string, signal?: AbortSignal) => apiParsed(`/api/customer-mail/${id}`, sentMailDetail, options(signal)),
   exportUrl: (filter: SentMailFilter, sort?: string, dir?: string) => `/api/customer-mail/export${query({ format: "csv", status: filter.status, kind: filter.kind, sentBy: filter.sentBy, q: filter.q, sort, dir })}`,
 };

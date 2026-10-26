@@ -37,7 +37,7 @@ export function useGridState(gridId: string, userId: string, defaultSort: GridSo
     writeGridPreference(storageKey, { sort: next.sort, pageSize: next.pageSize }, typeof window === "undefined" ? null : window.localStorage);
     return next;
   });
-  return { ...state, onPage: (page: number) => setState(current => ({ ...current, page: Math.max(1, page), cursor: null })), onSort: (sort: GridSort) => change({ sort }), onPageSize: (pageSize: number) => change({ pageSize }), reset: () => setState(current => ({ ...current, page: 1, cursor: null })) };
+  return { ...state, defaultSort, onPage: (page: number) => setState(current => ({ ...current, page: Math.max(1, page), cursor: null })), onSort: (sort: GridSort) => change({ sort }), onPageSize: (pageSize: number) => change({ pageSize }), reset: () => setState(current => ({ ...current, page: 1, cursor: null })) };
 }
 
 /** One data-grid query seam: state, opaque continuation history, query construction and checked response parsing. */
@@ -112,5 +112,5 @@ export function useGridQuery<TSchema extends z.ZodMiniType>(endpoint: string, sc
     setState(current => ({ ...current, page, cursor: cursors.get(page) ?? null }));
   };
   const reload = useCallback(() => setState(current => ({ ...current })), []);
-  return { data, loading, error, queryString, ...state, sort: activeSort, onPage, onSort: (sort: GridSort) => change({ sort }), onPageSize: (pageSize: number) => change({ pageSize }), reload };
+  return { data, loading, error, queryString, ...state, sort: activeSort, defaultSort: options.defaultSort, onPage, onSort: (sort: GridSort) => change({ sort }), onPageSize: (pageSize: number) => change({ pageSize }), reload };
 }
