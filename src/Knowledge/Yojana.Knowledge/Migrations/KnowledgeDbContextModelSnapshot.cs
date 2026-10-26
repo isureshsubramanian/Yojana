@@ -140,6 +140,9 @@ namespace Yojana.Knowledge.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_knowledge_entry_tenant_id_source_question_id");
 
+                    b.HasIndex("TenantId", "PublishedAt", "EntryId")
+                        .HasDatabaseName("ix_knowledge_entry_tenant_id_published_at_entry_id");
+
                     b.HasIndex("TenantId", "NeedsReview", "NeedsReviewSince", "EntryId")
                         .HasDatabaseName("ix_knowledge_entry_tenant_id_needs_review_needs_review_since_entry_id");
 
@@ -631,6 +634,9 @@ namespace Yojana.Knowledge.Migrations
                         .HasDatabaseName("ix_question_tenant_id_asked_at_question_id");
 
                     SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TenantId", "AskedAt", "QuestionId"), new[] { "Status", "RecordKind", "RecordId", "DirectedToRole", "AcceptedAt" });
+
+                    b.HasIndex("TenantId", "Status", "QuestionId")
+                        .HasDatabaseName("ix_question_tenant_id_status_question_id");
 
                     b.HasIndex("TenantId", "Status", "UpdatedAt", "QuestionId")
                         .HasDatabaseName("ix_question_tenant_id_status_updated_at_question_id");

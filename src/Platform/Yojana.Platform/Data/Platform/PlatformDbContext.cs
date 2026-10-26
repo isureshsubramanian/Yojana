@@ -91,6 +91,7 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
             b.Property(e => e.Reason).HasMaxLength(100);
             b.Property(e => e.UnknownUserHash).HasMaxLength(64).IsFixedLength();
             b.HasIndex(e => new { e.TenantId, e.OccurredAt, e.Id });
+            b.HasIndex(e => new { e.TenantId, e.Kind, e.Id });
             b.HasIndex(e => new { e.UserId, e.OccurredAt, e.Id });
             b.HasIndex(e => new { e.OccurredAt, e.Id });
             b.HasOne<AppUser>().WithMany().HasForeignKey(e => e.UserId).OnDelete(DeleteBehavior.NoAction);
@@ -239,6 +240,8 @@ public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> option
             b.Property(x => x.FailureRule).HasMaxLength(80);
             b.Property(x => x.FailureDetail).HasMaxLength(1000);
             b.HasIndex(x => new { x.TenantId, x.RequestedAt, x.ErasureId });
+            b.HasIndex(x => new { x.TenantId, x.RequestReceivedOn, x.ErasureId });
+            b.HasIndex(x => new { x.TenantId, x.Status, x.ErasureId });
             b.HasIndex(x => new { x.TenantId, x.Status, x.RequestReceivedOn, x.ErasureId });
             b.HasIndex(x => new { x.TenantId, x.SubjectKind, x.SubjectId, x.Status });
             b.HasIndex(x => new { x.TenantId, x.RequestReference }).IsUnique();

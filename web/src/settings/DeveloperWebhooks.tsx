@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { ApiError } from "../api/client";
 import { LegalEntityPicker, useLegalEntities } from "../api/legalEntities";
-import { ActionDialog, DataGrid, FormActions, KpiStrip, StatusBadge, type GridColumn, type PageResult } from "../components";
+import { ActionDialog, DataGrid, FormActions, KpiStrip, StatusBadge, useGridQuery, type GridColumn, type PageResult } from "../components";
 import { CustomerField, ItemFamilyField, useReferenceNames } from "../corrections/ReferenceFields";
 import { useSession } from "../session/session";
 import { Icon } from "../shell/Icons";
@@ -10,68 +10,66 @@ import { openDrawer, updateDrawer } from "../shell/drawerStore";
 import { PageHeader } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section } from "../units/common";
 import { SecretValue } from "./DeveloperClients";
-import { developerApi, type CatalogueEntry, type DeveloperCatalogue, type WebhookPage, type WebhookRequest, type WebhookSettings, type WebhookSubscription } from "./developers/developerApi";
+import { developerApi, webhookPage, type CatalogueEntry, type DeveloperCatalogue, type WebhookRequest, type WebhookSettings, type WebhookSubscription } from "./developers/developerApi";
 import { webhookStatus, when } from "./developers/developerModel";
 import "./developers/developer.css";
 
 const PAGE_SIZE = 50;
 
 export function Component() {
-  const permitted = useSession().roles.includes("tenant_administrator");
-  const [result, setResult] = useState<WebhookPage | null>(null);
+  const session = useSession();
+  const permitted = session.roles.includes("tenant_administrator");
   const [catalogue, setCatalogue] = useState<DeveloperCatalogue | null>(null);
   const [settings, setSettings] = useState<WebhookSettings | null>(null);
-  const [page, setPage] = useState(1);
-  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const [newOpen, setNewOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
-
-  const load = useCallback(async (target = page, cursor = cursors[target - 1]) => {
-    setLoading(true); setError(null);
-    try {
-      const [next, eventCatalogue, currentSettings] = await Promise.all([
-        developerApi.webhooks(cursor), catalogue ? Promise.resolve(catalogue) : developerApi.catalogue(), settings ? Promise.resolve(settings) : developerApi.settings(),
-      ]);
-      setResult(next); setCatalogue(eventCatalogue); setSettings(currentSettings); setPage(target);
-      if (next.nextCursor) setCursors(current => { const copy = current.slice(0, target); copy[target] = next.nextCursor!; return copy; });
-    } catch (reason) { setError(reason); }
-    finally { setLoading(false); }
-  }, [catalogue, cursors, page, settings]);
-  useEffect(() => { if (permitted) void load(1, undefined); }, [permitted]); // eslint-disable-line react-hooks/exhaustive-deps
+  const query = useGridQuery("/api/developer/webhooks", webhookPage, {
+    gridId: "developer-webhooks", userId: session.user.id, defaultSort: { key: "attention", dir: "asc" },
+    defaultSize: PAGE_SIZE, paging: "cursor", sortKeys: ["attention", "name", "status"], enabled: permitted,
+    pageFacts: value => ({ continuation: value.nextCursor }),
+  });
+  const result = query.data;
+  useEffect(() => { if (!permitted) return; const controller = new AbortController(); setError(null);
+    void Promise.all([developerApi.catalogue(controller.signal), developerApi.settings(controller.signal)])
+      .then(([events, current]) => { setCatalogue(events); setSettings(current); })
+      .catch(reason => { if (!controller.signal.aborted) setError(reason); });
+    return () => controller.abort();
+  }, [permitted]);
 
   const show = useCallback((row: WebhookSubscription) => {
     const head = { eyebrow: "Webhook endpoint", title: row.name };
-    const changed = (next: WebhookSubscription, secret?: string) => { updateDrawer(head, <WebhookDrawer webhook={next} initialSecret={secret} onChanged={changed} />); void load(); };
+    const changed = (next: WebhookSubscription, secret?: string) => { updateDrawer(head, <WebhookDrawer webhook={next} initialSecret={secret} onChanged={changed} />); query.reload(); };
     openDrawer(head, <WebhookDrawer webhook={row} onChanged={changed} />);
-  }, [catalogue?.events, load]);
+  }, [catalogue?.events, query.reload]);
   const columns = useMemo<GridColumn<WebhookSubscription>[]>(() => [
-    { key: "endpoint", label: "Endpoint", width: 40, render: row => <span><span className="primary">{row.name}</span><span className="sub mono">{row.url}</span></span> },
+    { key: "endpoint", label: "Endpoint", width: 40, sort: { key: "name", defaultDir: "asc" }, render: row => <span><span className="primary">{row.name}</span><span className="sub mono">{row.url}</span></span> },
     { key: "events", label: "Events", width: 30, render: row => `${row.eventTypes.length === (catalogue?.events.length ?? -1) - 1 ? "All" : row.eventTypes.slice(0, 3).join(", ")}${row.eventTypes.length > 3 ? ` · +${row.eventTypes.length - 3}` : ""}` },
     { key: "last", label: "Last 24 h", width: 14, numeric: true, render: row => row.status === "pending_verification" ? "—" : `${row.activity.deliveredLast24Hours.toLocaleString()} of ${row.activity.totalLast24Hours.toLocaleString()}` },
-    { key: "status", label: "Status", width: 16, render: row => { const status = webhookStatus(row.status, row.failingSince); return <StatusBadge tone={status.tone}>{status.label}</StatusBadge>; } },
-    { key: "actions", label: "", width: "90px", render: row => <span className="row-actions">{row.status === "pending_verification" ? <button type="button" className="icon-btn" title="Verify again" aria-label={`Send verification again to ${row.name}`} onClick={() => void developerApi.webhookAction(row.id, "verify").then(next => { void load(); show(next); }).catch(setError)}><Icon name="cycle" /></button> : row.status === "paused" ? <button type="button" className="icon-btn" title="Resume" aria-label={`Resume ${row.name}`} onClick={() => void developerApi.webhookAction(row.id, "resume").then(next => { void load(); show(next); }).catch(setError)}><Icon name="chev" /></button> : <button type="button" className="icon-btn" title="Pause" aria-label={`Pause ${row.name}`} onClick={() => void developerApi.webhookAction(row.id, "pause").then(next => { void load(); show(next); }).catch(setError)}><Icon name="range" /></button>}<Link className="icon-btn" title="Delivery log" aria-label={`Open the delivery log of ${row.name}`} to={`/settings/developers/webhooks/${row.id}/deliveries`}><Icon name="list" /></Link></span> },
-  ], [catalogue?.events.length, load, show]);
+    { key: "status", label: "Status", width: 16, sort: { key: "status", defaultDir: "asc" }, render: row => { const status = webhookStatus(row.status, row.failingSince); return <StatusBadge tone={status.tone}>{status.label}</StatusBadge>; } },
+    { key: "actions", label: "", width: "90px", render: row => <span className="row-actions">{row.status === "pending_verification" ? <button type="button" className="icon-btn" title="Verify again" aria-label={`Send verification again to ${row.name}`} onClick={() => void developerApi.webhookAction(row.id, "verify").then(next => { query.reload(); show(next); }).catch(setError)}><Icon name="cycle" /></button> : row.status === "paused" ? <button type="button" className="icon-btn" title="Resume" aria-label={`Resume ${row.name}`} onClick={() => void developerApi.webhookAction(row.id, "resume").then(next => { query.reload(); show(next); }).catch(setError)}><Icon name="chev" /></button> : <button type="button" className="icon-btn" title="Pause" aria-label={`Pause ${row.name}`} onClick={() => void developerApi.webhookAction(row.id, "pause").then(next => { query.reload(); show(next); }).catch(setError)}><Icon name="range" /></button>}<Link className="icon-btn" title="Delivery log" aria-label={`Open the delivery log of ${row.name}`} to={`/settings/developers/webhooks/${row.id}/deliveries`}><Icon name="list" /></Link></span> },
+  ], [catalogue?.events.length, query.reload, show]);
   const rows = result?.items ?? [];
-  const grid: PageResult<WebhookSubscription> = { rows, page, pageSize: PAGE_SIZE,
-    total: (page - 1) * PAGE_SIZE + rows.length + (result?.nextCursor ? 1 : 0), continuation: result?.nextCursor ?? null,
+  const grid: PageResult<WebhookSubscription> = { rows, page: query.page, pageSize: query.pageSize,
+    total: (query.page - 1) * query.pageSize + rows.length + (result?.nextCursor ? 1 : 0), continuation: result?.nextCursor ?? null,
     totalIsExact: false, hasMore: !!result?.nextCursor };
   return <main className="content" id="main" tabIndex={-1}>
     <PageHeader eyebrow="Settings · Developers · tenant administrators only" title="Webhooks"
       sub="Yojana tells your applications when something changes. Each message is signed so the application can check it came from Yojana."
       actions={permitted && <><Link className="btn" to="/settings/developers/docs?tab=events"><Icon name="book" />Event catalogue</Link><button type="button" className="btn primary" onClick={() => setNewOpen(value => !value)}><Icon name="plus" />New endpoint</button></>} />
     {!permitted ? <div className="note bad"><strong>Tenant administrator access is required.</strong></div> : <div className="stack">
-      <ErrorNote error={error} onReload={() => void load()} />
+      <ErrorNote error={error ?? query.error} onReload={query.reload} />
       <KpiStrip label="Webhook figures" kpis={[
         { label: "Delivered, last 24 h", value: result?.summary.deliveredLast24Hours.toLocaleString() ?? "—", detail: "successful deliveries" },
         { label: "Waiting to retry", value: result?.summary.waitingToRetry.toLocaleString() ?? "—", detail: "retried for up to 24 h" },
         { label: "Parked", value: result?.summary.parked.toLocaleString() ?? "—", detail: "redeliver after the endpoint recovers" },
         { label: "Paused endpoints", value: result?.summary.pausedEndpoints.toLocaleString() ?? "—", detail: "administrators are e-mailed" },
       ]} />
-      {newOpen && catalogue && <NewWebhookForm events={catalogue.events.filter(event => event.type !== "endpoint.verify")} onCreated={(created) => { void load(1, undefined); show(created); }} onCancel={() => setNewOpen(false)} />}
+      {newOpen && catalogue && <NewWebhookForm events={catalogue.events.filter(event => event.type !== "endpoint.verify")} onCreated={(created) => { query.reload(); show(created); }} onCancel={() => setNewOpen(false)} />}
       <RetentionSetting value={settings} onChanged={setSettings} />
       <section className="card" aria-labelledby="webhook-list"><div className="card-header"><h2 id="webhook-list">Endpoints</h2><span className="meta">needing attention first</span></div>
-        <DataGrid columns={columns} page={grid} rowId={row => row.id} onPage={target => { if (target < page || result?.nextCursor) void load(target, cursors[target - 1]); }} onRowClick={show} loading={loading} emptyText="No webhook endpoints have been registered." viewportHeight={560} />
+        <DataGrid columns={columns} page={grid} rowId={row => row.id} onPage={query.onPage} onRowClick={show} loading={query.loading} emptyText="No webhook endpoints have been registered." viewportHeight={560}
+          gridId="developer-webhooks" userId={session.user.id} sort={query.sort} defaultSort={{ key: "attention", dir: "asc" }} onSort={query.onSort}
+          pageSize={query.pageSize} defaultPageSize={PAGE_SIZE} onPageSize={query.onPageSize} />
       </section>
     </div>}
   </main>;

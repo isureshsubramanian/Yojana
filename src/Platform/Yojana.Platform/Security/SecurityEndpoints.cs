@@ -6,7 +6,9 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Yojana.Platform.Contracts;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Data.Platform;
 using Yojana.Platform.Data.Platform.Entities;
@@ -15,6 +17,10 @@ namespace Yojana.Platform.Security;
 
 public static class SecurityEndpoints
 {
+    internal static readonly SortedPage<SecurityEvent, Guid> EventPages = new("when", row => row.Id,
+        new SortColumn<SecurityEvent, DateTime>("when", row => row.OccurredAt, SortDirection.Descending),
+        new SortColumn<SecurityEvent, string>("event", row => row.Kind));
+
     public static IEndpointRouteBuilder MapYojanaSecurityEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var auth = endpoints.MapGroup("/api/auth");
@@ -111,12 +117,19 @@ public static class SecurityEndpoints
     }
 
     private static async Task<IResult> SecurityEventsAsync(string? kind, Guid? userId, DateTime? from,
-        DateTime? to, string? cursor, int? take, SecurityEventQueries queries, CancellationToken cancellationToken)
+        DateTime? to, string? sort, string? dir, string? cursor, int? take, SecurityEventQueries queries,
+        CancellationToken cancellationToken)
     {
         try
         {
-            return Results.Ok(await queries.PageAsync(kind, userId, from, to, cursor, take ?? 50,
+            return Results.Ok(await queries.PageAsync(kind, userId, from, to, sort, dir, cursor, take,
                 cancellationToken));
+        }
+        catch (CommandRefusedException exception)
+        {
+            return Results.Problem(title: exception.Rule, detail: exception.Message,
+                statusCode: StatusCodes.Status400BadRequest,
+                extensions: new Dictionary<string, object?> { ["rule"] = exception.Rule });
         }
         catch (ArgumentException exception)
         {

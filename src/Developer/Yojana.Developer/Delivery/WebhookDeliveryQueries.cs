@@ -1,5 +1,3 @@
-using System.Globalization;
-using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Developer.Contracts;
 using Yojana.Developer.Data;
@@ -15,7 +13,7 @@ namespace Yojana.Developer.Delivery;
 public sealed class WebhookDeliveryQueries(DeveloperDbContext db, ITenantContext tenant, IClock clock)
 {
     public async Task<WebhookDeliveryPage> ListAsync(Guid subscriptionId, string? status,
-        string? eventType, DateTime? from, DateTime? to, string? cursor, int? requestedTake,
+        string? eventType, DateTime? from, DateTime? to, string? sort, string? direction, string? cursor, int? take,
         CancellationToken ct)
     {
         if (status is not null && status is not (WebhookDeliveryStatus.Pending
@@ -25,8 +23,7 @@ public sealed class WebhookDeliveryQueries(DeveloperDbContext db, ITenantContext
         if (eventType is not null && !PublicEventTypes.Subscribable.Contains(eventType, StringComparer.Ordinal))
             throw new CommandRefusedException("webhook_event_type_unknown", "The event type filter is not in public catalogue v1.");
         if (from > to) throw new CommandRefusedException("webhook_date_range_invalid", "From must not be after to.");
-        var take = Math.Clamp(requestedTake ?? 50, 1, 200);
-        var after = Decode(cursor);
+        var paging = DeveloperEndpoints.DeliveryPages.Parse(sort, direction, take, cursor);
         var baseQuery = from delivery in db.Deliveries.AsNoTracking()
                     join publicEvent in db.PublicEvents.AsNoTracking()
                         on new { delivery.TenantId, delivery.EventId }
@@ -47,21 +44,21 @@ public sealed class WebhookDeliveryQueries(DeveloperDbContext db, ITenantContext
             counts.GetValueOrDefault(WebhookDeliveryStatus.Discarded));
         var query = status is null ? baseQuery : baseQuery.Where(row => row.Delivery.Status == status);
         var total = status is null ? statusCounts.All : counts.GetValueOrDefault(status);
-        if (after is { } key) query = query.Where(row => row.Delivery.CreatedAt < key.At
-            || row.Delivery.CreatedAt == key.At && row.Delivery.DeliveryId.CompareTo(key.Id) < 0);
-        var rows = await query.OrderByDescending(row => row.Delivery.CreatedAt)
-            .ThenByDescending(row => row.Delivery.DeliveryId)
-            .Take(take + 1).ToListAsync(ct);
-        var selected = rows.Take(take).ToList();
-        var ids = selected.Select(row => row.Delivery.DeliveryId).ToList();
+        var deliveries = await paging.Apply(query.Select(row => row.Delivery))
+            .Take(paging.Take + 1).ToListAsync(ct);
+        var selected = deliveries.Take(paging.Take).ToList();
+        var ids = selected.Select(row => row.DeliveryId).ToList();
+        var eventRows = ids.Count == 0 ? [] : await baseQuery
+            .Where(row => ids.Contains(row.Delivery.DeliveryId)).ToListAsync(ct);
+        var eventsByDelivery = eventRows.ToDictionary(row => row.Delivery.DeliveryId);
         var latestAttempts = ids.Count == 0 ? [] : (await db.DeliveryAttempts.AsNoTracking()
                 .Where(row => row.TenantId == tenant.TenantId && ids.Contains(row.DeliveryId))
                 .OrderByDescending(row => row.AttemptedAt).ThenByDescending(row => row.AttemptId).ToListAsync(ct))
             .GroupBy(row => row.DeliveryId).ToDictionary(group => group.Key, group => group.First());
-        var page = selected.Select(row => Row(row.Delivery, row.EventType, row.Body,
-            latestAttempts.GetValueOrDefault(row.Delivery.DeliveryId))).ToList();
-        return new(page, rows.Count > take && page.Count > 0
-            ? Encode(page[^1].CreatedAt, page[^1].Id) : null, total, statusCounts);
+        var page = selected.Select(row => Row(row, eventsByDelivery[row.DeliveryId].EventType,
+            eventsByDelivery[row.DeliveryId].Body, latestAttempts.GetValueOrDefault(row.DeliveryId))).ToList();
+        return new(page, deliveries.Count > paging.Take && selected.Count > 0
+            ? paging.CursorFor(selected[^1]) : null, total, statusCounts);
     }
 
     public async Task<WebhookDeliveryDetail?> DetailAsync(Guid subscriptionId, Guid deliveryId,
@@ -178,22 +175,4 @@ public sealed class WebhookDeliveryQueries(DeveloperDbContext db, ITenantContext
         catch (System.Text.Json.JsonException) { return null; }
     }
 
-    private static string Encode(DateTime at, Guid id) => Convert.ToBase64String(Encoding.UTF8.GetBytes(
-        at.Ticks.ToString(CultureInfo.InvariantCulture) + ":" + id.ToString("N")));
-
-    private static (DateTime At, Guid Id)? Decode(string? cursor)
-    {
-        if (string.IsNullOrWhiteSpace(cursor)) return null;
-        try
-        {
-            var parts = Encoding.UTF8.GetString(Convert.FromBase64String(cursor)).Split(':');
-            return parts.Length == 2 && long.TryParse(parts[0], CultureInfo.InvariantCulture, out var ticks)
-                && Guid.TryParseExact(parts[1], "N", out var id)
-                ? (new DateTime(ticks, DateTimeKind.Utc), id) : null;
-        }
-        catch (FormatException)
-        {
-            throw new CommandRefusedException("webhook_delivery_cursor_invalid", "The delivery cursor is invalid.");
-        }
-    }
 }

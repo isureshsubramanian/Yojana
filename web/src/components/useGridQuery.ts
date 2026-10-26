@@ -24,6 +24,10 @@ export function resetGridQuery(state: GridQueryState, patch: Partial<Pick<GridQu
   return { ...state, ...patch, page: 1, cursor: null };
 }
 
+export function allowedGridSort(sort: GridSort, allowed: readonly string[] | undefined, fallback: GridSort): GridSort {
+  return allowed && !allowed.includes(sort.key) ? fallback : sort;
+}
+
 /** Shared grid state for POST-backed previews that cannot be fetched by the GET-only query hook. */
 export function useGridState(gridId: string, userId: string, defaultSort: GridSort, defaultSize: number) {
   const storageKey = gridPreferenceKey(userId, gridId);
@@ -52,13 +56,23 @@ export function useGridQuery<TSchema extends z.ZodMiniType>(endpoint: string, sc
   const filterText = options.params?.toString() ?? "";
   const previousFilter = useRef(filterText);
   const paging = options.paging ?? "offset";
+  const allowedSortKeys = options.sortKeys?.join("\u0000") ?? "";
+  const activeSort = allowedGridSort(state.sort, options.sortKeys, options.defaultSort);
   const queryString = useMemo(() => {
     const query = new URLSearchParams(filterText);
-    query.set("sort", state.sort.key); query.set("dir", state.sort.dir); query.set("take", String(state.pageSize));
+    query.set("sort", activeSort.key); query.set("dir", activeSort.dir); query.set("take", String(state.pageSize));
     if (paging === "offset") query.set("skip", String((state.page - 1) * state.pageSize));
     else if (state.cursor) query.set("cursor", state.cursor);
     return query.toString();
-  }, [filterText, paging, state]);
+  }, [activeSort.dir, activeSort.key, filterText, paging, state.cursor, state.page, state.pageSize]);
+
+  useEffect(() => {
+    if (state.sort.key === activeSort.key && state.sort.dir === activeSort.dir) return;
+    setState(current => resetGridQuery(current, { sort: activeSort }));
+    setCursors(new Map([[1, null]]));
+    writeGridPreference(storageKey, { sort: activeSort, pageSize: state.pageSize },
+      typeof window === "undefined" ? null : window.localStorage);
+  }, [activeSort.dir, activeSort.key, allowedSortKeys, state.pageSize, state.sort.dir, state.sort.key, storageKey]);
 
   useEffect(() => {
     if (previousFilter.current !== filterText) {
@@ -98,5 +112,5 @@ export function useGridQuery<TSchema extends z.ZodMiniType>(endpoint: string, sc
     setState(current => ({ ...current, page, cursor: cursors.get(page) ?? null }));
   };
   const reload = useCallback(() => setState(current => ({ ...current })), []);
-  return { data, loading, error, queryString, ...state, onPage, onSort: (sort: GridSort) => change({ sort }), onPageSize: (pageSize: number) => change({ pageSize }), reload };
+  return { data, loading, error, queryString, ...state, sort: activeSort, onPage, onSort: (sort: GridSort) => change({ sort }), onPageSize: (pageSize: number) => change({ pageSize }), reload };
 }

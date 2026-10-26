@@ -68,6 +68,78 @@ public sealed class SortColumn<TRow, TValue>(string key, Expression<Func<TRow, T
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 }
 
+/// <summary>A declared primary sort with an indexed secondary order before the unique row tie-breaker.</summary>
+public sealed class CompoundSortColumn<TRow, TPrimary, TSecondary>(string key,
+    Expression<Func<TRow, TPrimary>> primary, Expression<Func<TRow, TSecondary>> secondary,
+    SortDirection defaultDirection = SortDirection.Ascending,
+    SortDirection secondaryDirection = SortDirection.Ascending) : ISortColumn<TRow>
+    where TPrimary : IComparable<TPrimary>
+    where TSecondary : IComparable<TSecondary>
+{
+    public string Key { get; } = key;
+    public SortDirection DefaultDirection { get; } = defaultDirection;
+    public LambdaExpression ValueExpression => primary;
+
+    public IOrderedQueryable<TRow> Order(IQueryable<TRow> query, SortDirection direction)
+    {
+        var ordered = direction == SortDirection.Ascending
+            ? query.OrderBy(primary) : query.OrderByDescending(primary);
+        return secondaryDirection == SortDirection.Ascending
+            ? ordered.ThenBy(secondary) : ordered.ThenByDescending(secondary);
+    }
+
+    public IQueryable<TRow> After<TTie>(IQueryable<TRow> query, SortDirection direction,
+        JsonElement lastValue, Expression<Func<TRow, TTie>> tieExpression, JsonElement lastTie)
+        where TTie : IComparable<TTie>
+    {
+        var values = lastValue.Deserialize<CompoundCursor<TPrimary, TSecondary>>(JsonOptions)
+            ?? throw InvalidCursor();
+        var tieAtCursor = lastTie.Deserialize<TTie>(JsonOptions)!;
+        var row = Expression.Parameter(typeof(TRow), "row");
+        var selectedPrimary = Replace(primary.Body, primary.Parameters[0], row);
+        var selectedSecondary = Replace(secondary.Body, secondary.Parameters[0], row);
+        var selectedTie = Replace(tieExpression.Body, tieExpression.Parameters[0], row);
+        var primaryConstant = Expression.Constant(values.Primary);
+        var secondaryConstant = Expression.Constant(values.Secondary);
+        var primaryAfter = Compare(selectedPrimary, primaryConstant, direction);
+        var primaryEqual = Expression.Equal(selectedPrimary, primaryConstant);
+        var secondaryAfter = Compare(selectedSecondary, secondaryConstant, secondaryDirection);
+        var secondaryEqual = Expression.Equal(selectedSecondary, secondaryConstant);
+        var tieAfter = Compare(selectedTie, Expression.Constant(tieAtCursor), SortDirection.Ascending);
+        var predicate = Expression.Lambda<Func<TRow, bool>>(
+            Expression.OrElse(primaryAfter, Expression.AndAlso(primaryEqual,
+                Expression.OrElse(secondaryAfter, Expression.AndAlso(secondaryEqual, tieAfter)))), row);
+        return query.Where(predicate);
+    }
+
+    public JsonElement ReadValue(TRow row) => JsonSerializer.SerializeToElement(
+        new CompoundCursor<TPrimary, TSecondary>(primary.Compile()(row), secondary.Compile()(row)), JsonOptions);
+
+    private static BinaryExpression Compare(Expression left, Expression right, SortDirection direction)
+    {
+        var compareTo = left.Type.GetMethod(nameof(IComparable<TPrimary>.CompareTo), [left.Type])
+            ?? throw new InvalidOperationException($"{left.Type.Name} is not comparable.");
+        var compared = Expression.Call(left, compareTo, right);
+        return direction == SortDirection.Ascending
+            ? Expression.GreaterThan(compared, Expression.Constant(0))
+            : Expression.LessThan(compared, Expression.Constant(0));
+    }
+
+    private static Expression Replace(Expression body, ParameterExpression from, ParameterExpression to) =>
+        new ParameterReplacement(from, to).Visit(body)!;
+
+    private static CommandRefusedException InvalidCursor() =>
+        new("cursor_invalid", "The paging cursor is not valid.", "return to the first page");
+
+    private sealed class ParameterReplacement(ParameterExpression from, ParameterExpression to) : ExpressionVisitor
+    {
+        protected override Expression VisitParameter(ParameterExpression node) => node == from ? to : base.VisitParameter(node);
+    }
+
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private sealed record CompoundCursor<TFirst, TSecond>(TFirst Primary, TSecond Secondary);
+}
+
 public interface ISortColumn<TRow>
 {
     string Key { get; }

@@ -69,6 +69,7 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
             b.HasIndex(x => new { x.TenantId, x.AskedAt, x.QuestionId })
                 .IncludeProperties(x => new { x.Status, x.RecordKind, x.RecordId, x.DirectedToRole,
                     x.AcceptedAt });
+            b.HasIndex(x => new { x.TenantId, x.Status, x.QuestionId });
         });
         modelBuilder.Entity<QuestionReply>(b =>
         {
@@ -134,6 +135,7 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
             b.HasIndex(x => new { x.TenantId, x.SourceQuestionId }).IsUnique();
             b.HasIndex(x => new { x.TenantId, x.Status, x.LastSavedAt, x.EntryId });
             b.HasIndex(x => new { x.TenantId, x.NeedsReview, x.NeedsReviewSince, x.EntryId });
+            b.HasIndex(x => new { x.TenantId, x.PublishedAt, x.EntryId });
             b.HasOne<Question>().WithMany().HasForeignKey(x => new { x.TenantId, x.SourceQuestionId })
                 .OnDelete(DeleteBehavior.Restrict);
         });

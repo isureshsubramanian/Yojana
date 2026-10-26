@@ -7,9 +7,11 @@ using Yojana.Knowledge.Data;
 using Yojana.Knowledge.Data.Entities;
 using Yojana.Knowledge.Questions;
 using Yojana.Platform.Contracts.Records;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
+using CommandRefusedException = Yojana.Platform.Contracts.CommandRefusedException;
 
 namespace Yojana.Knowledge.Entries;
 
@@ -46,6 +48,14 @@ public sealed record EntryReviewPage(IReadOnlyList<EntryReviewListItem> Items, s
 public sealed record EntryFieldChange(string Field, string Before, string After);
 public sealed record EntryTagChoices(IReadOnlyList<EntryTagView> Roles, IReadOnlyList<EntryTagView> Tasks,
     IReadOnlyList<EntryTagView> ItemFamilies, IReadOnlyList<EntryTagView> ClaimCauses);
+
+public sealed class EntryReviewProjection
+{
+    public Guid EntryId { get; init; }
+    public DateTime ActivityAt { get; init; }
+    public required KnowledgeEntry Entry { get; init; }
+    public int? Round { get; init; }
+}
 
 public sealed class KnowledgeEntryQueries(KnowledgeDbContext db, RecordReferenceLookup records,
     IUserDirectory users, IQuestionTextSearch textSearch, EntryReviewerSettings reviewerSettings,
@@ -124,9 +134,14 @@ public sealed class KnowledgeEntryQueries(KnowledgeDbContext db, RecordReference
                     && entry.AuthorId != viewer.UserId));
     }
 
-    public async Task<KnowledgeEntryPage> BrowseAsync(string? query, string? role, string? task, string? cursor,
-        int take, CancellationToken cancellationToken)
+    public Task<KnowledgeEntryPage> BrowseAsync(string? query, string? role, string? task, string? cursor,
+        int? requestedTake, CancellationToken cancellationToken) =>
+        BrowseAsync(query, role, task, null, null, cursor, requestedTake, cancellationToken);
+
+    public async Task<KnowledgeEntryPage> BrowseAsync(string? query, string? role, string? task, string? sort,
+        string? direction, string? cursor, int? requestedTake, CancellationToken cancellationToken)
     {
+        var take = requestedTake ?? 25;
         ValidateTake(take);
         var roles = await FacetsAsync(KnowledgeTagKind.Role, cancellationToken);
         var tasks = await FacetsAsync(KnowledgeTagKind.Task, cancellationToken);
@@ -134,6 +149,10 @@ public sealed class KnowledgeEntryQueries(KnowledgeDbContext db, RecordReference
         string? next;
         if (!string.IsNullOrWhiteSpace(query))
         {
+            if (!string.IsNullOrWhiteSpace(sort) && sort != "relevance")
+                throw new CommandRefusedException("sort_not_supported", $"Sort '{sort}' is not supported while searching.");
+            if (!string.IsNullOrWhiteSpace(direction) && direction != "desc")
+                throw new CommandRefusedException("sort_not_supported", $"Sort direction '{direction}' is not supported while searching.");
             var before = string.IsNullOrWhiteSpace(cursor) ? null : DecodeSearch(cursor);
             rows = [];
             while (rows.Count < take + 1)
@@ -157,57 +176,57 @@ public sealed class KnowledgeEntryQueries(KnowledgeDbContext db, RecordReference
         else
         {
             var filtered = FilteredEntries(role, task);
-            if (!string.IsNullOrWhiteSpace(cursor))
-            {
-                var (at, id) = Decode(cursor);
-                filtered = filtered.Where(x => x.PublishedAt < at || (x.PublishedAt == at && x.EntryId.CompareTo(id) < 0));
-            }
-            var found = await filtered.OrderByDescending(x => x.PublishedAt).ThenByDescending(x => x.EntryId)
-                .Take(take + 1).ToListAsync(cancellationToken);
+            var paging = KnowledgeEndpoints.EntryPages.Parse(sort, direction, requestedTake, cursor,
+                defaultTake: 25);
+            var found = await paging.Apply(filtered).Take(paging.Take + 1).ToListAsync(cancellationToken);
             rows = found.Select(x => (x, 0)).ToList();
             var pageLast = found.Take(take).LastOrDefault();
-            next = found.Count > take && pageLast is not null ? Encode(pageLast.PublishedAt!.Value, pageLast.EntryId) : null;
+            next = found.Count > take && pageLast is not null ? paging.CursorFor(pageLast) : null;
         }
         var page = rows.Take(take).ToList();
         var items = await ListItemsAsync(page, cancellationToken);
         return new KnowledgeEntryPage(items, next, roles, tasks);
     }
 
-    public async Task<EntryReviewPage> ReviewQueueAsync(string? filter, string? cursor, int take,
+    public Task<EntryReviewPage> ReviewQueueAsync(string? filter, string? cursor, int? requestedTake,
+        RecordReferenceViewer viewer, CancellationToken cancellationToken) =>
+        ReviewQueueAsync(filter, null, null, cursor, requestedTake, viewer, cancellationToken);
+
+    public async Task<EntryReviewPage> ReviewQueueAsync(string? filter, string? sort, string? direction,
+        string? cursor, int? requestedTake,
         RecordReferenceViewer viewer,
         CancellationToken cancellationToken)
     {
+        var take = requestedTake ?? 25;
         ValidateTake(take);
+        var paging = KnowledgeEndpoints.ReviewPages.Parse(sort, direction, requestedTake, cursor,
+            defaultTake: 25);
         var roles = await reviewerSettings.GetAsync(cancellationToken);
         if (!HasReviewerRole(viewer, roles)) throw new QuestionRuleException("entry_review_role_required",
             "A role selected in the tenant's knowledge-review setting is required.");
         if (filter is not (null or "pending" or "needs_review"))
             throw new QuestionRuleException("entry_review_filter_unknown", "The review filter is unknown.");
         if (filter == "needs_review")
-            return await NeedsReviewQueueAsync(cursor, take, viewer, cancellationToken);
+            return await NeedsReviewQueueAsync(paging, viewer, cancellationToken);
         var query = from entry in db.Entries.AsNoTracking()
             join round in db.EntryReviewRounds.AsNoTracking()
                 on new { entry.TenantId, entry.EntryId } equals new { round.TenantId, round.EntryId }
             where entry.TenantId == tenant.TenantId && entry.Status == KnowledgeEntryStatus.InReview
                 && round.Decision == null && entry.AuthorId != viewer.UserId
-            select new { Entry = entry, Round = round };
-        if (!string.IsNullOrWhiteSpace(cursor))
-        {
-            var (at, id) = Decode(cursor);
-            query = query.Where(x => x.Round.SubmittedAt > at
-                || (x.Round.SubmittedAt == at && x.Entry.EntryId.CompareTo(id) > 0));
-        }
-        var rows = await query.OrderBy(x => x.Round.SubmittedAt).ThenBy(x => x.Entry.EntryId)
-            .Take(take + 1).ToListAsync(cancellationToken);
+            select new EntryReviewProjection
+            {
+                EntryId = entry.EntryId, ActivityAt = round.SubmittedAt, Entry = entry, Round = round.Round,
+            };
+        var rows = await paging.Apply(query).Take(paging.Take + 1).ToListAsync(cancellationToken);
         var page = rows.Take(take).ToList();
         var names = await users.DisplayNamesAsync(page.Select(x => x.Entry.AuthorId.ToString("D")).Distinct().ToList(),
             cancellationToken);
         var reasons = await ActiveReasonsAsync(page.Select(x => x.Entry.EntryId).ToList(), cancellationToken);
         return new EntryReviewPage(page.Select(x => new EntryReviewListItem(x.Entry.EntryId, x.Entry.Title,
                 x.Entry.CurrentVersion, names.GetValueOrDefault(x.Entry.AuthorId.ToString("D"), "Former staff member"),
-                x.Round.SubmittedAt, x.Round.Round, x.Entry.Status, x.Entry.NeedsReview,
+                x.ActivityAt, x.Round, x.Entry.Status, x.Entry.NeedsReview,
                 reasons.GetValueOrDefault(x.Entry.EntryId, []), false)).ToList(),
-            rows.Count > take && page.Count > 0 ? Encode(page[^1].Round.SubmittedAt, page[^1].Entry.EntryId) : null);
+            rows.Count > take && page.Count > 0 ? paging.CursorFor(page[^1]) : null);
     }
 
     public async Task<IReadOnlyList<EntryFieldChange>?> ChangesSinceLastRoundAsync(Guid entryId,
@@ -309,29 +328,26 @@ public sealed class KnowledgeEntryQueries(KnowledgeDbContext db, RecordReference
         }).ToList();
     }
 
-    private async Task<EntryReviewPage> NeedsReviewQueueAsync(string? cursor, int take,
-        RecordReferenceViewer viewer, CancellationToken cancellationToken)
+    private async Task<EntryReviewPage> NeedsReviewQueueAsync(
+        SortedPageRequest<EntryReviewProjection, Guid> paging, RecordReferenceViewer viewer,
+        CancellationToken cancellationToken)
     {
         var query = db.Entries.AsNoTracking().Where(x => x.TenantId == tenant.TenantId && x.NeedsReview
-            && x.PublishedVersion != null && x.Status != KnowledgeEntryStatus.Retired && x.AuthorId != viewer.UserId);
-        if (!string.IsNullOrWhiteSpace(cursor))
-        {
-            var (at, id) = Decode(cursor);
-            query = query.Where(x => x.NeedsReviewSince > at
-                || (x.NeedsReviewSince == at && x.EntryId.CompareTo(id) > 0));
-        }
-        var rows = await query.OrderBy(x => x.NeedsReviewSince).ThenBy(x => x.EntryId)
-            .Take(take + 1).ToListAsync(cancellationToken);
-        var page = rows.Take(take).ToList();
-        var names = await users.DisplayNamesAsync(page.Select(x => x.AuthorId.ToString("D")).Distinct().ToList(),
+                && x.PublishedVersion != null && x.Status != KnowledgeEntryStatus.Retired && x.AuthorId != viewer.UserId)
+            .Select(x => new EntryReviewProjection
+            {
+                EntryId = x.EntryId, ActivityAt = x.NeedsReviewSince!.Value, Entry = x, Round = null,
+            });
+        var rows = await paging.Apply(query).Take(paging.Take + 1).ToListAsync(cancellationToken);
+        var page = rows.Take(paging.Take).ToList();
+        var names = await users.DisplayNamesAsync(page.Select(x => x.Entry.AuthorId.ToString("D")).Distinct().ToList(),
             cancellationToken);
         var reasons = await ActiveReasonsAsync(page.Select(x => x.EntryId).ToList(), cancellationToken);
-        return new EntryReviewPage(page.Select(x => new EntryReviewListItem(x.EntryId, x.Title, x.CurrentVersion,
-                names.GetValueOrDefault(x.AuthorId.ToString("D"), "Former staff member"),
-                x.NeedsReviewSince!.Value, null, x.Status, true, reasons.GetValueOrDefault(x.EntryId, []),
-                x.Status == KnowledgeEntryStatus.Published)).ToList(),
-            rows.Count > take && page.Count > 0
-                ? Encode(page[^1].NeedsReviewSince!.Value, page[^1].EntryId) : null);
+        return new EntryReviewPage(page.Select(x => new EntryReviewListItem(x.EntryId, x.Entry.Title,
+                x.Entry.CurrentVersion, names.GetValueOrDefault(x.Entry.AuthorId.ToString("D"), "Former staff member"),
+                x.ActivityAt, null, x.Entry.Status, true, reasons.GetValueOrDefault(x.EntryId, []),
+                x.Entry.Status == KnowledgeEntryStatus.Published)).ToList(),
+            rows.Count > paging.Take && page.Count > 0 ? paging.CursorFor(page[^1]) : null);
     }
 
     private async Task<Dictionary<Guid, IReadOnlyList<EntryReviewReasonView>>> ActiveReasonsAsync(
@@ -415,7 +431,10 @@ public sealed class KnowledgeEntryQueries(KnowledgeDbContext db, RecordReference
     }
     private static void ValidateTake(int take)
     {
-        if (take is < 1 or > 100) throw new QuestionRuleException("page_size_invalid", "Take must be between 1 and 100.");
+        if (take > SortedPage<KnowledgeEntry, Guid>.MaximumTake)
+            throw new CommandRefusedException("page_size_too_large",
+                $"Page size cannot exceed {SortedPage<KnowledgeEntry, Guid>.MaximumTake}.");
+        if (take < 1) throw new CommandRefusedException("page_size_invalid", "Page size must be at least 1.");
     }
     private static string Encode(DateTime at, Guid id) => Convert.ToBase64String(Encoding.UTF8.GetBytes($"{at.Ticks}:{id:D}"));
     private static string EncodeSearch(int rank, Guid id) => Convert.ToBase64String(Encoding.UTF8.GetBytes($"{rank}:{id:D}"));

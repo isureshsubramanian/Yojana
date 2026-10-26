@@ -2,12 +2,17 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Yojana.Platform.Contracts;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Platform.Contracts.Security;
 
 namespace Yojana.Platform.Security;
 
 public static class UserManagementEndpoints
 {
+    internal static readonly SortedPage<UserListProjection, string> Pages = new("default", row => row.PageKey,
+        new SortColumn<UserListProjection, string>("default", row => row.DisplayName));
+
     public static IEndpointRouteBuilder MapYojanaUserManagementEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var users = endpoints.MapGroup("/api/security/users")
@@ -21,11 +26,12 @@ public static class UserManagementEndpoints
         return endpoints;
     }
 
-    private static async Task<IResult> PageAsync(string? status, string? role, string? q, string? cursor, int? take,
-        UserManagementService service, CancellationToken cancellationToken)
+    private static async Task<IResult> PageAsync(string? status, string? role, string? q, string? sort, string? dir,
+        string? cursor, int? take, UserManagementService service, CancellationToken cancellationToken)
     {
-        try { return Results.Ok(await service.PageAsync(status, role, q, cursor, take ?? 50, cancellationToken)); }
+        try { return Results.Ok(await service.PageAsync(status, role, q, sort, dir, cursor, take, cancellationToken)); }
         catch (UserManagementInputException exception) { return Problem(exception.Code, exception.Message, 400); }
+        catch (CommandRefusedException exception) { return Problem(exception.Rule, exception.Message, 400); }
     }
 
     private static async Task<IResult> SummaryAsync(UserManagementService service,

@@ -184,6 +184,9 @@ namespace Yojana.Developer.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_api_client_tenant_id_name");
 
+                    b.HasIndex("TenantId", "Status", "ClientId")
+                        .HasDatabaseName("ix_api_client_tenant_id_status_client_id");
+
                     b.HasIndex("TenantId", "Status", "CreatedAt", "ClientId")
                         .HasDatabaseName("ix_api_client_tenant_id_status_created_at_client_id");
 
@@ -467,6 +470,9 @@ namespace Yojana.Developer.Migrations
 
                     b.HasIndex("TenantId", "SubscriptionId", "CreatedAt", "DeliveryId")
                         .HasDatabaseName("ix_webhook_delivery_tenant_id_subscription_id_created_at_delivery_id");
+
+                    b.HasIndex("TenantId", "SubscriptionId", "Status", "DeliveryId")
+                        .HasDatabaseName("ix_webhook_delivery_tenant_id_subscription_id_status_delivery_id");
 
                     b.HasIndex("TenantId", "SubscriptionId", "Status", "QueuePosition")
                         .HasDatabaseName("ix_webhook_delivery_tenant_id_subscription_id_status_queue_position");

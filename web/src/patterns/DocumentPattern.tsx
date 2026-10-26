@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { DataGrid, FindBar, KpiStrip, StatusBadge, type GridColumn } from "../components";
+import { DataGrid, FindBar, KpiStrip, StatusBadge, useGridState, type GridColumn } from "../components";
+import { useSession } from "../session/session";
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs } from "../shell/PageHeader";
 import { DOCUMENT_TOTAL, documentPage, type DocumentSerialRow } from "./fixtures";
@@ -12,16 +13,17 @@ function Highlight({ text, prefix }: { text: string; prefix: string }) {
 
 /** Document pattern: a thousand serials with find-within, facets, match highlight and matches as a selection set. */
 export function Component() {
+  const session = useSession();
   const [query, setQuery] = useState("2506-4934");
   const [facet, setFacet] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const data = documentPage(query, facet, page);
+  const grid = useGridState("patterns-document", session.user.id, { key: "document", dir: "asc" }, 50);
+  const data = documentPage(query, facet, grid.page, grid.pageSize, grid.sort.key, grid.sort.dir);
   const columns: GridColumn<DocumentSerialRow>[] = [
-    { key: "serial", label: "Serial", width: 15, render: (r) => <Link className="serial" to="/patterns/detail"><Highlight text={r.serial} prefix={query.trim()} /></Link> },
-    { key: "line", label: "Line", width: 6, numeric: true, render: (r) => r.line },
-    { key: "item", label: "Item", width: 9, render: (r) => r.item },
-    { key: "status", label: "Status", width: 16, render: (r) => <StatusBadge tone={r.tone}>{r.status}</StatusBadge> },
+    { key: "serial", label: "Serial", width: 15, sort: { key: "serial", defaultDir: "asc" }, render: (r) => <Link className="serial" to="/patterns/detail"><Highlight text={r.serial} prefix={query.trim()} /></Link> },
+    { key: "line", label: "Line", width: 6, numeric: true, sort: { key: "line", defaultDir: "asc" }, render: (r) => r.line },
+    { key: "item", label: "Item", width: 9, sort: { key: "item", defaultDir: "asc" }, render: (r) => r.item },
+    { key: "status", label: "Status", width: 16, sort: { key: "status", defaultDir: "asc" }, render: (r) => <StatusBadge tone={r.tone}>{r.status}</StatusBadge> },
     { key: "owner", label: "Owner · custody", width: 28, render: (r) => <>{r.owner}<span className="sub">{r.ownerSub}</span></> },
     { key: "note", label: "Note", width: 22, render: (r) => r.note ?? <span className="muted">—</span> },
   ];
@@ -54,15 +56,17 @@ export function Component() {
             <FindBar
               ariaLabel="Find a serial in this document"
               query={query}
-              onQuery={(q) => { setQuery(q); setPage(1); }}
+              onQuery={(q) => { setQuery(q); grid.reset(); }}
               facets={[{ id: "all", label: "All", count: DOCUMENT_TOTAL }, { id: "exceptions", label: "Exceptions", count: 4 }, { id: "line-4", label: "Line 4", count: 250 }]}
               activeFacet={facet}
-              onFacet={(f) => { setFacet(f === "all" ? null : f); setPage(1); }}
+              onFacet={(f) => { setFacet(f === "all" ? null : f); grid.reset(); }}
               matchCount={query.trim() ? data.matches : undefined}
               status={query.trim() ? <><strong>{data.matches.toLocaleString()}</strong> of {DOCUMENT_TOTAL.toLocaleString()} match “{query.trim()}” · prefix on internal serial, SGTIN and customer serial</> : <>{DOCUMENT_TOTAL.toLocaleString()} serials · 20 pages of 50</>}
               onUseMatches={() => setSelected(new Set(data.rows.map((r) => r.id)))}
             />
-            <DataGrid columns={columns} page={data} rowId={(r) => r.id} onPage={setPage} selection={{ selected, onChange: setSelected, label: (r) => r.serial }} isHit={() => query.trim().length > 0} viewportHeight={560}
+            <DataGrid columns={columns} page={data} rowId={(r) => r.id} onPage={grid.onPage} selection={{ selected, onChange: setSelected, label: (r) => r.serial }} isHit={() => query.trim().length > 0} viewportHeight={560}
+              gridId="patterns-document" userId={session.user.id} sort={grid.sort} defaultSort={{ key: "document", dir: "asc" }} onSort={grid.onSort}
+              pageSize={grid.pageSize} defaultPageSize={50} onPageSize={grid.onPageSize}
               footerNote={query.trim() ? "Clear the find box to page all 1,000" : undefined} />
           </section>
         </div>

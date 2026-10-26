@@ -4,7 +4,9 @@ using Microsoft.EntityFrameworkCore;
 using Yojana.Knowledge.Data;
 using Yojana.Knowledge.Data.Entities;
 using Yojana.Knowledge.Entries;
+using Yojana.Platform.Contracts;
 using Yojana.Platform.Contracts.Records;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
@@ -167,10 +169,20 @@ public sealed class QuestionQueries(KnowledgeDbContext db, RecordReferenceLookup
         }
     }
 
+    public Task<MyQuestionPage> MyAsync(string? scope, string? status, string? recordKind, string? age,
+        string? search, string? cursor, int? requestedTake, RecordReferenceViewer viewer,
+        CancellationToken cancellationToken) =>
+        MyAsync(scope, status, recordKind, age, search, null, null, cursor, requestedTake, viewer,
+            cancellationToken);
+
     public async Task<MyQuestionPage> MyAsync(string? scope, string? status, string? recordKind, string? age,
-        string? search, string? cursor, int take, RecordReferenceViewer viewer, CancellationToken cancellationToken)
+        string? search, string? sort, string? direction, string? cursor, int? requestedTake,
+        RecordReferenceViewer viewer, CancellationToken cancellationToken)
     {
+        var take = requestedTake ?? 25;
         ValidateStatusAndTake(status, take);
+        var paging = KnowledgeEndpoints.MyQuestionPages.Parse(sort, direction, requestedTake, cursor,
+            defaultTake: 25);
         scope ??= "all";
         if (scope is not ("all" or "asked" or "directed_to_me" or "directed_to_roles"))
             throw new QuestionRuleException("question_scope_unknown", $"'{scope}' is not a question scope.");
@@ -189,20 +201,11 @@ public sealed class QuestionQueries(KnowledgeDbContext db, RecordReferenceLookup
         if (recordKind is not null) query = query.Where(x => x.RecordKind == recordKind);
         if (ageRange.From is { } from) query = query.Where(x => x.AskedAt <= clock.UtcNow.AddDays(-from));
         if (ageRange.To is { } to) query = query.Where(x => x.AskedAt > clock.UtcNow.AddDays(-to));
-        if (!string.IsNullOrWhiteSpace(cursor))
-        {
-            var (at, id) = Decode(cursor);
-            query = query.Where(x => x.AskedAt > at || (x.AskedAt == at && x.QuestionId.CompareTo(id) > 0));
-        }
-
         var visible = new List<(Question Question, RecordReference Record)>();
-        DateTime? scanAt = null; Guid? scanId = null;
+        var scanPaging = paging;
         while (visible.Count < take + 1)
         {
-            var batchQuery = query;
-            if (scanAt is { } at && scanId is { } id)
-                batchQuery = batchQuery.Where(x => x.AskedAt > at || (x.AskedAt == at && x.QuestionId.CompareTo(id) > 0));
-            var batch = await batchQuery.OrderBy(x => x.AskedAt).ThenBy(x => x.QuestionId).Take(100).ToListAsync(cancellationToken);
+            var batch = await scanPaging.Apply(query).Take(100).ToListAsync(cancellationToken);
             if (batch.Count == 0) break;
             IReadOnlyCollection<Question> matched = batch;
             if (!string.IsNullOrWhiteSpace(search))
@@ -212,8 +215,9 @@ public sealed class QuestionQueries(KnowledgeDbContext db, RecordReferenceLookup
                 matched = batch.Where(x => matchedIds.Contains(x.QuestionId)).ToList();
             }
             visible.AddRange(await VisibleAsync(matched, viewer, cancellationToken));
-            scanAt = batch[^1].AskedAt; scanId = batch[^1].QuestionId;
             if (batch.Count < 100) break;
+            scanPaging = KnowledgeEndpoints.MyQuestionPages.Parse(sort, direction, 100,
+                scanPaging.CursorFor(batch[^1]));
         }
         var page = visible.Take(take).ToList();
         var idsOnPage = page.Select(x => x.Question.QuestionId).ToList();
@@ -234,7 +238,7 @@ public sealed class QuestionQueries(KnowledgeDbContext db, RecordReferenceLookup
         }).ToList();
         var summary = await SummaryAsync(viewer, cancellationToken);
         return new MyQuestionPage(items, visible.Count > take && page.Count > 0
-            ? Encode(page[^1].Question.AskedAt, page[^1].Question.QuestionId) : null, summary);
+            ? paging.CursorFor(page[^1].Question) : null, summary);
     }
 
     public async Task<QuestionSearchPage> SearchAsync(string query, bool answeredOnly, string? cursor, int take,
@@ -344,7 +348,10 @@ public sealed class QuestionQueries(KnowledgeDbContext db, RecordReferenceLookup
     {
         if (status is not null && !Knowledge.Contracts.QuestionStatus.All.Contains(status, StringComparer.Ordinal))
             throw new QuestionRuleException("question_status_unknown", $"'{status}' is not a question status.");
-        if (take is < 1 or > 100) throw new QuestionRuleException("page_size_invalid", "Take must be between 1 and 100.");
+        if (take > SortedPage<Question, Guid>.MaximumTake)
+            throw new CommandRefusedException("page_size_too_large",
+                $"Page size cannot exceed {SortedPage<Question, Guid>.MaximumTake}.");
+        if (take < 1) throw new CommandRefusedException("page_size_invalid", "Page size must be at least 1.");
     }
 
     private static (int? From, int? To) AgeRange(string? age) => age switch

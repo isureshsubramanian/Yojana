@@ -27,7 +27,7 @@ const apiClientView = z.object({
 const apiClientSummary = z.object({
   active: count, sandbox: count, revoked: count, secretsOlderThanOneYear: count, lastUsedAt: nullableText,
 });
-const apiClientPage = z.object({ items: z.array(apiClientView), next: nullableText, summary: apiClientSummary });
+export const apiClientPage = z.object({ items: z.array(apiClientView), next: nullableText, summary: apiClientSummary });
 const apiClientCreated = z.object({ client: apiClientView, secret: text });
 const apiClientSecretRotated = z.object({ clientId: text, secret: text, previousSecretExpiresAt: text });
 const createApiClientRequest = z.object({
@@ -52,7 +52,7 @@ const webhookSubscription = z.object({
   previousSecretExpiresAt: nullableText, activity: webhookActivity,
 });
 const webhookSummary = z.object({ deliveredLast24Hours: count, waitingToRetry: count, parked: count, pausedEndpoints: count });
-const webhookPage = z.object({ items: z.array(webhookSubscription), nextCursor: nullableText, summary: webhookSummary });
+export const webhookPage = z.object({ items: z.array(webhookSubscription), nextCursor: nullableText, summary: webhookSummary });
 const webhookSecretResponse = z.object({ subscription: webhookSubscription, secret: text });
 const webhookActionResponse = z.object({ subscription: webhookSubscription });
 // Relay delivery is not offered in v1 (ADR-0018, owner 2026-10-25): the request always carries relayId null.
@@ -76,7 +76,7 @@ const webhookDeliveryRow = z.object({
   lastStatusCode: z.nullable(count), lastDurationMs: z.nullable(count), lastResponseExcerpt: nullableText,
   lastErrorCode: nullableText,
 });
-const deliveryPage = z.object({ items: z.array(webhookDeliveryRow), nextCursor: nullableText, total: count, counts: deliveryStatusCounts });
+export const deliveryPage = z.object({ items: z.array(webhookDeliveryRow), nextCursor: nullableText, total: count, counts: deliveryStatusCounts });
 const deliveryAttempt = z.object({
   id: text, attemptedAt: text, outcome: text, statusCode: z.nullable(count), durationMs: count,
   responseExcerpt: nullableText, errorCode: nullableText,
@@ -110,13 +110,13 @@ const clientPath = (id: string) => `/api/developer/clients/${encodeURIComponent(
 const webhookPath = (id: string) => `/api/developer/webhooks/${encodeURIComponent(id)}`;
 
 export const developerApi = {
-  clients: (after?: string, signal?: AbortSignal) => apiParsed(`/api/developer/clients?${q({ after, limit: 50 })}`, apiClientPage, { signal }),
+  clients: (cursor?: string, signal?: AbortSignal) => apiParsed(`/api/developer/clients?${q({ cursor, take: 50 })}`, apiClientPage, { signal }),
   client: (id: string, signal?: AbortSignal) => apiParsed(clientPath(id), apiClientView, { signal }),
   createClient: (request: CreateApiClientRequest) => apiParsed("/api/developer/clients", apiClientCreated, { method: "POST", body: checkedBody(createApiClientRequest, request) }),
   updateClient: (id: string, request: { scopes: string[]; rateLimitPerMinute: number }) => apiParsed(clientPath(id), apiClientView, { method: "PUT", body: checkedBody(updateApiClientRequest, request) }),
   rotateClient: (id: string) => apiParsed(`${clientPath(id)}/rotate-secret`, apiClientSecretRotated, { method: "POST" }),
   revokeClient: (id: string) => apiParsed(`${clientPath(id)}/revoke`, apiClientView, { method: "POST" }),
-  webhooks: (after?: string, signal?: AbortSignal) => apiParsed(`/api/developer/webhooks?${q({ after, take: 50 })}`, webhookPage, { signal }),
+  webhooks: (cursor?: string, signal?: AbortSignal) => apiParsed(`/api/developer/webhooks?${q({ cursor, take: 50 })}`, webhookPage, { signal }),
   webhook: (id: string, signal?: AbortSignal) => apiParsed(webhookPath(id), webhookSubscription, { signal }),
   createWebhook: (request: WebhookRequest) => apiParsed("/api/developer/webhooks", webhookSecretResponse, { method: "POST", body: checkedBody(webhookRequest, request) }),
   updateWebhook: async (id: string, request: WebhookRequest & { expectedVersion: string }) =>

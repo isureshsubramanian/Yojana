@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { DataGrid, KpiStrip, StatusBadge, type GridColumn, type PageResult } from "../components";
+import { DataGrid, KpiStrip, StatusBadge, useGridQuery, type GridColumn, type PageResult } from "../components";
 import { useTenantTime } from "../components/tenantTime";
 import { useSession } from "../session/session";
 import { openDrawer } from "../shell/drawerStore";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section } from "../units/common";
-import { securityEventsApi, type SecurityEventRow, type SecurityEventSummary } from "./securityEventsApi";
+import { securityEventPage, securityEventsApi, type SecurityEventRow, type SecurityEventSummary } from "./securityEventsApi";
 import { browserName, securityEventKinds, securityEventLabel, securityEventTone, shiftDay, securityEventReason, summaryKpis } from "./securityEventsModel";
 import { userManagementApi, type TenantUserRow } from "./userManagementApi";
 
@@ -26,12 +26,6 @@ export function Component() {
   const [userText, setUserText] = useState("");
   const [userId, setUserId] = useState<string | null>(null);
   const [users, setUsers] = useState<TenantUserRow[]>([]);
-  const [rows, setRows] = useState<EventGridRow[]>([]);
-  const [next, setNext] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<unknown>(null);
   const [summary, setSummary] = useState<SecurityEventSummary | "failed" | null>(null);
 
   const bounds = useMemo(() => {
@@ -40,27 +34,13 @@ export function Component() {
     return tenantTime.dayBounds(fromDay, throughDay);
   }, [customFrom, customThrough, period, tenantTime, today]);
 
-  const load = useCallback(async (target: number, cursor?: string, signal?: AbortSignal) => {
-    setLoading(true); setError(null);
-    try {
-      const result = await securityEventsApi.page({
-        ...(kind ? { kind } : {}), ...(userId ? { userId } : {}), ...bounds, ...(cursor ? { cursor } : {}), take: PAGE_SIZE,
-      }, signal);
-      setRows(result.items.map((row, index) => ({ ...row, rowKey: `${target}:${index}:${row.occurredAt}:${row.kind}` })));
-      setNext(result.nextCursor); setPage(target);
-      if (result.nextCursor) setCursors(current => { const copy = current.slice(0, target); copy[target] = result.nextCursor!; return copy; });
-    } catch (reason) {
-      if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason);
-    } finally { if (!signal?.aborted) setLoading(false); }
-  }, [bounds, kind, userId]);
-
-  useEffect(() => {
-    if (!permitted) return;
-    const controller = new AbortController();
-    setPage(1); setCursors([undefined]);
-    void load(1, undefined, controller.signal);
-    return () => controller.abort();
-  }, [load, permitted]);
+  const filters = useMemo(() => { const value = new URLSearchParams(bounds); if (kind) value.set("kind", kind); if (userId) value.set("userId", userId); return value; }, [bounds, kind, userId]);
+  const query = useGridQuery("/api/security/events", securityEventPage, {
+    gridId: "security-events", userId: session.user.id, defaultSort: { key: "when", dir: "desc" },
+    defaultSize: PAGE_SIZE, params: filters, paging: "cursor", sortKeys: ["when", "event"], enabled: permitted,
+    pageFacts: value => ({ continuation: value.nextCursor }),
+  });
+  const rows: EventGridRow[] = (query.data?.items ?? []).map((row, index) => ({ ...row, rowKey: `${query.page}:${index}:${row.occurredAt}:${row.kind}` }));
 
   // The cards describe today and the last 7 days, not the filtered list, so they load once when the page opens.
   useEffect(() => {
@@ -100,18 +80,17 @@ export function Component() {
   }, [tenantTime]);
 
   const columns = useMemo<GridColumn<EventGridRow>[]>(() => [
-    { key: "when", label: "When", width: 19, render: row => tenantTime.dateTime(row.occurredAt), muted: true },
-    { key: "event", label: "Event", width: 15, render: row => <StatusBadge tone={securityEventTone(row.kind)}>{securityEventLabel(row.kind)}</StatusBadge> },
+    { key: "when", label: "When", width: 19, sort: { key: "when", defaultDir: "desc" }, render: row => tenantTime.dateTime(row.occurredAt), muted: true },
+    { key: "event", label: "Event", width: 15, sort: { key: "event", defaultDir: "asc" }, render: row => <StatusBadge tone={securityEventTone(row.kind)}>{securityEventLabel(row.kind)}</StatusBadge> },
     { key: "user", label: "User", width: 17, render: row => row.userName ?? "Unknown user" },
     { key: "actor", label: "By", width: 15, render: row => row.actorName ?? "—" },
     { key: "from", label: "From", width: 14, render: row => [row.clientAddress, browserName(row.userAgent)].filter(Boolean).join(" · ") },
     { key: "detail", label: "Detail", width: 20, render: row => securityEventReason(row.reason) },
   ], [tenantTime]);
 
-  const estimatedTotal = (page - 1) * PAGE_SIZE + rows.length + (next ? 1 : 0);
-  const grid: PageResult<EventGridRow> = { rows, page, pageSize: PAGE_SIZE, total: estimatedTotal,
-    continuation: next, totalIsExact: false, hasMore: !!next };
-  const move = (target: number) => { if (target < page || next) void load(target, cursors[target - 1]); };
+  const estimatedTotal = (query.page - 1) * query.pageSize + rows.length + (query.data?.nextCursor ? 1 : 0);
+  const grid: PageResult<EventGridRow> = { rows, page: query.page, pageSize: query.pageSize, total: estimatedTotal,
+    continuation: query.data?.nextCursor ?? null, totalIsExact: false, hasMore: !!query.data?.nextCursor };
   const periodLabel = period === "today" ? "today" : period === "7_days" ? "last 7 days" : period === "30_days" ? "last 30 days" : `${customFrom} to ${customThrough}`;
 
   return <main className="content" id="main" tabIndex={-1}>
@@ -122,9 +101,9 @@ export function Component() {
     {!permitted && <div className="note bad"><strong>Tenant administrator access is required.</strong></div>}
     {permitted && <div className="stack">
       <KpiStrip label="Security event figures" kpis={summaryKpis(summary)} />
-      <ErrorNote error={error} onReload={() => void load(page, cursors[page - 1])} />
+      <ErrorNote error={query.error} onReload={query.reload} />
       <section className="card" aria-labelledby="security-events-list">
-        <div className="card-header"><h2 id="security-events-list">Events <span className="meta">{periodLabel} · page {page.toLocaleString()}</span></h2></div>
+        <div className="card-header"><h2 id="security-events-list">Events <span className="meta">{periodLabel} · page {query.page.toLocaleString()}</span></h2></div>
         <div className="toolbar" style={{ padding: "10px var(--card-pad)", borderBottom: "1px solid var(--rule)" }}>
           <select className="select" aria-label="Event" value={kind} onChange={event => setKind(event.target.value)}>
             <option value="">Any event</option>{securityEventKinds.map(value => <option value={value} key={value}>{securityEventLabel(value)}</option>)}
@@ -138,8 +117,10 @@ export function Component() {
           </select>
           {period === "custom" && <><label className="field inline"><span className="lbl">From</span><input className="input" type="date" value={customFrom} max={customThrough} onChange={event => { if (event.target.value) setCustomFrom(event.target.value); }} /></label><label className="field inline"><span className="lbl">Through</span><input className="input" type="date" value={customThrough} min={customFrom} onChange={event => { if (event.target.value) setCustomThrough(event.target.value); }} /></label></>}
         </div>
-        <DataGrid columns={columns} page={grid} rowId={row => row.rowKey} onPage={move} onRowClick={show}
-          loading={loading} viewportHeight={560} footerNote="Newest first · 25 a page" emptyText="No security events match these filters." />
+        <DataGrid columns={columns} page={grid} rowId={row => row.rowKey} onPage={query.onPage} onRowClick={show}
+          loading={query.loading} viewportHeight={560} footerNote="Newest first" emptyText="No security events match these filters."
+          gridId="security-events" userId={session.user.id} sort={query.sort} defaultSort={{ key: "when", dir: "desc" }} onSort={query.onSort}
+          pageSize={query.pageSize} defaultPageSize={PAGE_SIZE} onPageSize={query.onPageSize} />
       </section>
     </div>}
   </main>;

@@ -222,8 +222,14 @@ namespace Yojana.Platform.Data.Platform.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_erasure_request_tenant_id_request_reference");
 
+                    b.HasIndex("TenantId", "RequestReceivedOn", "ErasureId")
+                        .HasDatabaseName("ix_erasure_request_tenant_id_request_received_on_erasure_id");
+
                     b.HasIndex("TenantId", "RequestedAt", "ErasureId")
                         .HasDatabaseName("ix_erasure_request_tenant_id_requested_at_erasure_id");
+
+                    b.HasIndex("TenantId", "Status", "ErasureId")
+                        .HasDatabaseName("ix_erasure_request_tenant_id_status_erasure_id");
 
                     b.HasIndex("TenantId", "Status", "RequestReceivedOn", "ErasureId")
                         .HasDatabaseName("ix_erasure_request_tenant_id_status_request_received_on_erasure_id");
@@ -539,6 +545,9 @@ namespace Yojana.Platform.Data.Platform.Migrations
 
                     b.HasIndex("OccurredAt", "Id")
                         .HasDatabaseName("ix_security_event_occurred_at_id");
+
+                    b.HasIndex("TenantId", "Kind", "Id")
+                        .HasDatabaseName("ix_security_event_tenant_id_kind_id");
 
                     b.HasIndex("TenantId", "OccurredAt", "Id")
                         .HasDatabaseName("ix_security_event_tenant_id_occurred_at_id");

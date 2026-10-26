@@ -28,25 +28,15 @@ public sealed class ApiClientService(
     public const string Active = "active";
     public const string Revoked = "revoked";
 
-    public async Task<ApiClientPage> PageAsync(string? after, int limit, CancellationToken cancellationToken)
+    public async Task<ApiClientPage> PageAsync(string? sort, string? direction, string? cursor, int? take,
+        CancellationToken cancellationToken)
     {
-        limit = Math.Clamp(limit, 1, 200);
-        var query = db.ApiClients.AsNoTracking().Where(row => row.TenantId == tenant.TenantId)
-            .Select(row => new ApiClientListProjection
-            {
-                Row = row,
-                Priority = row.Status == Active ? 0 : 1,
-            });
-        if (DecodeCursor(after) is { } cursor)
-            query = query.Where(item => item.Priority > cursor.Priority
-                || item.Priority == cursor.Priority && (item.Row.CreatedAt < cursor.CreatedAt
-                || item.Row.CreatedAt == cursor.CreatedAt && item.Row.ClientId.CompareTo(cursor.ClientId) > 0));
-        var rows = await query.OrderBy(item => item.Priority).ThenByDescending(item => item.Row.CreatedAt)
-            .ThenBy(item => item.Row.ClientId).Take(limit + 1)
-            .ToListAsync(cancellationToken);
-        var hasMore = rows.Count > limit;
+        var paging = ApiClientEndpoints.ApiClientPages.Parse(sort, direction, take, cursor);
+        var rows = await paging.Apply(db.ApiClients.AsNoTracking().Where(row => row.TenantId == tenant.TenantId))
+            .Take(paging.Take + 1).ToListAsync(cancellationToken);
+        var hasMore = rows.Count > paging.Take;
         if (hasMore) rows.RemoveAt(rows.Count - 1);
-        var views = await ViewsAsync(rows.Select(item => item.Row).ToList(), cancellationToken);
+        var views = await ViewsAsync(rows, cancellationToken);
         var oneYearAgo = clock.UtcNow.AddYears(-1);
         var totals = await db.ApiClients.AsNoTracking().Where(row => row.TenantId == tenant.TenantId)
             .GroupBy(_ => 1).Select(group => new
@@ -61,8 +51,7 @@ public sealed class ApiClientService(
         var summary = totals is null ? new ApiClientSummary(0, 0, 0, 0, null)
             : new ApiClientSummary(totals.Active, totals.Sandbox, totals.Revoked,
                 totals.SecretsOlderThanOneYear, totals.LastUsedAt);
-        return new(views, hasMore && rows.Count > 0
-            ? EncodeCursor(rows[^1].Priority, rows[^1].Row) : null, summary);
+        return new(views, hasMore && rows.Count > 0 ? paging.CursorFor(rows[^1]) : null, summary);
     }
 
     public async Task<ApiClientView?> GetAsync(string publicId, CancellationToken cancellationToken)
@@ -270,30 +259,4 @@ public sealed class ApiClientService(
     private static string Base64Url(byte[] value) => Convert.ToBase64String(value).TrimEnd('=')
         .Replace('+', '-').Replace('/', '_');
 
-    private static string EncodeCursor(int priority, ApiClient row) => Convert.ToBase64String(Encoding.UTF8.GetBytes(
-        priority.ToString(CultureInfo.InvariantCulture) + ":" +
-        row.CreatedAt.Ticks.ToString(CultureInfo.InvariantCulture) + ":" + row.ClientId.ToString("N")))
-        .TrimEnd('=').Replace('+', '-').Replace('/', '_');
-
-    private static (int Priority, DateTime CreatedAt, Guid ClientId)? DecodeCursor(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return null;
-        try
-        {
-            var padded = value.Replace('-', '+').Replace('_', '/');
-            padded = padded.PadRight((padded.Length + 3) / 4 * 4, '=');
-            var parts = Encoding.UTF8.GetString(Convert.FromBase64String(padded)).Split(':');
-            return parts.Length == 3 && int.TryParse(parts[0], CultureInfo.InvariantCulture, out var priority)
-                && long.TryParse(parts[1], CultureInfo.InvariantCulture, out var ticks)
-                && Guid.TryParseExact(parts[2], "N", out var id)
-                ? (priority, new DateTime(ticks, DateTimeKind.Utc), id) : null;
-        }
-        catch (FormatException) { return null; }
-    }
-
-    private sealed class ApiClientListProjection
-    {
-        public required ApiClient Row { get; init; }
-        public int Priority { get; init; }
-    }
 }

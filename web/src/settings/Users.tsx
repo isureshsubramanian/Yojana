@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { ApiError } from "../api/client";
-import { ActionDialog, DataGrid, KpiStrip, StatusBadge, type GridColumn, type PageResult } from "../components";
+import { ActionDialog, DataGrid, KpiStrip, StatusBadge, useGridQuery, type GridColumn, type PageResult } from "../components";
 import { openDrawer, updateDrawer } from "../shell/drawerStore";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { useSession } from "../session/session";
 import { ErrorNote, Kv, Section } from "../units/common";
 import { passwordResetApi, type PasswordResetOptions } from "./passwordResetApi";
 import { ROLE_GROUPS, roleLabel, STAFF_ROLES } from "./roles";
-import { userManagementApi, type TenantUserDetail, type TenantUserRow, type TenantUserSummary } from "./userManagementApi";
+import { tenantUserPage, userManagementApi, type TenantUserDetail, type TenantUserRow, type TenantUserSummary } from "./userManagementApi";
 
 const PAGE_SIZE = 50;
 const when = (value: string | null) => value ? new Date(value).toLocaleString() : "Never";
@@ -21,35 +21,27 @@ type Dialog = { kind: "invite" } | { kind: "deactivate"; row: TenantUserRow } |
   { kind: "temporary"; password: string } | { kind: "second-step-reset"; row: TenantUserRow } | null;
 
 export function Component() {
-  const permitted = useSession().roles.includes("tenant_administrator");
+  const session = useSession();
+  const permitted = session.roles.includes("tenant_administrator");
   const [summary, setSummary] = useState<TenantUserSummary | null>(null);
-  const [rows, setRows] = useState<TenantUserRow[]>([]);
-  const [next, setNext] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const [status, setStatus] = useState("all");
   const [role, setRole] = useState("");
   const [q, setQ] = useState("");
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
-
-  const load = useCallback(async (target = page, cursor = cursors[target - 1]) => {
-    setLoading(true); setError(null);
-    try {
-      const [result, figures] = await Promise.all([
-        userManagementApi.page({ status, role, q: q.trim(), ...(cursor ? { cursor } : {}), take: PAGE_SIZE }),
-        userManagementApi.summary(),
-      ]);
-      setRows(result.items); setNext(result.nextCursor); setSummary(figures); setPage(target);
-      if (result.nextCursor) setCursors((current) => { const copy = current.slice(0, target); copy[target] = result.nextCursor!; return copy; });
-    } catch (reason) { setError(reason); }
-    finally { setLoading(false); }
-  }, [cursors, page, q, role, status]);
-
-  useEffect(() => { if (!permitted) return; setPage(1); setCursors([undefined]); void load(1, undefined); }, [permitted, status, role, q]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const changed = useCallback(() => { void load(page, cursors[page - 1]); }, [cursors, load, page]);
+  const filters = useMemo(() => { const value = new URLSearchParams({ status }); if (role) value.set("role", role); if (q.trim()) value.set("q", q.trim()); return value; }, [q, role, status]);
+  const query = useGridQuery("/api/security/users", tenantUserPage, {
+    gridId: "security-users", userId: session.user.id, defaultSort: { key: "default", dir: "asc" },
+    defaultSize: PAGE_SIZE, params: filters, paging: "cursor", sortKeys: ["default"], enabled: permitted,
+    pageFacts: value => ({ continuation: value.nextCursor }),
+  });
+  const rows = query.data?.items ?? [];
+  useEffect(() => { if (!permitted) return; const controller = new AbortController(); setError(null);
+    void userManagementApi.summary(controller.signal).then(setSummary)
+      .catch(reason => { if (!controller.signal.aborted) setError(reason); });
+    return () => controller.abort();
+  }, [permitted]);
+  const changed = query.reload;
   const show = useCallback((row: TenantUserRow) => {
     openDrawer({ eyebrow: row.invitationId ? "Pending invitation" : "Tenant user", title: row.displayName },
       <UserDrawer row={row} onChanged={changed} onDeactivate={() => setDialog({ kind: "deactivate", row })}
@@ -65,11 +57,9 @@ export function Component() {
     { key: "last", label: "Last sign-in", width: 14, render: (row) => when(row.lastSignInAt), muted: true },
     { key: "status", label: "Status", width: 17, render: (row) => <StatusBadge tone={statusTone(row.status)}>{statusLabel(row)}</StatusBadge> },
   ], []);
-  const estimatedTotal = (page - 1) * PAGE_SIZE + rows.length + (next ? 1 : 0);
-  const grid: PageResult<TenantUserRow> = { rows, page, pageSize: PAGE_SIZE, total: estimatedTotal,
-    continuation: next, totalIsExact: false, hasMore: !!next };
-
-  const move = (target: number) => { if (target < page || next) void load(target, cursors[target - 1]); };
+  const estimatedTotal = (query.page - 1) * query.pageSize + rows.length + (query.data?.nextCursor ? 1 : 0);
+  const grid: PageResult<TenantUserRow> = { rows, page: query.page, pageSize: query.pageSize, total: estimatedTotal,
+    continuation: query.data?.nextCursor ?? null, totalIsExact: false, hasMore: !!query.data?.nextCursor };
   return <main className="content" id="main" tabIndex={-1}>
     <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Settings", to: "/settings" }, { label: "Users" }]} />
     <PageHeader eyebrow="Settings · tenant administrator" title="Users"
@@ -78,7 +68,7 @@ export function Component() {
     <nav className="tabs subnav" aria-label="Sign-in settings"><Link to="/settings/users" aria-current="page">Users</Link><Link to="/settings/sign-in-policy">Sign-in policy</Link><Link to="/settings/security-events">Security events</Link></nav>
     {!permitted && <div className="note bad"><strong>Tenant administrator access is required.</strong></div>}
     {permitted && <div className="stack" style={{ marginTop: 20 }}>
-      <ErrorNote error={error} onReload={() => void load()} />
+      <ErrorNote error={error ?? query.error} onReload={query.reload} />
       <KpiStrip label="User figures" kpis={[
         { label: "Active", value: summary?.active.toLocaleString() ?? "—" },
         { label: "Invited", value: summary?.invited.toLocaleString() ?? "—" },
@@ -97,8 +87,10 @@ export function Component() {
             <option value="">All roles</option>{STAFF_ROLES.map((value) => <option value={value} key={value}>{roleLabel(value)}</option>)}
           </select>
         </div>
-        <DataGrid columns={columns} page={grid} rowId={(row) => row.userId ?? row.invitationId!} onPage={move}
-          onRowClick={show} loading={loading} viewportHeight={560} emptyText="No staff users match these filters." />
+        <DataGrid columns={columns} page={grid} rowId={(row) => row.userId ?? row.invitationId!} onPage={query.onPage}
+          onRowClick={show} loading={query.loading} viewportHeight={560} emptyText="No staff users match these filters."
+          gridId="security-users" userId={session.user.id} sort={query.sort} defaultSort={{ key: "default", dir: "asc" }} onSort={query.onSort}
+          pageSize={query.pageSize} defaultPageSize={PAGE_SIZE} onPageSize={query.onPageSize} />
       </section>
     </div>}
     {dialog?.kind === "invite" && <InviteDialog onCancel={() => setDialog(null)} onSaved={() => { setDialog(null); changed(); }} />}

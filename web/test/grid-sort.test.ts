@@ -7,7 +7,7 @@ import { build } from "esbuild";
 import { createElement, type ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { nextGridSort, pageSizeChoices, readGridPreference } from "../src/components/gridPreferences.ts";
-import { resetGridQuery } from "../src/components/useGridQuery.ts";
+import { allowedGridSort, resetGridQuery } from "../src/components/useGridQuery.ts";
 
 async function compile<T>(path: string): Promise<T> {
   const result = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))], bundle: true, platform: "node", format: "cjs", jsx: "automatic", packages: "external", write: false });
@@ -50,6 +50,30 @@ test("preferences render from defaults when storage is absent or unavailable", (
   const fallback = { sort: { key: "identifier", dir: "asc" } as const, pageSize: 50 };
   assert.deepEqual(readGridPreference("grid", fallback, null), fallback);
   assert.deepEqual(readGridPreference("grid", fallback, { getItem: () => { throw new Error("blocked"); } }), fallback);
+});
+
+test("a changing endpoint allow-list returns an unsupported remembered sort to the screen default", () => {
+  const remembered = { key: "published", dir: "asc" } as const;
+  assert.deepEqual(allowedGridSort(remembered, ["relevance"], { key: "relevance", dir: "desc" }),
+    { key: "relevance", dir: "desc" });
+  assert.equal(allowedGridSort(remembered, ["published"], { key: "published", dir: "desc" }), remembered);
+});
+
+test("the settings, developer, privacy, security, users and knowledge grids use shared paging state", () => {
+  const screens = [
+    "settings/DeveloperClients.tsx", "settings/DeveloperDeliveries.tsx", "settings/DeveloperWebhooks.tsx",
+    "settings/Privacy.tsx", "settings/SecurityEvents.tsx", "settings/Users.tsx", "questions/EntryEditor.tsx",
+    "questions/KnowledgeBase.tsx", "questions/MyQuestions.tsx", "patterns/DocumentPattern.tsx",
+  ];
+  for (const screen of screens) {
+    const source = readFileSync(new URL(`../src/${screen}`, import.meta.url), "utf8");
+    assert.match(source, /useGridQuery|useGridState/, `${screen} delegates query state`);
+    assert.match(source, /sort=\{/, `${screen} passes header state`);
+    assert.match(source, /onPageSize=\{/, `${screen} resets paging through the shared size handler`);
+  }
+  const users = readFileSync(new URL("../src/settings/Users.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(users, /label: "E-mail"[^\n]+sort:/, "PII columns stay plain");
+  assert.doesNotMatch(users, /label: "User"[^\n]+sort:/, "display name stays plain without a tenant-led index");
 });
 
 test("the Serialisation list screens declare shared sort and page-size state", () => {

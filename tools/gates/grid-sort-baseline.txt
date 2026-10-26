@@ -1,18 +1,3 @@
 # ADR-0021 rollout baseline. Entries may only be removed; new files must use the shared paging pieces.
 [web]
-web/src/patterns/DocumentPattern.tsx
-web/src/questions/EntryEditor.tsx
-web/src/questions/KnowledgeBase.tsx
-web/src/questions/MyQuestions.tsx
-web/src/settings/DeveloperClients.tsx
-web/src/settings/DeveloperDeliveries.tsx
-web/src/settings/DeveloperWebhooks.tsx
-web/src/settings/Privacy.tsx
-web/src/settings/SecurityEvents.tsx
-web/src/settings/Users.tsx
 [server]
-src/Developer/Yojana.Developer/DeveloperEndpoints.cs
-src/Knowledge/Yojana.Knowledge/KnowledgeEndpoints.cs
-src/Platform/Yojana.Platform/Privacy/PrivacyEndpoints.cs
-src/Platform/Yojana.Platform/Security/SecurityEndpoints.cs
-src/Platform/Yojana.Platform/Security/UserManagementEndpoints.cs

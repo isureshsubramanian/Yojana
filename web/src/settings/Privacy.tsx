@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { DataGrid, KpiStrip, StatusBadge, type GridColumn, type PageResult } from "../components";
+import { DataGrid, KpiStrip, StatusBadge, useGridQuery, type GridColumn, type PageResult } from "../components";
 import { useReferenceNames } from "../corrections/ReferenceFields";
 import { usePeople } from "../people/people";
 import { useSession } from "../session/session";
@@ -9,7 +9,7 @@ import { openDrawer } from "../shell/drawerStore";
 import { PageHeader } from "../shell/PageHeader";
 import { ErrorNote, Kv, Section } from "../units/common";
 import { blockerPath, erasureStatus, erasureSteps, storeLabel } from "./privacyModel";
-import { privacyApi, type ErasureDetail, type ErasurePage, type ErasureRow } from "./privacyApi";
+import { erasurePage, privacyApi, type ErasureDetail, type ErasureRow } from "./privacyApi";
 
 const PAGE_SIZE = 50;
 const PRIVACY_EXPORT_PATH = "/api/privacy/erasures/export";
@@ -17,26 +17,16 @@ const PRIVACY_NEW_PATH = "/settings/privacy/new";
 const when = (value: string | null) => value ? new Date(value).toLocaleString() : "—";
 
 export function Component() {
-  const permitted = useSession().roles.includes("tenant_administrator");
-  const [result, setResult] = useState<ErasurePage | null>(null);
-  const [page, setPage] = useState(1);
-  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<unknown>(null);
+  const session = useSession();
+  const permitted = session.roles.includes("tenant_administrator");
+  const query = useGridQuery("/api/privacy/erasures", erasurePage, {
+    gridId: "privacy-erasures", userId: session.user.id, defaultSort: { key: "recorded", dir: "desc" },
+    defaultSize: PAGE_SIZE, paging: "cursor", sortKeys: ["recorded", "reference", "received", "status"],
+    enabled: permitted, pageFacts: value => ({ continuation: value.nextCursor }),
+  });
+  const result = query.data;
   const parties = useReferenceNames({ parties: result?.items.filter(row => row.status === "refused" && row.subjectKind === "Party").map(row => row.subjectId) ?? [] });
   const people = usePeople(result?.items.filter(row => row.status === "refused" && row.subjectKind === "User").map(row => row.subjectId) ?? []);
-
-  const load = useCallback(async (target = page, cursor = cursors[target - 1]) => {
-    setLoading(true); setError(null);
-    try {
-      const next = await privacyApi.page(cursor);
-      setResult(next); setPage(target);
-      if (next.nextCursor) setCursors(current => { const copy = current.slice(0, target); copy[target] = next.nextCursor!; return copy; });
-    } catch (reason) { setError(reason); }
-    finally { setLoading(false); }
-  }, [cursors, page]);
-
-  useEffect(() => { if (permitted) void load(1, undefined); }, [permitted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const subject = useCallback((row: ErasureRow) => {
     if (row.status !== "refused") return row.token;
@@ -45,16 +35,16 @@ export function Component() {
   }, [parties, people]);
   const show = useCallback((row: ErasureRow) => openDrawer({ eyebrow: "Erasure request", title: row.requestReference, mono: true }, <ErasureDrawer row={row} subject={subject(row)} />), [subject]);
   const columns = useMemo<GridColumn<ErasureRow>[]>(() => [
-    { key: "reference", label: "Request ref", width: 15, mono: true, render: row => <span className="primary">{row.requestReference}</span> },
+    { key: "reference", label: "Request ref", width: 15, mono: true, sort: { key: "reference", defaultDir: "asc" }, render: row => <span className="primary">{row.requestReference}</span> },
     { key: "person", label: "Person", width: 25, render: row => subject(row) },
     { key: "kind", label: "Kind", width: 10, render: row => row.subjectKind === "Party" ? "Customer" : "User" },
     { key: "by", label: "Requested by", width: 19, render: row => row.requestedBy },
-    { key: "received", label: "Received", width: 14, muted: true, render: row => new Date(`${row.requestReceivedOn}T00:00:00`).toLocaleDateString() },
-    { key: "status", label: "Status", width: 17, render: row => { const state = erasureStatus(row.status, row.failureRule); return <StatusBadge tone={state.tone}>{state.label}</StatusBadge>; } },
+    { key: "received", label: "Received", width: 14, muted: true, sort: { key: "received", defaultDir: "desc" }, render: row => new Date(`${row.requestReceivedOn}T00:00:00`).toLocaleDateString() },
+    { key: "status", label: "Status", width: 17, sort: { key: "status", defaultDir: "asc" }, render: row => { const state = erasureStatus(row.status, row.failureRule); return <StatusBadge tone={state.tone}>{state.label}</StatusBadge>; } },
   ], [subject]);
   const rows = result?.items ?? [];
-  const grid: PageResult<ErasureRow> = { rows, page, pageSize: PAGE_SIZE,
-    total: (page - 1) * PAGE_SIZE + rows.length + (result?.nextCursor ? 1 : 0), continuation: result?.nextCursor ?? null,
+  const grid: PageResult<ErasureRow> = { rows, page: query.page, pageSize: query.pageSize,
+    total: (query.page - 1) * query.pageSize + rows.length + (result?.nextCursor ? 1 : 0), continuation: result?.nextCursor ?? null,
     totalIsExact: false, hasMore: !!result?.nextCursor };
   const oldest = result?.summary.oldestOpen;
   const oldestDetail = !oldest ? "no open requests" : oldest.warning === "overdue" ? `overdue · due ${oldest.dueOn}` : oldest.warning === "due_soon" ? `one-month limit near · due ${oldest.dueOn}` : "legal limit one month from receipt";
@@ -62,9 +52,9 @@ export function Component() {
   return <main className="content" id="main" tabIndex={-1}>
     <PageHeader eyebrow="Settings · Data and knowledge · tenant administrators only" title="Privacy"
       sub="Erase a person's personal data that Yojana holds when they ask. Units, ownership history, warranties, claims and RMAs are kept, but no longer point to the person. Erase the person in your source system as well: Yojana cannot do that for you."
-      actions={permitted && <><a className="btn" href={PRIVACY_EXPORT_PATH}><Icon name="down" />Export log</a><Link className="btn primary" to={PRIVACY_NEW_PATH}><Icon name="plus" />New erasure</Link></>} />
+      actions={permitted && <><a className="btn" href={`${PRIVACY_EXPORT_PATH}?${new URLSearchParams({ sort: query.sort.key, dir: query.sort.dir })}`}><Icon name="down" />Export log</a><Link className="btn primary" to={PRIVACY_NEW_PATH}><Icon name="plus" />New erasure</Link></>} />
     {!permitted ? <div className="note bad"><strong>Tenant administrator access is required.</strong></div> : <div className="stack">
-      <ErrorNote error={error} onReload={() => void load()} />
+      <ErrorNote error={query.error} onReload={query.reload} />
       <KpiStrip label="Erasure request figures" kpis={[
         { label: "Completed", value: result?.summary.completedLastTwelveMonths.toLocaleString() ?? "—", detail: "last 12 months" },
         { label: "In progress", value: result?.summary.inProgress.toLocaleString() ?? "—", detail: "pending or running" },
@@ -72,7 +62,9 @@ export function Component() {
         { label: "Oldest open request", value: oldest ? `${oldest.ageDays} ${oldest.ageDays === 1 ? "day" : "days"}` : "—", detail: oldestDetail },
       ]} />
       <section className="card" aria-label="Erasure requests"><div className="card-header"><h2>Erasure requests</h2><span className="meta">newest first</span></div>
-        <DataGrid columns={columns} page={grid} rowId={row => row.erasureId} onPage={target => { if (target < page || result?.nextCursor) void load(target, cursors[target - 1]); }} onRowClick={show} loading={loading} emptyText="No erasure requests have been recorded." viewportHeight={560} />
+        <DataGrid columns={columns} page={grid} rowId={row => row.erasureId} onPage={query.onPage} onRowClick={show} loading={query.loading} emptyText="No erasure requests have been recorded." viewportHeight={560}
+          gridId="privacy-erasures" userId={session.user.id} sort={query.sort} defaultSort={{ key: "recorded", dir: "desc" }} onSort={query.onSort}
+          pageSize={query.pageSize} defaultPageSize={PAGE_SIZE} onPageSize={query.onPageSize} />
       </section>
     </div>}
   </main>;
