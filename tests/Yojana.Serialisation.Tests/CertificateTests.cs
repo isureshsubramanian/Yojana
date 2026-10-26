@@ -88,6 +88,43 @@ public sealed class CertificateTests
         var catalogue = FieldCatalogue.For<ReleaseRecordPayload>().Select(row => row.Path).ToList();
         Assert.Contains("bom_lines.item_code", catalogue);
         Assert.Contains("bom_synced_at", catalogue);
+        Assert.All(releases, body => Assert.Contains("<th class=\"numeric\">Installed qty</th>", body,
+            StringComparison.Ordinal));
+        Assert.Contains("installed_parts.quantity", catalogue);
+    }
+
+    [Fact]
+    public void Installed_parts_sum_current_components_per_part_and_print_plain_quantities()
+    {
+        // Owner 2026-10-26: show how many of each part went in; installed quantity, because the ERP BOM can change.
+        var at = new DateTime(2026, 10, 26, 0, 0, 0, DateTimeKind.Utc);
+        ReleaseComponentSnapshot Row(string slot, string code, string name, decimal? quantity = null,
+            DateTime? removed = null) => new(slot, "component", slot, code, name, null, quantity, null, null, at, removed);
+
+        var parts = ReleaseInstalledParts.From(
+        [
+            Row("BAY-01", "YD-HDD", "Quill 16 TB hard drive"), Row("BAY-02", "YD-HDD", "Quill 16 TB hard drive"),
+            Row("BAY-03", "YD-HDD", "Quill 16 TB hard drive", removed: at),
+            Row("CPU-01", "YD-CPU-32C", "32-core server processor"),
+            Row("CBL-01", "YD-PWR-CBL", "Power cable", 2.00000000m),
+        ]);
+
+        Assert.Equal(
+        [
+            new ReleasePartQuantitySnapshot("YD-CPU-32C", "32-core server processor", 1),
+            new ReleasePartQuantitySnapshot("YD-PWR-CBL", "Power cable", 2),
+            new ReleasePartQuantitySnapshot("YD-HDD", "Quill 16 TB hard drive", 2),
+        ], parts);
+        Assert.Equal("2", parts[1].Quantity.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public void The_installed_parts_summary_is_not_a_certificate_fact()
+    {
+        // Derived from as_maintained: adding it must not version every existing record on its next trigger.
+        const string before = """{"as_maintained":[{"slot":"BAY-01"}],"trigger":{"id":"a"}}""";
+        const string after = """{"as_maintained":[{"slot":"BAY-01"}],"installed_parts":[{"quantity":1}],"trigger":{"id":"b"}}""";
+        Assert.Equal(CertificateVersioningEngine.FactsHash(before), CertificateVersioningEngine.FactsHash(after));
     }
 
     [Fact]
@@ -117,10 +154,8 @@ public sealed class CertificateTests
         var retriggered = CanonicalJson.Canonicalise("""{"trigger":{"effective_at":"2026-09-01T10:00:00Z","event_id":"22222222-2222-2222-2222-222222222222"},"model":{"code":"YT-100"}}""");
         var changed = CanonicalJson.Canonicalise("""{"model":{"code":"YT-200"},"trigger":{"event_id":"22222222-2222-2222-2222-222222222222","effective_at":"2026-09-01T10:00:00Z"}}""");
 
-        Assert.Equal(CanonicalJson.HashExcludingRootProperties(first, "trigger"),
-            CanonicalJson.HashExcludingRootProperties(retriggered, "trigger"));
-        Assert.NotEqual(CanonicalJson.HashExcludingRootProperties(first, "trigger"),
-            CanonicalJson.HashExcludingRootProperties(changed, "trigger"));
+        Assert.Equal(CertificateVersioningEngine.FactsHash(first), CertificateVersioningEngine.FactsHash(retriggered));
+        Assert.NotEqual(CertificateVersioningEngine.FactsHash(first), CertificateVersioningEngine.FactsHash(changed));
     }
 
     [Fact]

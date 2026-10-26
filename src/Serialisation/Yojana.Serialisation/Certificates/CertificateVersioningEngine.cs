@@ -17,6 +17,15 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
     IUnitEventWriter events, IUserDirectory users, CertificateDatabaseLock databaseLock,
     ReleaseRecordIssuePolicy issuePolicy)
 {
+    // HIDDEN COUPLING: installed_parts is derived by CertificatePayloadBuilders from as_maintained. It must stay out
+    // of the facts hash, or every existing record gains a version on its next trigger without any new fact.
+    private static readonly string[] NotFacts = ["trigger", "installed_parts"];
+
+    /// <summary>The hash that decides whether a trigger brings new certificate facts; the one place that says which
+    /// payload properties are not facts.</summary>
+    public static string FactsHash(string canonicalPayload) =>
+        CanonicalJson.HashExcludingRootProperties(canonicalPayload, NotFacts);
+
     public Task<IssueCertificateVersionResult> IssueAsync(string documentKind, CertificateTriggerContext trigger,
         string reason, CancellationToken cancellationToken) => IssueAsync(new IssueCertificateVersion(
             trigger.EventId, trigger.UnitId, documentKind,
@@ -134,7 +143,7 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
                 return await RefuseAsync(exception.Refusal.Rule, exception.Refusal.Message);
             }
             if (built is null) return await RefuseAsync("certificate_payload_unavailable", $"Certificate facts for unit {command.UnitId} are unavailable.");
-            var factsHash = CanonicalJson.HashExcludingRootProperties(built.CanonicalPayload, "trigger");
+            var factsHash = FactsHash(built.CanonicalPayload);
             if (previous?.FactsHash == factsHash)
             {
                 const string reason = "certificate_facts_unchanged";
@@ -273,7 +282,7 @@ public sealed class CertificateVersioningEngine(SerialisationDbContext db, ITena
                     var (command, index, _, templateVersionId, _) = ready[i];
                     if (!printedNames.TryGetValue(command.ActorRef, out var printedName))
                         printedNames[command.ActorRef] = printedName = await PrintedNameAsync(command.ActorRef, cancellationToken);
-                    var factsHash = CanonicalJson.HashExcludingRootProperties(built[i].CanonicalPayload, "trigger");
+                    var factsHash = FactsHash(built[i].CanonicalPayload);
                     var (certificate, signature, issuedDraft) = NewVersion(command, templateVersionId, built[i], factsHash,
                         1, tracking[i], issuedAt, null, null, printedName);
                     db.CertificateInstances.Add(certificate);

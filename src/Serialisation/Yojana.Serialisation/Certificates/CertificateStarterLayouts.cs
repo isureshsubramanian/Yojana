@@ -22,7 +22,7 @@ internal static class CertificateStarterLayouts
         """;
 
     private const string AsBuilt = """
-        <h2>As-built</h2><h3>Serialised components</h3><table><thead><tr><th>Slot</th><th>Part</th><th>Serial number</th><th>Release status</th></tr></thead><tbody>
+        <h2>As-built</h2>{{#if installed_parts}}<h3>Installed parts</h3><table><thead><tr><th>Part</th><th class="numeric">Installed qty</th></tr></thead><tbody>{{#each installed_parts}}<tr><td>{{#if item_name}}{{item_name}}<div class="fine">{{item_code}}</div>{{else}}{{#if item_code}}{{item_code}}{{else}}Unknown part{{/if}}{{/if}}</td><td class="numeric">{{quantity}}</td></tr>{{/each}}</tbody></table>{{/if}}<h3>Serialised components</h3><table><thead><tr><th>Slot</th><th>Part</th><th>Serial number</th><th>Release status</th></tr></thead><tbody>
         {{#each as_maintained}}<tr><td>{{#if slot}}{{slot}}{{else}}—{{/if}}</td><td>{{#if item_name}}{{item_name}}{{else}}{{item_code}}{{/if}}{{#if item_name}}<div class="fine">{{item_code}}</div>{{/if}}</td><td class="numeric">{{#if serial}}{{serial}}{{else}}—{{/if}}</td><td>{{#if release_status}}{{label release_status}}{{else}}Not recorded{{/if}}{{#if release_document}}<div class="fine">{{release_document}}</div>{{/if}}</td></tr>{{else}}{{#unless required_serialized_components}}<tr><td colspan="4" class="quiet">No serialised components recorded</td></tr>{{/unless}}{{/each}}
         {{#each required_serialized_components}}<tr><td>{{slot}}</td><td>{{#if item_name}}{{item_name}}{{else}}{{item_code}}{{/if}}{{#if item_name}}<div class="fine">{{item_code}}</div>{{/if}}</td><td class="numeric">{{#each captured_serials}}{{this}}{{else}}—{{/each}}</td><td>{{label status}}{{#if expected_quantity}}<div class="fine">Expected quantity: {{expected_quantity}}</div>{{/if}}</td></tr>{{/each}}
         </tbody></table>
@@ -47,19 +47,19 @@ internal static class CertificateStarterLayouts
     public static readonly IReadOnlyList<CertificateStarterDefinition> All =
     [
         new("builtin-generic-release", "Generic release record", CertificateDocumentKind.ReleaseRecord,
-            CertificateFormType.GenericRelease, 5, Release("Release record"), Footer: Footer),
+            CertificateFormType.GenericRelease, 6, Release("Release record"), Footer: Footer),
         new("builtin-coc", "Certificate of conformity", CertificateDocumentKind.ReleaseRecord,
-            CertificateFormType.CertificateOfConformity, 5, Release("Certificate of conformity",
+            CertificateFormType.CertificateOfConformity, 6, Release("Certificate of conformity",
                 "<div class=\"declaration\">The identified unit was built, inspected and released against its recorded model, revision and as-built configuration. This certificate reports the signed release facts; it is not a warranty statement.</div>"), Footer: Footer),
         new("builtin-production-history", "Production-history extract", CertificateDocumentKind.ReleaseRecord,
-            CertificateFormType.DeviceHistoryExtract, 4, Release("Production-history extract",
+            CertificateFormType.DeviceHistoryExtract, 5, Release("Production-history extract",
                 "<p class=\"fine\">Controlled extract of identity, production, inspection and release history.</p>"), Footer: Footer),
         new("builtin-8130-3-style", "8130-3-style release block", CertificateDocumentKind.ReleaseRecord,
-            CertificateFormType.Release81303Style, 4, Airworthiness("8130-3-style release block"), Footer: Footer),
+            CertificateFormType.Release81303Style, 5, Airworthiness("8130-3-style release block"), Footer: Footer),
         new("builtin-easa-form-1-style", "EASA Form 1-style release block", CertificateDocumentKind.ReleaseRecord,
-            CertificateFormType.EasaForm1Style, 4, Airworthiness("EASA Form 1-style release block"), Footer: Footer),
+            CertificateFormType.EasaForm1Style, 5, Airworthiness("EASA Form 1-style release block"), Footer: Footer),
         new("builtin-battery-passport", "Battery passport", CertificateDocumentKind.ReleaseRecord,
-            CertificateFormType.BatteryPassport, 5, Battery(), Footer: Footer),
+            CertificateFormType.BatteryPassport, 6, Battery(), Footer: Footer),
         new("builtin-warranty", "Warranty certificate", CertificateDocumentKind.WarrantyCertificate,
             CertificateFormType.WarrantyCertificate, 5, Warranty(), Footer: Footer),
     ];

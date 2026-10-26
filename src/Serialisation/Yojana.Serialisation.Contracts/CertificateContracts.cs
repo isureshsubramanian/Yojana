@@ -215,7 +215,14 @@ public sealed record ReleaseRecordPayload(
     BatteryPassportSnapshot? Battery = null,
     bool FullBomRequested = false,
     DateTimeOffset? BomSyncedAt = null,
-    IReadOnlyList<ReleaseBomLineSnapshot>? BomLines = null);
+    IReadOnlyList<ReleaseBomLineSnapshot>? BomLines = null,
+    IReadOnlyList<ReleasePartQuantitySnapshot>? InstalledParts = null);
+
+/// <summary>
+/// Installed quantity per part, summed from the current <see cref="ReleaseRecordPayload.AsMaintained"/> rows. It is
+/// derived, not a fact: the versioning engine leaves it out of the facts hash, so adding it creates no new versions.
+/// </summary>
+public sealed record ReleasePartQuantitySnapshot(string? ItemCode, string? ItemName, decimal Quantity);
 
 public sealed record WarrantyEntitlementSnapshot(
     Guid EntitlementId,

@@ -109,7 +109,7 @@ public sealed class MigratedCertificateBatchTests(SerialisationHostFixture fixtu
                 System.Text.Json.JsonSerializer.Deserialize<List<string>>(certificate.Evidence),
                 certificate.Language, "Migration.PlanCertificate", load);
             var single = await payloads.BuildAsync(command, unit!, certificate.TemplateVersionId, CancellationToken.None);
-            Assert.Equal(certificate.FactsHash, CanonicalJson.HashExcludingRootProperties(single.CanonicalPayload, "trigger"));
+            Assert.Equal(certificate.FactsHash, CertificateVersioningEngine.FactsHash(single.CanonicalPayload));
         }
 
         var numbers = stored.Select(row => int.Parse(row.TrackingNumber[(row.TrackingNumber.LastIndexOf('-') + 1)..],

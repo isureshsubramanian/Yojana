@@ -122,8 +122,10 @@ public sealed class ReleaseRecordPayloadBuilder(
             .Where(line => line.Kind == "item" && !line.Serialised && line.InventoryItem != false)
             .OrderBy(line => line.LineNo)
             .Select(line => new ReleaseBomLineSnapshot(line.LineNo, line.ItemCode ?? "Unknown part",
-                string.IsNullOrWhiteSpace(line.Description) ? null : line.Description, line.Quantity, line.Uom))
+                string.IsNullOrWhiteSpace(line.Description) ? null : line.Description, Plain(line.Quantity), line.Uom))
             .ToList() ?? [];
+        // HIDDEN COUPLING: derived from assembly only; CertificateVersioningEngine.NotFacts keeps it out of the hash.
+        var installedParts = ReleaseInstalledParts.From(assembly);
         return new("1.0", formType, trigger, identifiers,
             new ReleaseModelSnapshot(model?.Code ?? "Unknown item", model?.Name, unit.Build?.Revision),
             unit.Build is null ? "purchased" : "built_in_house",
@@ -131,8 +133,10 @@ public sealed class ReleaseRecordPayloadBuilder(
             refurbishment.CycleNumber, condition.SanitisationReference, condition.Firmware,
             refurbishment.WorkReference, refurbisher, refurbishment.LifeEpisode, presentation.Issuer,
             presentation.Branding, presentation.Snapshot, provenance, condition.Battery, fullBomRequested,
-            fullBomRequested ? billOfMaterials?.AsAt : null, bomLines);
+            fullBomRequested ? billOfMaterials?.AsAt : null, bomLines, installedParts);
     }
+
+    private static decimal Plain(decimal quantity) => ReleaseInstalledParts.Plain(quantity);
 
     private static int IdentifierPriority(string type) => type switch
     {
@@ -190,4 +194,23 @@ public sealed class WarrantyCertificatePayloadBuilder(
 public sealed class CertificatePayloadRefusedException(CommandRefusal refusal) : Exception(refusal.Message)
 {
     public CommandRefusal Refusal { get; } = refusal;
+}
+
+/// <summary>
+/// Installed quantity per part on a release record, never the ERP BOM quantity: the BOM can change after the build,
+/// the record cannot. Removed components are not counted.
+/// </summary>
+public static class ReleaseInstalledParts
+{
+    public static IReadOnlyList<ReleasePartQuantitySnapshot> From(IReadOnlyList<ReleaseComponentSnapshot> components) =>
+        components.Where(row => row.RemovedAt is null)
+            .GroupBy(row => (row.ItemCode, row.ItemName))
+            .Select(group => new ReleasePartQuantitySnapshot(group.Key.ItemCode, group.Key.ItemName,
+                Plain(group.Sum(row => row.Quantity ?? 1))))
+            .OrderBy(part => part.ItemName ?? part.ItemCode, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(part => part.ItemCode, StringComparer.Ordinal)
+            .ToList();
+
+    /// <summary>A database decimal keeps its column scale (2.00000000); the record prints what a reader writes (2).</summary>
+    public static decimal Plain(decimal quantity) => quantity / 1.000000000000000000000000000000000m;
 }

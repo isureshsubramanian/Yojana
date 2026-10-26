@@ -433,7 +433,7 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
                 && row.DocumentKind == CertificateDocumentKind.ReleaseRecord && row.Version == 2);
             Assert.NotEqual("{}", unchanged.Payload);
             Assert.Equal(CanonicalJson.Hash(unchanged.Payload), unchanged.PayloadHash);
-            Assert.Equal(CanonicalJson.HashExcludingRootProperties(unchanged.Payload, "trigger"), unchanged.FactsHash);
+            Assert.Equal(CertificateVersioningEngine.FactsHash(unchanged.Payload), unchanged.FactsHash);
         }
 
         using (var scope = fixture.ScopeFor(setup.Tenant))
@@ -1220,7 +1220,7 @@ public sealed class CertificateDatabaseTests(SerialisationHostFixture fixture)
         var dbAfter = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
         var builtIn = await dbAfter.CertificateTemplateVersions.AsNoTracking().Where(row => row.TemplateId == builtInId)
             .OrderBy(row => row.Version).ToListAsync();
-        Assert.Equal([1, 5], builtIn.Select(row => row.Version));
+        Assert.Equal([1, 6], builtIn.Select(row => row.Version));
         Assert.Equal(CertificateTemplateStatus.Retired, builtIn[0].Status);
         Assert.Equal(CertificateTemplateStatus.Active, builtIn[1].Status);
         Assert.Contains("<h2>As-built</h2>", builtIn[1].LayoutBody, StringComparison.Ordinal);
