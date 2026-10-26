@@ -147,13 +147,10 @@ public sealed class ErpChangeRunService(
     public async Task<ErpChangeRunHistoryPage> ListAsync(ErpChangeRunListRequest request,
         CancellationToken cancellationToken)
     {
-        var take = Math.Clamp(request.Take, 1, 100);
         var query = db.ErpChangeRuns.AsNoTracking().Where(row => row.TenantId == tenant.TenantId);
-        if (DecodeRunCursor(request.Cursor) is { } cursor)
-            query = query.Where(row => row.StartedAt < cursor.StartedAt
-                || (row.StartedAt == cursor.StartedAt && row.ErpChangeRunId.CompareTo(cursor.RunId) < 0));
-        var runs = await query.OrderByDescending(row => row.StartedAt)
-            .ThenByDescending(row => row.ErpChangeRunId).Take(take + 1)
+        var paging = ErpChangeEndpoints.RunPages.Parse(request.Sort, request.Direction, request.Take,
+            request.Cursor, defaultTake: 25);
+        var runs = await paging.Apply(query).Take(paging.Take + 1)
             .Select(row => new RunHistoryProjection
             {
                 RunId = row.ErpChangeRunId,
@@ -166,7 +163,7 @@ public sealed class ErpChangeRunService(
                 StartedBy = row.StartedBy,
                 CurrentStep = row.CurrentStep,
             }).ToListAsync(cancellationToken);
-        var page = runs.Take(take).ToList();
+        var page = runs.Take(paging.Take).ToList();
         var connectionIds = page.SelectMany(row => new[] { row.SourceConnectionId, row.TargetConnectionId })
             .Distinct().ToList();
         var connectionNames = await db.Connections.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
@@ -178,8 +175,14 @@ public sealed class ErpChangeRunService(
             connectionNames.GetValueOrDefault(row.TargetConnectionId) ?? "Former connection",
             row.StartedAt, row.FinishedAt, Outcome(row.Status, row.CloseReason),
             Name(row.StartedBy, names), row.CurrentStep, StepName(row.CurrentStep))).ToList();
-        return new(rows, runs.Count > take && rows.Count != 0
-            ? EncodeRunCursor(new(rows[^1].StartedAt, rows[^1].RunId)) : null);
+        string? next = null;
+        if (runs.Count > paging.Take && page.Count != 0)
+        {
+            var lastRunId = page[^1].RunId;
+            next = paging.CursorFor(await query.SingleAsync(row => row.ErpChangeRunId == lastRunId,
+                cancellationToken));
+        }
+        return new(rows, next);
     }
 
     public async Task<UnitHistoryChangePage> UnitHistoryChangesAsync(Guid runId, string kind,

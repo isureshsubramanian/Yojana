@@ -99,12 +99,12 @@ test("override upload is atomic, reports readable errors and refreshes result co
 
 test("override list is batch-scoped, server-paged and keeps unused overrides visible", () => {
   for (const text of ["Download links (CSV)", "Upload overrides", "Remove all overrides", "Unused only", "Unused", "selected mapping run", "Confirm removal", "Keep overrides"]) assert.ok(settingsScreen.includes(text), text);
-  assert.match(settingsScreen, /migrationApi\.linkOverrides\(batchId \|\| undefined, unusedOnly \|\| undefined, cursor/);
+  assert.match(settingsScreen, /useGridQuery\("\/api\/migration\/link-overrides"/);
   assert.match(settingsScreen, /<DataGrid/);
   assert.match(settingsScreen, /row\.unused \? <StatusBadge tone="warn">Unused/);
   assert.match(settingsScreen, /setConfirmClear\(true\)/);
   assert.doesNotMatch(settingsScreen, /window\.confirm|confirm\(/);
-  assert.match(api, /batchId, unused: unused \|\| undefined, cursor, take: 12/);
+  assert.match(settingsScreen, /sort: \{ key: "document"/);
 });
 
 test("settings has a complete read-only mode and edit capability for both approved roles", () => {
@@ -406,6 +406,8 @@ test("one shared undo flow handles rehearsal, final and delta touched-unit refus
   for (const text of ["Keep the load", "The load stays in place", "Touched serial"]) assert.ok(undoScreen.includes(text), text);
   assert.match(undoScreen, /migrationApi\.touchedLoadUnits/);
   assert.match(undoScreen, /result\.touchedUnitCount/);
+  assert.match(undoScreen, /useGridState/);
+  assert.match(undoScreen, /onPageSize=\{size =>/);
   assert.match(consoleScreen, /<MigrationUndoPanel undo=\{undo\}/);
   assert.match(deltaScreen, /<MigrationUndoPanel undo=\{undo\}/);
   for (const outcome of ["rolled_back", "refused_touched", "nothing_to_remove"]) assert.doesNotMatch(rollbackOutcomeLabel(outcome), /_/);
@@ -428,7 +430,9 @@ test("load actions are administrator-only while refusals keep the shared ranked 
   assert.match(refusalsScreen, /<KpiStrip/); assert.match(refusalsScreen, /<DataGrid/);
   assert.match(refusalsScreen, /<MigrationRankedList/); assert.match(deltaScreen, /<MigrationRankedList/);
   for (const text of ["aria-pressed", "migration-reason", "migration-reason-list"]) assert.ok(rankedList.includes(text), text);
-  assert.match(refusalsScreen, /migrationApi\.loadRefusals\(loadId, \{ \.\.\.active, cursor \}\)/);
+  assert.match(refusalsScreen, /useGridQuery\(`\/api\/migration\/loads\/\$\{loadId\}\/refusals`/);
+  assert.match(refusalsScreen, /sort: \{ key: "item"/);
+  assert.match(refusalsScreen, /onPageSize=\{query\.onPageSize\}/);
   assert.match(refusalsScreen, /result\?\.total/); assert.match(refusalsScreen, /totalIsExact: true/);
   assert.match(refusalsScreen, /loadRefusalsExportUrl/);
   assert.doesNotMatch(refusalsScreen, />\{row\.(?:refusalId|planUnitId)\}</);
@@ -457,12 +461,16 @@ test("delta findings screen maps the approved filters, exact paging, links and f
   for (const text of ["Delta load", "Base load", "Batch", "Started by", "Findings", "Undo", "Findings by kind", "Owner differences are coexistence conflicts", "Any kind", "Item code", "Serial contains", "What happened", "Conflict open", "Open unit", "CSV", "Excel"]) assert.ok(deltaScreen.includes(text), text);
   assert.match(deltaScreen, /migrationApi\.loadSummary/);
   assert.ok(refusalsScreen.indexOf("migration-findings-search") > refusalsScreen.indexOf("id=\"migration-refusals\""), "search inside the refused units card");
-  assert.match(refusalsScreen, /setTimeout\(\(\) => \{ setCursors\(\[undefined\]\); setPage\(1\); setFilters\(next\); \}, 300\)/); assert.ok(!refusalsScreen.includes("Apply filters"));
+  assert.match(refusalsScreen, /setTimeout\(\(\) => setFilters\(next\), 300\)/); assert.ok(!refusalsScreen.includes("Apply filters"));
   // The serial search sits on the findings table and runs as the user types; no Apply press, no export needed.
   assert.ok(deltaScreen.indexOf("migration-findings-search") > deltaScreen.indexOf("id=\"migration-delta-findings\""), "search inside the findings card");
-  assert.match(deltaScreen, /setTimeout\(\(\) => \{ setCursors\(\[undefined\]\); setPage\(1\); setFilters\(next\); \}, 300\)/); assert.ok(!deltaScreen.includes("Apply filters"));
-  assert.match(deltaScreen, /migrationApi\.deltaFindings\(loadId, \{ \.\.\.active, cursor \}\)/);
-  assert.match(deltaScreen, /pageSize = 100/);
+  assert.match(deltaScreen, /setTimeout\(\(\) => setFilters\(next\), 300\)/); assert.ok(!deltaScreen.includes("Apply filters"));
+  assert.match(deltaScreen, /const endpoint = `\/api\/migration\/loads\/\$\{loadId\}\/delta`/);
+  assert.match(deltaScreen, /useGridQuery\(endpoint/);
+  for (const key of ["kind", "item", "serial"]) assert.match(deltaScreen, new RegExp(`sort: \\{ key: "${key}"`));
+  assert.match(deltaScreen, /const pageSize = 100/);
+  assert.match(deltaScreen, /defaultSize: pageSize/);
+  assert.match(deltaScreen, /onPageSize=\{query\.onPageSize\}/);
   assert.match(deltaScreen, /totalIsExact: true/);
   assert.match(deltaScreen, /deltaKindTone\(row\.kind\)/);
   assert.match(deltaScreen, /row\.unitId.*\/units\/\$\{row\.unitId\}/s);

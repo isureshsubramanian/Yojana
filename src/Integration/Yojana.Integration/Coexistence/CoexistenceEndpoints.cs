@@ -3,13 +3,22 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
+using Yojana.Integration.Data.Entities;
+using CommandRefusedException = Yojana.Platform.Contracts.CommandRefusedException;
 
 namespace Yojana.Integration.Coexistence;
 
 public static class CoexistenceEndpoints
 {
+    internal static readonly SortedPage<CoexistenceConflict, Guid> ConflictPages = new("detected",
+        row => row.ConflictId,
+        new SortColumn<CoexistenceConflict, DateTime>("detected", row => row.DetectedAt,
+            SortDirection.Descending),
+        new SortColumn<CoexistenceConflict, string>("status", row => row.Status));
+
     public static IEndpointRouteBuilder MapCoexistenceEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/integration").RequireAuthorization(YojanaPolicy.IntegrationOperations);
@@ -36,9 +45,10 @@ public static class CoexistenceEndpoints
             ClaimsPrincipal user, SyncControl control, CancellationToken ct) =>
                 Invoke(() => control.ResumeAsync(connectionId, request, Actor(user), ct)))
             .RequireAuthorization(YojanaPolicy.TenantAdministrator);
-        group.MapGet("/coexistence/conflicts", (Guid? connectionId, string? status, string? cursor, int? take,
+        group.MapGet("/coexistence/conflicts", (Guid? connectionId, string? status, string? sort, string? dir,
+            string? cursor, int? take,
             CoexistenceConflicts conflicts, CancellationToken ct) =>
-                Invoke(() => conflicts.ListAsync(connectionId, status, cursor, take ?? 50, ct)));
+                Invoke(() => conflicts.ListAsync(connectionId, status, sort, dir, cursor, take, ct)));
         group.MapGet("/coexistence/conflicts/{conflictId:guid}", (Guid conflictId, CoexistenceConflicts conflicts,
             CancellationToken ct) => Invoke(() => conflicts.GetAsync(conflictId, ct)));
         group.MapPost("/coexistence/conflicts/{conflictId:guid}/resolve", (Guid conflictId,
@@ -106,7 +116,7 @@ public static class CoexistenceEndpoints
         catch (CoexistenceRuleException ex)
         {
             return Results.Problem(title: ex.Rule, detail: ex.Message,
-                statusCode: ex.Rule.EndsWith("not_found", StringComparison.Ordinal) ? 404 : 422,
+                statusCode: ex.Rule.EndsWith("not_found", StringComparison.Ordinal) ? 404 : 400,
                 extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
         }
         catch (TenantSettingVersionConflictException)

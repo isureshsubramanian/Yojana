@@ -3,18 +3,24 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Platform.Contracts.Paging;
 
 namespace Yojana.Integration.Connectors.CX04;
 
 public static class Cx04AuthorisationEndpoints
 {
+    internal static readonly SortedPage<Cx04HistoryProjection, long> HistoryPages = new("when",
+        row => row.Sequence,
+        new SortColumn<Cx04HistoryProjection, DateTime>("when", row => row.OccurredAt,
+            SortDirection.Descending));
+
     public static IEndpointRouteBuilder MapCx04AuthorisationEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/integration/connections/{connectionId:guid}/cx04")
             .RequireAuthorization(YojanaPolicy.IntegrationOperations);
-        group.MapGet("/authorisation", (Guid connectionId, string? cursor, int? take,
+        group.MapGet("/authorisation", (Guid connectionId, string? sort, string? dir, string? cursor, int? take,
             Cx04Authorisation service, CancellationToken ct) =>
-            Invoke(() => service.ReadAsync(connectionId, cursor, take ?? 50, ct)));
+            Invoke(() => service.ReadAsync(connectionId, sort, dir, cursor, take, ct)));
         group.MapPost("/consent", (Guid connectionId, Cx04Authorisation service, CancellationToken ct) =>
             Invoke(() => service.BeginAsync(connectionId, ct)));
         group.MapPost("/callback", (Guid connectionId, Cx04ConsentCallback request, ClaimsPrincipal user,
@@ -47,6 +53,15 @@ public static class Cx04AuthorisationEndpoints
         {
             return Results.Problem(title: "tenant_setting_changed", detail: exception.Message, statusCode: 409,
                 extensions: new Dictionary<string, object?> { ["rule"] = "tenant_setting_changed" });
+        }
+        catch (Yojana.Platform.Contracts.CommandRefusedException exception)
+        {
+            return Results.Problem(title: exception.Rule, detail: exception.Message, statusCode: 400,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["rule"] = exception.Rule,
+                    ["unblockingStep"] = exception.UnblockingStep,
+                });
         }
     }
 

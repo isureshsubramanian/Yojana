@@ -208,6 +208,8 @@ internal static class ApplyModel
             builder.Property(x => x.PreviousCoverHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
             builder.HasIndex(x => new { x.TenantId, x.RunId, x.ItemId });
             builder.HasIndex(x => new { x.TenantId, x.RunId, x.Kind, x.ItemId });
+            builder.HasIndex(x => new { x.TenantId, x.RunId, x.ItemCode, x.ItemId });
+            builder.HasIndex(x => new { x.TenantId, x.RunId, x.Serial, x.ItemId });
             builder.HasOne<MigrationApplyRun>().WithMany()
                 .HasForeignKey(x => new { x.TenantId, x.RunId }).OnDelete(DeleteBehavior.Cascade);
         });

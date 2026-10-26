@@ -7,11 +7,18 @@ using Microsoft.Extensions.DependencyInjection;
 using Yojana.Integration.Connections;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Relay.Contracts;
+using Yojana.Platform.Contracts;
+using Yojana.Platform.Contracts.Paging;
 
 namespace Yojana.Integration.Relays;
 
 public static class RelayEndpoints
 {
+    internal static readonly SortedPage<SiteRelay, Guid> Pages = new("registration_order", row => row.RelayId,
+        new SortColumn<SiteRelay, Guid>("registration_order", row => row.RelayId),
+        new SortColumn<SiteRelay, string>("name", row => row.DisplayName),
+        new SortColumn<SiteRelay, string>("status", row => row.Status));
+
     public static IEndpointRouteBuilder MapRelayEndpoints(this IEndpointRouteBuilder app)
     {
         var admin = app.MapGroup("/api/integration/connections/{connectionId:guid}/relays")
@@ -22,8 +29,9 @@ public static class RelayEndpoints
                 response.Headers.CacheControl = "no-store";
                 return await registry.RegisterAsync(connectionId, request, Actor(user), ct);
             })).RequireAuthorization(YojanaPolicy.TenantAdministrator);
-        admin.MapGet("", (Guid connectionId, string? cursor, int? take, RelayRegistry registry, CancellationToken ct) =>
-            Admin(() => registry.ListAsync(connectionId, cursor, take ?? 50, ct)));
+        admin.MapGet("", (Guid connectionId, string? sort, string? dir, string? cursor, int? take,
+            RelayRegistry registry, CancellationToken ct) =>
+            Admin(() => registry.ListAsync(connectionId, sort, dir, cursor, take, ct)));
         admin.MapPost("/{relayId:guid}/rotate", (Guid connectionId, Guid relayId, RotateSiteRelay request,
             ClaimsPrincipal user, RelayRegistry registry, HttpResponse response, CancellationToken ct) => Admin(async () =>
             {
@@ -86,6 +94,15 @@ public static class RelayEndpoints
         {
             return Results.Problem(title: ex.Rule, detail: ex.Message,
                 statusCode: ex.Rule.EndsWith("not_found", StringComparison.Ordinal) ? 404 : 422);
+        }
+        catch (CommandRefusedException ex)
+        {
+            return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: 400,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["rule"] = ex.Rule,
+                    ["unblockingStep"] = ex.UnblockingStep,
+                });
         }
     }
 }

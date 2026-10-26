@@ -6,6 +6,7 @@ using Yojana.Integration.LegacyMigration.Mapping;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Platform.Contracts.Paging;
 
 namespace Yojana.Integration.LegacyMigration.LinkOverrides;
 
@@ -210,12 +211,16 @@ public sealed class LinkOverrideService(IntegrationDbContext db, ITenantContext 
     }
 
     public Task<LinkOverridePage> ListAsync(string? cursor, int take, CancellationToken cancellationToken) =>
-        ListAsync(null, null, cursor, take, cancellationToken);
+        ListAsync(null, null, null, null, cursor, take, cancellationToken);
 
-    public async Task<LinkOverridePage> ListAsync(Guid? batchId, bool? unused, string? cursor, int take,
+    public Task<LinkOverridePage> ListAsync(Guid? batchId, bool? unused, string? cursor, int take,
+        CancellationToken cancellationToken) =>
+        ListAsync(batchId, unused, null, null, cursor, take, cancellationToken);
+
+    public async Task<LinkOverridePage> ListAsync(Guid? batchId, bool? unused, string? sort, string? direction,
+        string? cursor, int? take,
         CancellationToken cancellationToken)
     {
-        take = Math.Clamp(take, 1, 200);
         var selectedBatchId = batchId ?? await db.MigrationBatches.AsNoTracking()
             .Where(row => row.TenantId == tenant.TenantId)
             .OrderByDescending(row => row.RequestedAt).ThenByDescending(row => row.BatchId)
@@ -225,28 +230,26 @@ public sealed class LinkOverrideService(IntegrationDbContext db, ITenantContext 
                 row.Status == MappingRunStatus.Completed)
             .OrderByDescending(row => row.FinishedAt).ThenByDescending(row => row.RunId)
             .Select(row => (Guid?)row.RunId).FirstOrDefaultAsync(cancellationToken);
-        var projected = db.Set<MigrationLinkOverride>().AsNoTracking()
-            .Where(row => row.TenantId == tenant.TenantId)
-            .Select(row => new
-            {
-                Row = row,
-                Unused = runId == null || !db.MigrationPlanReplacementLinks.Any(link =>
-                    link.TenantId == tenant.TenantId && link.MapRunId == runId &&
-                    link.SourceKey == row.SourceKey),
-            });
-        var totalCount = await projected.CountAsync(cancellationToken);
-        var unusedCount = await projected.CountAsync(row => row.Unused, cancellationToken);
-        if (unused == true) projected = projected.Where(row => row.Unused);
-        if (cursor is not null) projected = projected.Where(row => row.Row.SourceKey.CompareTo(cursor) > 0);
-        var rows = await projected.OrderBy(row => row.Row.SourceKey).Take(take + 1).ToListAsync(cancellationToken);
-        var pageRows = rows.Take(take).ToList();
-        var actors = pageRows.Select(row => row.Row.UploadedBy).Distinct(StringComparer.Ordinal).ToList();
+        var all = db.Set<MigrationLinkOverride>().AsNoTracking().Where(row => row.TenantId == tenant.TenantId);
+        var totalCount = await all.CountAsync(cancellationToken);
+        var unusedRows = all.Where(row => runId == null || !db.MigrationPlanReplacementLinks.Any(link =>
+            link.TenantId == tenant.TenantId && link.MapRunId == runId && link.SourceKey == row.SourceKey));
+        var unusedCount = await unusedRows.CountAsync(cancellationToken);
+        var filtered = unused == true ? unusedRows : all;
+        var paging = MigrationEndpoints.LinkOverridePages.Parse(sort, direction, take, cursor, defaultTake: 50);
+        var rows = await paging.Apply(filtered).Take(paging.Take + 1).ToListAsync(cancellationToken);
+        var pageRows = rows.Take(paging.Take).ToList();
+        var actors = pageRows.Select(row => row.UploadedBy).Distinct(StringComparer.Ordinal).ToList();
         var names = await people.DisplayNamesAsync(actors, cancellationToken);
-        var items = pageRows.Select(item => new LinkOverrideView(item.Row.SourceKey, item.Row.Direction,
-            item.Row.ReplacementReason, item.Row.State, item.Row.ReplacementConditionAllowed, item.Row.PricePolicy,
-            item.Row.DifferenceAmount, item.Row.Currency, item.Row.UploadedAt,
-            ActorName(item.Row.UploadedBy, names), item.Row.UploadFileName, item.Unused)).ToList();
-        return new(items, rows.Count > take ? items[^1].SourceKey : null, totalCount, unusedCount);
+        var pageKeys = pageRows.Select(item => item.SourceKey).ToList();
+        var unusedKeys = unused == true ? pageRows.Select(row => row.SourceKey).ToHashSet(StringComparer.Ordinal)
+            : (await unusedRows.Where(row => pageKeys.Contains(row.SourceKey))
+                .Select(row => row.SourceKey).ToListAsync(cancellationToken)).ToHashSet(StringComparer.Ordinal);
+        var items = pageRows.Select(item => new LinkOverrideView(item.SourceKey, item.Direction,
+            item.ReplacementReason, item.State, item.ReplacementConditionAllowed, item.PricePolicy,
+            item.DifferenceAmount, item.Currency, item.UploadedAt,
+            ActorName(item.UploadedBy, names), item.UploadFileName, unusedKeys.Contains(item.SourceKey))).ToList();
+        return new(items, rows.Count > paging.Take ? paging.CursorFor(pageRows[^1]) : null, totalCount, unusedCount);
     }
 
     public async Task<DeleteLinkOverridesResponse> DeleteAllAsync(DeleteLinkOverridesRequest request,

@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,6 +12,7 @@ using Yojana.Integration.Security.Workers;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Platform.Contracts.Paging;
 
 namespace Yojana.Integration.Connections;
 
@@ -23,29 +23,30 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
     IConnectionThrottleProfileStore throttles, IUserDirectory people, IServiceProvider services,
     Coexistence.WarrantyContractMaintenanceSettings warrantyContracts)
 {
-    public async Task<RegistrationConnectorPage> RegistrationConnectorsAsync(string? cursor, int take, CancellationToken ct)
+    public async Task<RegistrationConnectorPage> RegistrationConnectorsAsync(string? sort, string? direction,
+        string? cursor, int? take, CancellationToken ct)
     {
-        take = Math.Clamp(take, 1, 50);
         var query = db.ConnectorCatalogue.AsNoTracking().Where(x => x.TenantId == tenant.TenantId && x.Enabled);
-        if (cursor is not null) query = query.Where(x => x.ConnectorCode.CompareTo(cursor) > 0);
-        var rows = await query.OrderBy(x => x.ConnectorCode).Take(take + 1).ToListAsync(ct);
-        var items = rows.Take(take).Select(x => (Entry: x, Form: services.GetKeyedService<IConnectionLifecycleAdapter>(x.ConnectorCode)?.RegistrationForm))
+        var paging = ConnectionEndpoints.ConnectorPages.Parse(sort, direction, take, cursor, defaultTake: 12);
+        var rows = await paging.Apply(query).Take(paging.Take + 1).ToListAsync(ct);
+        var pageRows = rows.Take(paging.Take).ToList();
+        var items = pageRows.Select(x => (Entry: x, Form: services.GetKeyedService<IConnectionLifecycleAdapter>(x.ConnectorCode)?.RegistrationForm))
             .Where(x => x.Form is not null).Select(x => new RegistrationConnector(x.Entry.ConnectorCode, x.Entry.DisplayName, x.Form!)).ToList();
-        return new(items, rows.Count > take ? rows[take - 1].ConnectorCode : null);
+        return new(items, rows.Count > paging.Take ? paging.CursorFor(pageRows[^1]) : null);
     }
 
-    public async Task<ConnectionPage> ListAsync(string? cursor, int take, bool archived, CancellationToken ct)
+    public Task<RegistrationConnectorPage> RegistrationConnectorsAsync(string? cursor, int take, CancellationToken ct) =>
+        RegistrationConnectorsAsync(null, null, cursor, take, ct);
+
+    public async Task<ConnectionPage> ListAsync(string? sort, string? direction, string? cursor, int? take,
+        bool archived, CancellationToken ct)
     {
-        take = Math.Clamp(take, 1, 200);
         var query = db.Connections.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
             && (archived ? x.Status == ConnectionStatus.Archived : x.Status != ConnectionStatus.Archived));
-        if (!string.IsNullOrEmpty(cursor))
-        {
-            if (!Guid.TryParse(cursor, out var id)) throw new ConnectionRuleException("cursor_invalid", "The connection cursor is invalid.");
-            query = query.Where(x => x.ConnectionId.CompareTo(id) > 0);
-        }
-        var rows = await query.OrderBy(x => x.ConnectionId).Take(take + 1).ToListAsync(ct);
-        var ids = rows.Take(take).Select(x => x.ConnectionId).ToList();
+        var paging = ConnectionEndpoints.ConnectionPages.Parse(sort, direction, take, cursor, defaultTake: 50);
+        var rows = await paging.Apply(query).Take(paging.Take + 1).ToListAsync(ct);
+        var pageRows = rows.Take(paging.Take).ToList();
+        var ids = pageRows.Select(x => x.ConnectionId).ToList();
         var health = await db.ConnectionHealth.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
             && ids.Contains(x.ConnectionId)).ToDictionaryAsync(x => x.ConnectionId, ct);
         var gateway = await db.ConnectionGatewaySettings.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
@@ -57,9 +58,9 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
             .Select(x => x.ConnectionId).Distinct().ToListAsync(ct);
         var catalogue = await db.ConnectorCatalogue.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
             && codes.Contains(x.ConnectorCode)).ToDictionaryAsync(x => x.ConnectorCode, x => x.DisplayName, ct);
-        var sync = await SyncStatesAsync(rows.Take(take).ToList(), health.ToDictionary(x => x.Key,
+        var sync = await SyncStatesAsync(pageRows, health.ToDictionary(x => x.Key,
             x => x.Value.OutboxDepth), ct);
-        var views = rows.Take(take).Select(connection =>
+        var views = pageRows.Select(connection =>
         {
             var state = health.GetValueOrDefault(connection.ConnectionId) ?? Missing(connection);
             var configured = gateway.GetValueOrDefault(connection.ConnectionId);
@@ -70,17 +71,24 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
                 configured?.OutboundMode ?? "none", configured?.ReadOnly ?? true,
                 View(state), accepted.Contains(connection.ConnectionId), sync[connection.ConnectionId]);
         }).ToList();
-        return new(views, rows.Count > take ? views[^1].ConnectionId.ToString("D") : null, await KpisAsync(ct));
+        return new(views, rows.Count > paging.Take ? paging.CursorFor(pageRows[^1]) : null, await KpisAsync(ct));
     }
 
-    public async Task<TenantStatusPage> StatusAsync(string? cursor, int take, CancellationToken ct)
+    public Task<ConnectionPage> ListAsync(string? cursor, int take, bool archived, CancellationToken ct) =>
+        ListAsync(null, null, cursor, take, archived, ct);
+
+    public async Task<TenantStatusPage> StatusAsync(string? sort, string? direction, string? cursor, int? take,
+        CancellationToken ct)
     {
-        var page = await ListAsync(cursor, take, false, ct);
+        var page = await ListAsync(sort, direction, cursor, take, false, ct);
         return new(page.Items.Select(row => new TenantConnectionStatus(row.ConnectionId, row.ConnectionName,
             row.Status, row.IsLive, row.Health.CheckedUpTo, row.Health.WaitingToSend, row.Health.OpenDeadLetters,
             row.Health.OpenManualTasks, row.Status is "down" or "degraded" ? 1 : 0, row.Health.UpdatedAt,
             row.Sync)).ToList(), page.NextCursor, page.Kpis);
     }
+
+    public Task<TenantStatusPage> StatusAsync(string? cursor, int take, CancellationToken ct) =>
+        StatusAsync(null, null, cursor, take, ct);
 
     public async Task<ConnectionDetail> DetailAsync(Guid id, CancellationToken ct)
     {
@@ -158,23 +166,23 @@ public sealed class ConnectionQueries(IntegrationDbContext db, ITenantContext te
             handOver, sync);
     }
 
-    public async Task<ConnectionEventPage> EventsAsync(Guid id, string? cursor, int take, CancellationToken ct)
+    public async Task<ConnectionEventPage> EventsAsync(Guid id, string? sort, string? direction, string? cursor,
+        int? take, CancellationToken ct)
     {
         _ = await ConnectionAsync(id, ct);
-        take = Math.Clamp(take, 1, 200);
         var query = db.ConnectionEvents.AsNoTracking().Where(x => x.TenantId == tenant.TenantId && x.ConnectionId == id);
-        if (!string.IsNullOrEmpty(cursor))
-        {
-            if (!long.TryParse(cursor, NumberStyles.None, CultureInfo.InvariantCulture, out var sequence) || sequence < 1)
-                throw new ConnectionRuleException("cursor_invalid", "The event cursor is invalid.");
-            query = query.Where(x => x.SequenceNo < sequence);
-        }
-        var rows = await query.OrderByDescending(x => x.SequenceNo).Take(take + 1).ToListAsync(ct);
-        var names = await people.DisplayNamesAsync(rows.Take(take).Select(x => x.ActorRef).Distinct().ToList(), ct);
-        return new(rows.Take(take).Select(x => new ConnectionEventView(x.SequenceNo, x.EventType, x.OccurredAt,
+        var paging = ConnectionEndpoints.EventPages.Parse(sort, direction, take, cursor, defaultTake: 50);
+        var rows = await paging.Apply(query).Take(paging.Take + 1).ToListAsync(ct);
+        var pageRows = rows.Take(paging.Take).ToList();
+        var names = await people.DisplayNamesAsync(pageRows.Select(x => x.ActorRef).Distinct().ToList(), ct);
+        return new(pageRows.Select(x => new ConnectionEventView(x.SequenceNo, x.EventType, x.OccurredAt,
                 names.GetValueOrDefault(x.ActorRef) ?? (x.ActorRef.StartsWith("system:", StringComparison.Ordinal)
-                    ? "System" : "Unknown user"), EventSummary(x.EventType))).ToList(), rows.Count > take ? rows[take - 1].SequenceNo.ToString(CultureInfo.InvariantCulture) : null);
+                    ? "System" : "Unknown user"), EventSummary(x.EventType))).ToList(),
+            rows.Count > paging.Take ? paging.CursorFor(pageRows[^1]) : null);
     }
+
+    public Task<ConnectionEventPage> EventsAsync(Guid id, string? cursor, int take, CancellationToken ct) =>
+        EventsAsync(id, null, null, cursor, take, ct);
 
     // Hidden coupling: the web client's connection schemas (web/src/integration/adminTypes.ts) treat Sync as always
     // present, because every list, status and detail view is built from this method, which returns an entry for each

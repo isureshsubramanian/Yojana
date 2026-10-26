@@ -12,6 +12,7 @@ using Yojana.Integration.Notifications;
 using Yojana.Integration.Connectors.CX02;
 using Yojana.Integration.Connectors.CX04;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Integration.Connectors.CX01;
 using Yojana.Integration.Reconciliation;
 using Yojana.Integration.Backfills;
@@ -24,6 +25,14 @@ namespace Yojana.Integration;
 
 public static class IntegrationEndpoints
 {
+    internal static readonly SortedPage<DeadLetterService.DeadLetterListProjection, Guid> DeadLetterPages = new("received",
+        row => row.DeadLetterItemId,
+        new SortColumn<DeadLetterService.DeadLetterListProjection, DateTime>("received", row => row.CreatedAt));
+    internal static readonly SortedPage<ManualOutboundTask, Guid> ManualTaskPages = new("created",
+        row => row.ManualOutboundTaskId,
+        new SortColumn<ManualOutboundTask, DateTime>("created", row => row.CreatedAt),
+        new SortColumn<ManualOutboundTask, string>("desk", row => row.Desk));
+
     public static IEndpointRouteBuilder MapIntegrationEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapIntegrationTransportEndpoints();
@@ -56,9 +65,10 @@ public static class IntegrationEndpoints
         var integration = app.MapGroup("/api/integration")
             .RequireAuthorization(YojanaPolicy.IntegrationOperations);
         integration.MapGet("/dead-letters", async (Guid? connectionId, string? reason, string? recordType,
-            double? minimumAgeHours, double? maximumAgeHours, string? status, string? query, string? cursor, int? take,
+            double? minimumAgeHours, double? maximumAgeHours, string? status, string? query, string? sort, string? dir,
+            string? cursor, int? take,
             DeadLetterService service, CancellationToken ct) => await Invoke(() => service.ListAsync(new(connectionId,
-                reason, recordType, minimumAgeHours, maximumAgeHours, status, query, cursor, take ?? 50), ct)));
+                reason, recordType, minimumAgeHours, maximumAgeHours, status, query, sort, dir, cursor, take), ct)));
         integration.MapGet("/dead-letters/{itemId:guid}", async (Guid itemId, DeadLetterService service,
             CancellationToken ct) => await service.DetailAsync(itemId, ct) is { } detail
                 ? Results.Ok(detail) : Results.NotFound());
@@ -73,9 +83,10 @@ public static class IntegrationEndpoints
             DiscardDeadLetterRequest request, ClaimsPrincipal user, DeadLetterService service,
             CancellationToken ct) => Invoke(() => service.DiscardAsync(itemId, request.Reason, Actor(user), ct)));
 
-        integration.MapGet("/manual-tasks", async (string? status, string? desk, string? cursor, int? take,
+        integration.MapGet("/manual-tasks", async (string? status, string? desk, string? sort, string? dir,
+            string? cursor, int? take,
             DeadLetterService service, CancellationToken ct) => Results.Ok(await service.ManualTasksAsync(status,
-                desk, cursor, take ?? 50, ct)));
+                desk, sort, dir, cursor, take, ct)));
         integration.MapGet("/manual-tasks/{taskId:guid}", async (Guid taskId, DeadLetterService service,
             CancellationToken ct) => await service.ManualTaskAsync(taskId, ct) is { } detail
                 ? Results.Ok(detail) : Results.NotFound());
@@ -196,6 +207,15 @@ public static class IntegrationEndpoints
     private static async Task<IResult> Invoke<T>(Func<Task<T>> action)
     {
         try { return Results.Ok(await action()); }
+        catch (Yojana.Platform.Contracts.CommandRefusedException ex)
+        {
+            return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["rule"] = ex.Rule,
+                    ["unblockingStep"] = ex.UnblockingStep,
+                });
+        }
         catch (DeadLetterRuleException ex)
         {
             var status = ex.Rule.EndsWith("not_found", StringComparison.Ordinal)

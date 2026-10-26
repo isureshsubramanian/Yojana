@@ -10,8 +10,17 @@ public sealed record DeadLetterListRequest(
     double? MaximumAgeHours,
     string? Status,
     string? Query,
+    string? Sort,
+    string? Direction,
     string? Cursor,
-    int Take = 50);
+    int? Take = null)
+{
+    public DeadLetterListRequest(Guid? connectionId, string? reason, string? recordType,
+        double? minimumAgeHours, double? maximumAgeHours, string? status, string? query,
+        string? cursor, int? take = null)
+        : this(connectionId, reason, recordType, minimumAgeHours, maximumAgeHours, status, query,
+            null, null, cursor, take) { }
+}
 
 public sealed record DeadLetterListRow(
     Guid DeadLetterItemId,

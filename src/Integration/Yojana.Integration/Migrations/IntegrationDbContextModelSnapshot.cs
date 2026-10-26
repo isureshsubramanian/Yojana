@@ -577,6 +577,12 @@ namespace Yojana.Integration.Migrations
                     b.HasKey("TenantId", "ConflictId")
                         .HasName("pk_coexistence_conflict");
 
+                    b.HasIndex("TenantId", "DetectedAt", "ConflictId")
+                        .HasDatabaseName("ix_coexistence_conflict_tenant_id_detected_at_conflict_id");
+
+                    b.HasIndex("TenantId", "Status", "ConflictId")
+                        .HasDatabaseName("ix_coexistence_conflict_tenant_id_status_conflict_id");
+
                     b.HasIndex("TenantId", "Status", "DetectedAt", "ConflictId")
                         .HasDatabaseName("ix_coexistence_conflict_tenant_id_status_detected_at_conflict_id");
 
@@ -763,8 +769,14 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "ConnectorCode", "ConnectionId")
                         .HasDatabaseName("ix_connection_tenant_id_connector_code_connection_id");
 
+                    b.HasIndex("TenantId", "DisplayLabel", "ConnectionId")
+                        .HasDatabaseName("ix_connection_tenant_id_display_label_connection_id");
+
                     b.HasIndex("TenantId", "NotificationControlNextAttemptAt", "ConnectionId")
                         .HasDatabaseName("ix_connection_tenant_id_notification_control_next_attempt_at_connection_id");
+
+                    b.HasIndex("TenantId", "Status", "ConnectionId")
+                        .HasDatabaseName("ix_connection_tenant_id_status_connection_id");
 
                     b.HasIndex("TenantId", "Status", "CreatedAt", "ConnectionId")
                         .HasDatabaseName("ix_connection_tenant_id_status_created_at_connection_id");
@@ -2470,6 +2482,9 @@ namespace Yojana.Integration.Migrations
                         .HasDatabaseName("ux_erp_change_run_tenant_id_status")
                         .HasFilter("[status] = 'active'");
 
+                    b.HasIndex("TenantId", "Status", "ErpChangeRunId")
+                        .HasDatabaseName("ix_erp_change_run_tenant_id_status_erp_change_run_id");
+
                     b.HasIndex("TenantId", "StartedAt", "ErpChangeRunId")
                         .HasDatabaseName("ix_erp_change_run_tenant_id_started_at_erp_change_run_id");
 
@@ -3215,6 +3230,9 @@ namespace Yojana.Integration.Migrations
 
                     b.HasIndex("TenantId", "Status", "CreatedAt", "ManualOutboundTaskId")
                         .HasDatabaseName("ix_manual_outbound_task_tenant_id_status_created_at_manual_outbound_task_id");
+
+                    b.HasIndex("TenantId", "Status", "Desk", "ManualOutboundTaskId")
+                        .HasDatabaseName("ix_manual_outbound_task_tenant_id_status_desk_manual_outbound_task_id");
 
                     b.HasIndex("TenantId", "Status", "Desk", "CreatedAt", "ManualOutboundTaskId")
                         .HasDatabaseName("ix_manual_outbound_task_tenant_id_status_desk_created_at_manual_outbound_task_id");
@@ -4341,8 +4359,14 @@ namespace Yojana.Integration.Migrations
                     b.HasIndex("TenantId", "RunId", "ItemId")
                         .HasDatabaseName("ix_migration_delta_item_tenant_id_run_id_item_id");
 
+                    b.HasIndex("TenantId", "RunId", "ItemCode", "ItemId")
+                        .HasDatabaseName("ix_migration_delta_item_tenant_id_run_id_item_code_item_id");
+
                     b.HasIndex("TenantId", "RunId", "Kind", "ItemId")
                         .HasDatabaseName("ix_migration_delta_item_tenant_id_run_id_kind_item_id");
+
+                    b.HasIndex("TenantId", "RunId", "Serial", "ItemId")
+                        .HasDatabaseName("ix_migration_delta_item_tenant_id_run_id_serial_item_id");
 
                     b.ToTable("migration_delta_item", "migration", t =>
                         {
@@ -5918,6 +5942,9 @@ namespace Yojana.Integration.Migrations
 
                     b.HasIndex("TenantId", "MapRunId", "SourceKeyHash")
                         .HasDatabaseName("ix_migration_plan_unit_tenant_id_map_run_id_source_key_hash");
+
+                    b.HasIndex("TenantId", "ItemCode", "PlanUnitId")
+                        .HasDatabaseName("ix_migration_plan_unit_tenant_id_item_code_plan_unit_id");
 
                     b.HasIndex("TenantId", "MapRunId", "ItemCode", "PlanUnitId")
                         .HasDatabaseName("ix_migration_plan_unit_tenant_id_map_run_id_item_code_plan_unit_id");
@@ -9322,6 +9349,12 @@ namespace Yojana.Integration.Migrations
 
                     b.HasKey("TenantId", "RelayId")
                         .HasName("pk_relay");
+
+                    b.HasIndex("TenantId", "ConnectionId", "DisplayName", "RelayId")
+                        .HasDatabaseName("ix_relay_tenant_id_connection_id_display_name_relay_id");
+
+                    b.HasIndex("TenantId", "ConnectionId", "Status", "RelayId")
+                        .HasDatabaseName("ix_relay_tenant_id_connection_id_status_relay_id");
 
                     b.HasIndex("TenantId", "ConnectionId", "Status", "LastSeenAt", "RelayId")
                         .HasDatabaseName("ix_relay_tenant_id_connection_id_status_last_seen_at_relay_id");

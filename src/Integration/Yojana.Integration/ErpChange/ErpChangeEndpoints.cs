@@ -5,17 +5,25 @@ using Microsoft.AspNetCore.Routing;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Integration.Data.Entities;
 using Yojana.Serialisation.Contracts;
+using Yojana.Platform.Contracts.Paging;
 
 namespace Yojana.Integration.ErpChange;
 
 public static class ErpChangeEndpoints
 {
+    internal static readonly SortedPage<ErpChangeRun, Guid> RunPages = new("started",
+        row => row.ErpChangeRunId,
+        new SortColumn<ErpChangeRun, DateTime>("started", row => row.StartedAt,
+            SortDirection.Descending),
+        new SortColumn<ErpChangeRun, string>("status", row => row.Status));
+
     public static IEndpointRouteBuilder MapErpChangeEndpoints(this IEndpointRouteBuilder app)
     {
         var reads = app.MapGroup("/api/integration/erp-change")
             .RequireAuthorization(YojanaPolicy.ErpChangeRead);
-        reads.MapGet("/runs", (string? cursor, int? take, ErpChangeRunService service,
-            CancellationToken ct) => Invoke(() => service.ListAsync(new(cursor, take ?? 25), ct)));
+        reads.MapGet("/runs", (string? sort, string? dir, string? cursor, int? take,
+            ErpChangeRunService service, CancellationToken ct) =>
+            Invoke(() => service.ListAsync(new(cursor, take ?? 25, sort, dir), ct)));
         reads.MapGet("/runs/active", async (ErpChangeRunService service, CancellationToken ct) =>
             await service.ActiveAsync(ct) is { } run ? Results.Ok(run) : Results.NotFound());
         reads.MapGet("/runs/{runId:guid}", (Guid runId, ErpChangeRunService service, CancellationToken ct) =>
@@ -198,6 +206,16 @@ public static class ErpChangeEndpoints
         {
             return Results.Problem(title: exception.Rule, detail: exception.Message,
                 statusCode: StatusCodes.Status422UnprocessableEntity,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["rule"] = exception.Rule,
+                    ["unblockingStep"] = exception.UnblockingStep,
+                });
+        }
+        catch (Yojana.Platform.Contracts.CommandRefusedException exception)
+        {
+            return Results.Problem(title: exception.Rule, detail: exception.Message,
+                statusCode: StatusCodes.Status400BadRequest,
                 extensions: new Dictionary<string, object?>
                 {
                     ["rule"] = exception.Rule,

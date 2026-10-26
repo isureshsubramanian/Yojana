@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { DataGrid, type GridColumn } from "../components";
+import { DataGrid, useGridState, type GridColumn } from "../components";
+import { useSession } from "../session/session";
 import { ErrorNote } from "../units/common";
 import { migrationApi } from "./migrationApi";
 import { rollbackOutcomeLabel, undoConfirmation } from "./migrationModel";
@@ -44,14 +45,19 @@ export function MigrationUndoPanel({ undo }: { undo: ReturnType<typeof useMigrat
 }
 
 function RollbackResult({ result }: { result: RollBackMigrationLoadResponse }) {
+  const session = useSession();
+  const gridState = useGridState(`migration-touched-units-${result.loadId}`, session.user.id,
+    { key: "load_order", dir: "asc" }, 50);
   const refused = result.outcome === "refused_touched";
   const [items, setItems] = useState(result.touchedUnits); const [nextCursor, setNextCursor] = useState(result.touchedNextCursor);
   const [page, setPage] = useState(1); const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]); const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null);
-  const go = async (target: number) => { const cursor = target > page ? nextCursor ?? undefined : cursors[target - 1]; if (target < 1 || (target > page && !cursor)) return; setBusy(true); setError(null); try { const response = await migrationApi.touchedLoadUnits(result.loadId, cursor); setItems(response.items); setNextCursor(response.nextCursor); setPage(target); setCursors(current => { const next = current.slice(); next[target - 1] = cursor; return next; }); } catch (reason) { setError(reason); } finally { setBusy(false); } };
+  const go = async (target: number, take = gridState.pageSize) => { const cursor = target > page ? nextCursor ?? undefined : cursors[target - 1]; if (target < 1 || (target > page && !cursor)) return; setBusy(true); setError(null); try { const response = await migrationApi.touchedLoadUnits(result.loadId, cursor, take); setItems(response.items); setNextCursor(response.nextCursor); setPage(target); setCursors(current => { const next = current.slice(); next[target - 1] = cursor; return next; }); } catch (reason) { setError(reason); } finally { setBusy(false); } };
   const columns: GridColumn<TouchedMigrationLoadUnit>[] = [{ key: "serial", label: "Touched serial", width: 100, mono: true, render: row => row.serial }];
   return <div className={`note${refused ? " warn" : ""}`} role="status"><strong>{rollbackOutcomeLabel(result.outcome)}.</strong>&nbsp;{refused
     ? `${result.touchedUnitCount.toLocaleString()} touched unit${result.touchedUnitCount === 1 ? "" : "s"} stop the undo. The load stays in place.`
     : `${result.unitsRemoved.toLocaleString()} units, ${result.eventsRemoved.toLocaleString()} facts, ${result.entitlementsRemoved.toLocaleString()} cover rows, ${result.replacementLinksRemoved.toLocaleString()} links and ${result.certificatesRemoved.toLocaleString()} certificates removed.`}
-    {refused && <div className="migration-touched-grid"><ErrorNote error={error} /><DataGrid columns={columns} page={{ rows: items, total: result.touchedUnitCount, page, pageSize: 50, continuation: nextCursor, totalIsExact: true, hasMore: !!nextCursor }} rowId={row => row.serial} onPage={target => void go(target)} loading={busy} emptyText="No touched serials were returned." viewportHeight={260} /></div>}
+    {refused && <div className="migration-touched-grid"><ErrorNote error={error} /><DataGrid columns={columns} page={{ rows: items, total: result.touchedUnitCount, page, pageSize: gridState.pageSize, continuation: nextCursor, totalIsExact: true, hasMore: !!nextCursor }} rowId={row => row.serial} onPage={target => void go(target)} loading={busy} emptyText="No touched serials were returned." viewportHeight={260}
+      gridId={`migration-touched-units-${result.loadId}`} userId={session.user.id} sort={gridState.sort} defaultSort={{ key: "load_order", dir: "asc" }} onSort={gridState.onSort}
+      pageSize={gridState.pageSize} defaultPageSize={50} pageSizeOptions={[25, 50, 100, 200]} onPageSize={size => { gridState.onPageSize(size); setPage(1); setCursors([undefined]); void go(1, size); }} /></div>}
   </div>;
 }

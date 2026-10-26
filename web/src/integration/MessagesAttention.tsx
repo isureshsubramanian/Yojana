@@ -1,40 +1,39 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { DataGrid, FindBar, KpiStrip, Shortcut, StatusBadge, useModEnter, type GridColumn, type PageResult } from "../components";
+import { useMemo, useState } from "react";
+import { DataGrid, FindBar, KpiStrip, Shortcut, StatusBadge, useGridQuery, useModEnter, type GridColumn, type PageResult } from "../components";
 import { openDrawer } from "../shell/drawerStore";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
+import { useSession } from "../session/session";
 import { ErrorNote, Kv, Section } from "../units/common";
 import { integrationApi } from "./api";
 import { IntegrationAccess, IntegrationTabs, useIntegrationTabCounts } from "./Common";
 import { actionSeed, age, localDate, payload, reasonLabel, recordTitle, statusLabel } from "./model";
-import type { DeadLetterDetail, DeadLetterPage, DeadLetterRow } from "./types";
+import { deadLetterPage, type DeadLetterDetail, type DeadLetterPage, type DeadLetterRow } from "./types";
 import "./integration.css";
 
 const emptySummary = { open: 0, retried: 0, discarded: 0, unknownItem: 0, serialNotFound: 0, partyNotLinked: 0, couldNotSend: 0, resolvedLast30Days: 0, retriedLast30Days: 0, discardedLast30Days: 0 };
 const empty: DeadLetterPage = { items: [], nextCursor: null, total: 0, summary: emptySummary };
 const statusValues = [["needs_attention", "Open"], ["retry_pending", "Retried"], ["discarded", "Discarded"]] as const;
 
-function pageOf(result: DeadLetterPage, page: number): PageResult<DeadLetterRow> {
-  return { rows: result.items, total: result.total, page, pageSize: 25, continuation: result.nextCursor, totalIsExact: true, hasMore: result.nextCursor !== null };
+function pageOf(result: DeadLetterPage, page: number, pageSize: number): PageResult<DeadLetterRow> {
+  return { rows: result.items, total: result.total, page, pageSize, continuation: result.nextCursor, totalIsExact: true, hasMore: result.nextCursor !== null };
 }
 function pretty(text: string) { try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; } }
 function tone(row: DeadLetterRow) { return row.direction === "outbound" ? "bad" as const : "warn" as const; }
 
 export function Component() {
+  const session = useSession();
   const tabCounts = useIntegrationTabCounts();
-  const [result, setResult] = useState(empty); const [page, setPage] = useState(1); const [cursors, setCursors] = useState<Array<string | undefined>>([undefined]);
   const [status, setStatus] = useState("needs_attention"); const [find, setFind] = useState(""); const [reason, setReason] = useState("");
   const [recordType, setRecordType] = useState(""); const [connectionId, setConnectionId] = useState("");
   const [detail, setDetail] = useState<DeadLetterDetail | null>(null); const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null);
   const [discardReason, setDiscardReason] = useState("");
-  const filters = useMemo(() => ({ status, query: find || undefined, reason: reason || undefined, recordType: recordType || undefined, connectionId: connectionId || undefined, take: 25 }), [status, find, reason, recordType, connectionId]);
-  const load = useCallback(async (target = 1, cursor?: string) => {
-    setBusy(true); setError(null);
-    try {
-      const next = await integrationApi.deadLetters({ ...filters, cursor }); setResult(next); setPage(target);
-      if (next.nextCursor) setCursors((current) => { const copy = current.slice(0, target); copy[target] = next.nextCursor!; return copy; });
-    } catch (reason) { setError(reason); } finally { setBusy(false); }
-  }, [filters]);
-  useEffect(() => { setCursors([undefined]); void load(); }, [load]);
+  const filters = useMemo(() => { const value = new URLSearchParams({ status }); if (find) value.set("query", find); if (reason) value.set("reason", reason); if (recordType) value.set("recordType", recordType); if (connectionId) value.set("connectionId", connectionId); return value; }, [status, find, reason, recordType, connectionId]);
+  const query = useGridQuery("/api/integration/dead-letters", deadLetterPage, {
+    gridId: "integration-attention", userId: session.user.id, defaultSort: { key: "received", dir: "asc" },
+    defaultSize: 25, params: filters, paging: "cursor", sortKeys: ["received"],
+    pageFacts: value => ({ continuation: value.nextCursor }),
+  });
+  const result = query.data ?? empty;
 
   const open = async (row: DeadLetterRow) => {
     setError(null);
@@ -43,7 +42,7 @@ export function Component() {
       openDrawer({ eyebrow: "Message history", title: recordTitle(selected) }, <MessageHistory detail={selected} />);
     } catch (reason) { setError(reason); }
   };
-  const afterAction = async () => { setDetail(null); setDiscardReason(""); await load(1); };
+  const afterAction = async () => { setDetail(null); setDiscardReason(""); query.onPage(1); query.reload(); };
   const map = async () => {
     if (!detail) return; const seed = actionSeed(detail);
     if (!seed.externalId || !seed.moduleId) { setError(new Error("No suggested item or party is available for this message yet.")); return; }
@@ -63,7 +62,7 @@ export function Component() {
   const connections = useMemo(() => Array.from(new Map(result.items.map((row) => [row.connectionId, row.connectionLabel])).entries()).sort((a, b) => a[1].localeCompare(b[1])), [result.items]);
   const recordTypes = useMemo(() => Array.from(new Set(result.items.map((row) => row.recordType))).sort(), [result.items]);
   const columns: GridColumn<DeadLetterRow>[] = [
-    { key: "received", label: "Received", width: 11, render: (row) => localDate(row.createdAt) },
+    { key: "received", label: "Received", width: 11, sort: { key: "received", defaultDir: "asc" }, render: (row) => localDate(row.createdAt) },
     { key: "connection", label: "Connection", width: 17, render: (row) => row.connectionLabel },
     { key: "record", label: "Record", width: 22, render: (row) => <><span className="primary">{recordTitle(row)}</span><span className="sub">{row.direction === "inbound" ? "Received from the ERP" : "Sending to the ERP"}</span></> },
     { key: "reason", label: "Reason", width: 32, render: (row) => <><StatusBadge tone={tone(row)}>{reasonLabel(row.reasonCode)}</StatusBadge><span className="integration-failure">{row.failure}</span></> },
@@ -84,7 +83,7 @@ export function Component() {
       sub="Messages we could not process or send are kept with what the ERP sent and what we tried to record. The module keeps working meanwhile; nothing here is lost or applied twice."
       actions={<button type="button" className="btn primary" disabled={!detail || busy || !actionSeed(detail).moduleId} onClick={() => void map()}>Map and retry <Shortcut keys="mod+enter" /></button>} />
     <IntegrationTabs attention={result.summary.open} manual={tabCounts.manual} />
-    <IntegrationAccess><div className="stack integration-stack"><ErrorNote error={error} /><KpiStrip kpis={kpis} />
+    <IntegrationAccess><div className="stack integration-stack"><ErrorNote error={error ?? query.error} /><KpiStrip kpis={kpis} />
       <section className="card" aria-labelledby="attention-list"><div className="card-header"><h2 id="attention-list">{statusLabel(status)} messages</h2><div className="segmented plain" role="group" aria-label="State">{statusValues.map(([value, label]) => { const count = value === "needs_attention" ? result.summary.open : value === "retry_pending" ? result.summary.retried : result.summary.discarded; return <button type="button" key={value} aria-pressed={status === value} onClick={() => setStatus(value)}>{label}<span className="n">{count.toLocaleString()}</span></button>; })}</div></div>
         <FindBar query={find} onQuery={setFind} facets={[]} activeFacet={null} onFacet={() => undefined} compact ariaLabel="Find a document, serial, item code or ERP key" placeholder="Document, serial, item code or ERP key" />
         <div className="toolbar integration-filters">
@@ -93,7 +92,9 @@ export function Component() {
           <select className="select sm" aria-label="Record type" value={recordType} onChange={(event) => setRecordType(event.target.value)}><option value="">All record types</option>{recordTypes.map((value) => <option key={value} value={value}>{recordTitle({ recordType: value })}</option>)}</select>
           <span className="grow" /><span className="hint">Sorted by age, oldest first</span>
         </div>
-        <DataGrid columns={columns} page={pageOf(result, page)} rowId={(row) => row.deadLetterItemId} onPage={(target) => void load(target, target > page ? result.nextCursor ?? undefined : cursors[target - 1])} loading={busy} onRowClick={(row) => void open(row)} activeRowId={detail?.deadLetterItemId} viewportHeight={396} emptyText="No messages need attention." />
+        <DataGrid columns={columns} page={pageOf(result, query.page, query.pageSize)} rowId={(row) => row.deadLetterItemId} onPage={query.onPage} loading={busy || query.loading} onRowClick={(row) => void open(row)} activeRowId={detail?.deadLetterItemId} viewportHeight={396} emptyText="No messages need attention."
+          gridId="integration-attention" userId={session.user.id} sort={query.sort} defaultSort={{ key: "received", dir: "asc" }} onSort={query.onSort}
+          pageSize={query.pageSize} defaultPageSize={25} onPageSize={query.onPageSize} footerNote="Sorted by age, oldest first" />
       </section>
       {detail && <MessageDetail detail={detail} discardReason={discardReason} setDiscardReason={setDiscardReason} map={map} provisional={provisional} discard={discard} busy={busy} />}
     </div></IntegrationAccess>

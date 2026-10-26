@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using Yojana.Integration.Contracts;
 using Microsoft.EntityFrameworkCore;
@@ -6,6 +5,7 @@ using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Outbox;
 using Yojana.Platform.Contracts.Identifiers;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 
@@ -69,7 +69,6 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
     public async Task<DeadLetterPage> ListAsync(DeadLetterListRequest request,
         CancellationToken cancellationToken)
     {
-        var take = Math.Clamp(request.Take, 1, 200);
         var query = db.DeadLetterItems.AsNoTracking().Where(x => x.TenantId == tenant.TenantId);
         if (request.ConnectionId is { } connectionId) query = query.Where(x => x.ConnectionId == connectionId);
         if (!string.IsNullOrWhiteSpace(request.Reason)) query = query.Where(x => x.ReasonCode == request.Reason);
@@ -86,12 +85,8 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         if (request.MaximumAgeHours is { } maximum)
             query = query.Where(x => x.CreatedAt >= clock.UtcNow.AddHours(-Math.Max(0, maximum)));
         var total = await query.CountAsync(cancellationToken);
-        if (Decode(request.Cursor) is { } cursor)
-            query = query.Where(x => x.CreatedAt > cursor.CreatedAt
-                || (x.CreatedAt == cursor.CreatedAt && x.DeadLetterItemId.CompareTo(cursor.DeadLetterItemId) > 0));
-
         // Member-init projection is intentional: positional record construction inside this EF query does not translate.
-        var rows = await query.Join(db.Connections.AsNoTracking(), item => new { item.TenantId, item.ConnectionId },
+        var projected = query.Join(db.Connections.AsNoTracking(), item => new { item.TenantId, item.ConnectionId },
                 connection => new { connection.TenantId, connection.ConnectionId }, (item, connection) =>
                     new DeadLetterListProjection
             {
@@ -114,13 +109,16 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
                     && evt.DeadLetterItemId == item.DeadLetterItemId),
                 CreatedAt = item.CreatedAt,
                 UpdatedAt = item.UpdatedAt,
-            }).OrderBy(x => x.CreatedAt).ThenBy(x => x.DeadLetterItemId)
-            .Take(take + 1).ToListAsync(cancellationToken);
-        var more = rows.Count > take;
-        var page = rows.Take(take).Select(x => new DeadLetterListRow(x.DeadLetterItemId, x.ConnectionId,
+            });
+        var paging = IntegrationEndpoints.DeadLetterPages.Parse(request.Sort, request.Direction, request.Take, request.Cursor,
+            defaultTake: 50);
+        var rows = await paging.Apply(projected).Take(paging.Take + 1).ToListAsync(cancellationToken);
+        var more = rows.Count > paging.Take;
+        var pageRows = rows.Take(paging.Take).ToList();
+        var page = pageRows.Select(x => new DeadLetterListRow(x.DeadLetterItemId, x.ConnectionId,
             x.ConnectionLabel, x.Direction, x.RecordType, x.RecordReference, x.ReasonCode, x.Failure, x.Status, x.AttemptCount,
             x.CreatedAt, x.UpdatedAt)).ToList();
-        var next = more && page.Count != 0 ? Encode(new(page[^1].CreatedAt, page[^1].DeadLetterItemId)) : null;
+        var next = more && pageRows.Count != 0 ? paging.CursorFor(pageRows[^1]) : null;
         return new(page, next, total, await SummaryAsync(cancellationToken));
     }
 
@@ -183,25 +181,22 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         return new(itemId, item.Status);
     }
 
-    public async Task<ManualOutboundTaskPage> ManualTasksAsync(string? status, string? desk, string? cursor,
-        int take, CancellationToken cancellationToken)
+    public async Task<ManualOutboundTaskPage> ManualTasksAsync(string? status, string? desk, string? sort,
+        string? direction, string? cursor, int? take, CancellationToken cancellationToken)
     {
         var query = db.ManualOutboundTasks.AsNoTracking().Where(x => x.TenantId == tenant.TenantId);
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(x => x.Status == status);
         if (!string.IsNullOrWhiteSpace(desk)) query = query.Where(x => x.Desk == desk);
         var total = await query.CountAsync(cancellationToken);
-        if (Decode(cursor) is { } key)
-            query = query.Where(x => x.CreatedAt > key.CreatedAt
-                || (x.CreatedAt == key.CreatedAt && x.ManualOutboundTaskId.CompareTo(key.DeadLetterItemId) > 0));
-        var pageSize = Math.Clamp(take, 1, 200);
-        var rows = await query.OrderBy(x => x.CreatedAt).ThenBy(x => x.ManualOutboundTaskId)
-            .Take(pageSize + 1).ToListAsync(cancellationToken);
-        var more = rows.Count > pageSize;
+        var paging = IntegrationEndpoints.ManualTaskPages.Parse(sort, direction, take, cursor, defaultTake: 50);
+        var rows = await paging.Apply(query).Take(paging.Take + 1).ToListAsync(cancellationToken);
+        var more = rows.Count > paging.Take;
         var labels = await ConnectionLabelsAsync(rows.Select(x => x.ConnectionId).Distinct().ToList(),
             cancellationToken);
-        var page = rows.Take(pageSize).Select(row => View(row, labels[row.ConnectionId])).ToList();
+        var pageRows = rows.Take(paging.Take).ToList();
+        var page = pageRows.Select(row => View(row, labels[row.ConnectionId])).ToList();
         var next = more && page.Count != 0
-            ? Encode(new(page[^1].CreatedAt, page[^1].ManualOutboundTaskId)) : null;
+            ? paging.CursorFor(pageRows[^1]) : null;
         var deskCounts = await db.ManualOutboundTasks.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
                 && x.Status == ManualTaskStatus.Open)
             .GroupBy(x => x.Desk).Select(group => new { Desk = group.Key, Count = group.Count() })
@@ -212,6 +207,10 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
             configured.GetValueOrDefault(row.Desk) ?? row.Desk, row.Count)).ToList();
         return new(page, next, total, desks);
     }
+
+    public Task<ManualOutboundTaskPage> ManualTasksAsync(string? status, string? desk, string? cursor, int take,
+        CancellationToken cancellationToken) =>
+        ManualTasksAsync(status, desk, null, null, cursor, take, cancellationToken);
 
     public async Task<ManualOutboundTaskView?> ManualTaskAsync(Guid taskId,
         CancellationToken cancellationToken)
@@ -568,26 +567,7 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         row.DeadLetterItemId, row.OutboundCommandId, row.ConnectionId, connectionLabel, row.CommandType, row.Desk, row.Draft, row.Status,
         row.CreatedAt, row.ErpExternalId, row.ErpChangeMarker, row.CompletedBy, row.CompletedAt, row.Note);
 
-    private static string Encode(DeadLetterCursor cursor) => Convert.ToBase64String(Encoding.UTF8.GetBytes(
-        $"{cursor.CreatedAt.Ticks}:{cursor.DeadLetterItemId:N}"));
-
-    private static DeadLetterCursor? Decode(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return null;
-        try
-        {
-            var parts = Encoding.UTF8.GetString(Convert.FromBase64String(value)).Split(':');
-            return parts.Length == 2 && long.TryParse(parts[0], out var ticks) && Guid.TryParse(parts[1], out var id)
-                ? new(new DateTime(ticks, DateTimeKind.Utc), id)
-                : throw new FormatException();
-        }
-        catch (FormatException)
-        {
-            throw new DeadLetterRuleException("cursor_invalid", "The page cursor is invalid.");
-        }
-    }
-
-    private sealed class DeadLetterListProjection
+    internal sealed class DeadLetterListProjection
     {
         public Guid DeadLetterItemId { get; init; }
         public Guid ConnectionId { get; init; }

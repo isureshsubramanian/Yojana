@@ -14,6 +14,7 @@ using Yojana.Integration.LegacyMigration.Validation;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.LegacyMigration.Apply;
@@ -154,11 +155,11 @@ public sealed partial class ApplyService(IntegrationDbContext db, ITenantContext
     }
 
     public async Task<MigrationApplyRefusalPage> RefusalsAsync(Guid loadId, string? reason, string? itemCode,
-        string? serial, string? cursor, int take, CancellationToken cancellationToken)
+        string? serial, string? sort, string? direction, string? cursor, int? take,
+        CancellationToken cancellationToken)
     {
-        take = Math.Clamp(take, 1, 200);
-        Guid? after = Guid.TryParse(cursor, out var parsed) ? parsed : null;
         var filtered = RefusalQuery(loadId, reason, itemCode, serial);
+        var paging = MigrationEndpoints.RefusalPages.Parse(sort, direction, take, cursor, defaultTake: 50);
         var total = await filtered.LongCountAsync(cancellationToken);
         var loadReasons = await db.Set<MigrationApplyRefusal>().AsNoTracking().Where(row =>
                 row.TenantId == tenant.TenantId && row.RunId == loadId)
@@ -169,37 +170,58 @@ public sealed partial class ApplyService(IntegrationDbContext db, ITenantContext
             .Select(group => new MigrationApplyRefusalCount(group.Key, ApplyRefusalReason.Label(group.Key),
                 group.LongCount())).ToList();
         var loadTotal = (long)loadReasons.Count;
-        var rows = await filtered.Where(row => after == null || row.RefusalId.CompareTo(after.Value) > 0)
-            .OrderBy(row => row.RefusalId).Take(take + 1).ToListAsync(cancellationToken);
-        var items = rows.Take(take).Select(row => new MigrationApplyRefusalView(row.RefusalId, row.PlanUnitId,
+        var rows = await paging.Apply(filtered).Take(paging.Take + 1).ToListAsync(cancellationToken);
+        var pageRows = rows.Take(paging.Take).ToList();
+        var items = pageRows.Select(row => new MigrationApplyRefusalView(row.RefusalId, row.PlanUnitId,
             row.ItemCode, row.Serial, ApplyRefusalReason.Split(row.Reasons))).ToList();
-        return new(items, rows.Count > take ? items[^1].RefusalId.ToString("D") : null, total, loadTotal, counts);
+        return new(items, rows.Count > paging.Take ? paging.CursorFor(pageRows[^1]) : null, total, loadTotal, counts);
     }
 
     public Task<MigrationApplyRefusalPage> RefusalsAsync(Guid loadId, string? cursor, int take,
         CancellationToken cancellationToken) =>
-        RefusalsAsync(loadId, null, null, null, cursor, take, cancellationToken);
+        RefusalsAsync(loadId, null, null, null, null, null, cursor, take, cancellationToken);
+
+    public Task<MigrationApplyRefusalPage> RefusalsAsync(Guid loadId, string? reason, string? itemCode,
+        string? serial, string? cursor, int take, CancellationToken cancellationToken) =>
+        RefusalsAsync(loadId, reason, itemCode, serial, null, null, cursor, take, cancellationToken);
 
     public async Task<byte[]> ExportRefusalsAsync(Guid loadId, string? reason, string? itemCode, string? serial,
-        CancellationToken cancellationToken)
+        string? sort, string? direction, CancellationToken cancellationToken)
     {
         var csv = new StringBuilder("Item code,Serial,Why it was refused\r\n");
-        await foreach (var row in RefusalQuery(loadId, reason, itemCode, serial)
-            .OrderBy(item => item.RefusalId).AsAsyncEnumerable().WithCancellation(cancellationToken))
+        var paging = MigrationEndpoints.RefusalPages.Parse(sort, direction, SortedPage<MigrationApplyRefusalRow, Guid>.MaximumTake);
+        var cursor = (string?)null;
+        while (true)
         {
-            csv.AppendJoin(',', Csv(row.ItemCode), Csv(row.Serial),
-                Csv(string.Join("; ", ApplyRefusalReason.Split(row.Reasons).Select(ApplyRefusalReason.Label))))
-                .Append("\r\n");
+            paging = MigrationEndpoints.RefusalPages.Parse(sort, direction, SortedPage<MigrationApplyRefusalRow, Guid>.MaximumTake, cursor);
+            var rows = await paging.Apply(RefusalQuery(loadId, reason, itemCode, serial)).Take(paging.Take)
+                .ToListAsync(cancellationToken);
+            foreach (var row in rows)
+                csv.AppendJoin(',', Csv(row.ItemCode), Csv(row.Serial),
+                    Csv(string.Join("; ", ApplyRefusalReason.Split(row.Reasons).Select(ApplyRefusalReason.Label))))
+                    .Append("\r\n");
+            if (rows.Count < paging.Take) break;
+            cursor = paging.CursorFor(rows[^1]);
         }
         return Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csv.ToString())).ToArray();
     }
 
+    public Task<byte[]> ExportRefusalsAsync(Guid loadId, string? reason, string? itemCode, string? serial,
+        CancellationToken cancellationToken) =>
+        ExportRefusalsAsync(loadId, reason, itemCode, serial, null, null, cancellationToken);
+
     public async Task<TouchedMigrationLoadUnitPage> TouchedUnitsAsync(Guid loadId, string? cursor, int take,
         CancellationToken cancellationToken)
     {
+        if (take > SortedPage<MigrationDeltaItem, Guid>.MaximumTake)
+            throw new Yojana.Platform.Contracts.CommandRefusedException("page_size_too_large",
+                $"Page size cannot exceed {SortedPage<MigrationDeltaItem, Guid>.MaximumTake}.");
+        if (take < 1)
+            throw new Yojana.Platform.Contracts.CommandRefusedException("page_size_invalid",
+                "Page size must be at least 1.");
         var after = Guid.TryParse(cursor, out var parsed) ? parsed : (Guid?)null;
         var page = await bus.InvokeAsync<TouchedMigrationLoadUnitsPage>(
-            new TouchedMigrationLoadUnitsQuery(loadId, after, Math.Clamp(take, 1, 200)), Options(),
+            new TouchedMigrationLoadUnitsQuery(loadId, after, take), Options(),
             cancellationToken);
         return new(page.Items.Select(row => new TouchedMigrationLoadUnitView(row.Serial)).ToList(),
             page.NextAfterUnitId?.ToString("D"), page.Total);
