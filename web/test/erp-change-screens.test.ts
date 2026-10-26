@@ -163,6 +163,9 @@ test("sign-in status, expiry warning and history read as the approved screens", 
   assert.deepEqual(historyResult({ ...renewal, kind: "disabled", result: "tokens_deleted" }), ["Tokens deleted", "bad"]);
   assert.equal(historyEvent({ ...renewal, kind: "expiry_reminder", daysBeforeExpiry: 14 }), "Expiry reminder, 14 days");
   assert.equal(historyEvent({ ...renewal, kind: "sync_paused" }), "Tenant administrator told sync is paused");
+  assert.match(signIn, /gridId: "integration-sign-in-history"/);
+  assert.match(signIn, /label: "When"[^\n]+sort: \{ key: "when"/);
+  assert.match(api, /authorisation\$\{query\(\{ cursor, sort: grid\.sort\.key, dir: grid\.sort\.dir, take: grid\.pageSize \}\)\}/);
 });
 
 test("reminder days are one to three distinct values from 1 to 90", () => {

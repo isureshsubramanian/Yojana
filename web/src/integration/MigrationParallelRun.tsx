@@ -27,7 +27,7 @@ function ParallelRunScreen() {
   const roles = useSession().roles;
   const admin = roles.includes("tenant_administrator");
   const operator = mayOperateIntegration(roles);
-  const fetchConnections = useCallback((cursor?: string, signal?: AbortSignal) => adminApi.connections(cursor, false, signal), []);
+  const fetchConnections = useCallback((cursor?: string, signal?: AbortSignal) => adminApi.connectionChoices(cursor, signal), []);
   const connections = useCursorPage(fetchConnections);
   const [dashboard, setDashboard] = useState<ParallelRunDashboard | null>(null);
   const [record, setRecord] = useState<GoLiveRecordView | null>(null);

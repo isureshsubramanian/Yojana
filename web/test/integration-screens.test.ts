@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { nextGridSort } from "../src/components/gridPreferences.ts";
+import { adminApi as adminClient } from "../src/integration/adminApi.ts";
 import { approvalNeedsAcceptance, age, localDate, draftValueIsMono, mayOperateIntegration, maySeeIntegrationIndicator, reasonLabel, reconciliationRange } from "../src/integration/model.ts";
 
 const messages = readFileSync(new URL("../src/integration/MessagesAttention.tsx", import.meta.url), "utf8");
@@ -99,6 +101,38 @@ test("remaining routes use shared paged controls and role access", () => {
   assert.match(adminCommon, /continuation: result\?\.nextCursor/);
   assert.match(adminCommon, /controller\.abort\(\)/);
   assert.match(adminCommon, /\.\.\.source\.gridOptions/);
+});
+
+test("connection grids send header direction and selected row count to the server", async () => {
+  const original = globalThis.fetch; const calls: string[] = [];
+  globalThis.fetch = (async input => {
+    calls.push(String(input));
+    return new Response(JSON.stringify({ items: [], nextCursor: null, kpis: { connections: 0, live: 0, paused: 0, receivedToday: 0, receivedLast30Days: 0, waitingToSend: 0, openDeadLetters: 0, openManualTasks: 0, connectionsNeedingAttention: 0, relayConnected: 0 } }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  try {
+    const screenDefault = { key: "registration_order", dir: "asc" } as const;
+    const ascending = nextGridSort(screenDefault, { key: "name", defaultDir: "asc" }, screenDefault);
+    const descending = nextGridSort(ascending, { key: "name", defaultDir: "asc" }, screenDefault);
+    await adminClient.connections(undefined, false, undefined, { sort: ascending, pageSize: 12 });
+    await adminClient.connections(undefined, false, undefined, { sort: descending, pageSize: 12 });
+    await adminClient.connections(undefined, false, undefined, { sort: descending, pageSize: 50 });
+  } finally { globalThis.fetch = original; }
+  assert.match(calls[0]!, /sort=name&dir=asc&take=12/);
+  assert.match(calls[1]!, /sort=name&dir=desc&take=12/);
+  assert.match(calls[2]!, /sort=name&dir=desc&take=50/);
+  assert.match(connections, /gridId: "integration-connections"/);
+  assert.match(connections, /label: "Connection"[^\n]+sort: \{ key: "name"/);
+  assert.doesNotMatch(connections, /label: "Registration order"/);
+});
+
+test("site relay grid sends declared sort and page size", async () => {
+  const original = globalThis.fetch; let call = "";
+  globalThis.fetch = (async input => { call = String(input); return new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200, headers: { "content-type": "application/json" } }); }) as typeof fetch;
+  try { await adminClient.relays("connection-fixture", undefined, undefined, { sort: { key: "status", dir: "desc" }, pageSize: 25 }); }
+  finally { globalThis.fetch = original; }
+  assert.match(call, /sort=status&dir=desc&take=25/);
+  assert.match(settings, /gridId: "integration-site-relays"/);
+  assert.match(settings, /label: "Status"[^\n]+sort: \{ key: "status"/);
 });
 
 test("service-manager status uses its read-only endpoint without operator details", () => {

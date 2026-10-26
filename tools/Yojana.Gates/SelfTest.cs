@@ -36,6 +36,8 @@ public static class SelfTest
     {
         var root = Directory.CreateDirectory(Path.Combine(temp, "grid")).FullName;
         var web = Directory.CreateDirectory(Path.Combine(root, "web", "src")).FullName;
+        var server = Directory.CreateDirectory(Path.Combine(root, "src", "Planted")).FullName;
+        File.WriteAllText(Path.Combine(server, "PlantedEndpoints.cs"), "SortedPage<object, int> pages; var list = app.MapGroup(\"/api/planted\"); list.MapGet(\"\", (string? sort, string? dir, string? cursor, int? take) => Results.Ok());\n");
         var plantedPath = Path.Combine(web, "Planted.tsx");
         File.WriteAllText(plantedPath, "export const x = <DataGrid columns={[]} page={p} />;\n");
         var planted = GridMigrationGate.Evaluate(root, new HashSet<string>(), new HashSet<string>());
@@ -43,9 +45,18 @@ public static class SelfTest
         File.WriteAllText(plantedPath, "useGridQuery(path, schema, options); export const x = <DataGrid columns={[]} page={p} />;\n");
         var stale = GridMigrationGate.Evaluate(root, new HashSet<string> { "web/src/Planted.tsx" }, new HashSet<string>());
         var clean = GridMigrationGate.Evaluate(root, new HashSet<string>(), new HashSet<string>());
-        var ok = !planted.Passed && baseline.Passed && !stale.Passed && clean.Passed;
-        return new GateResult("self-test grid migration", ok, ok ? "a new local paging copy fails, a baseline entry passes, and a migrated entry must leave the baseline" : "unexpected outcome",
-            [$"planted: {planted.Summary}", $"baseline: {baseline.Summary}", $"stale: {stale.Summary}", $"clean: {clean.Summary}"]);
+        var apiPath = Path.Combine(web, "api.ts");
+        File.WriteAllText(apiPath, "const x = apiParsed(`/api/planted${query({ take: 12 })}`);\n");
+        var literal = GridMigrationGate.Evaluate(root, new HashSet<string>(), new HashSet<string>());
+        File.WriteAllText(apiPath, "const x = apiParsed(`/api/planted${query({ sort: grid.sort.key, dir: grid.sort.dir, take: 12 })}`);\n");
+        var sorted = GridMigrationGate.Evaluate(root, new HashSet<string>(), new HashSet<string>());
+        File.WriteAllText(apiPath, "const x = apiParsed(`/api/planted${query({ take: 12 })}`); // grid-gate: picker\n");
+        var picker = GridMigrationGate.Evaluate(root, new HashSet<string>(), new HashSet<string>());
+        var ok = !planted.Passed && baseline.Passed && !stale.Passed && clean.Passed
+            && !literal.Passed && sorted.Passed && picker.Passed;
+        return new GateResult("self-test grid migration", ok, ok ? "a local paging copy and a sortable literal take fail; a migrated grid, sorted call and marked picker pass" : "unexpected outcome",
+            [$"planted: {planted.Summary}", $"baseline: {baseline.Summary}", $"stale: {stale.Summary}", $"clean: {clean.Summary}",
+             $"literal: {literal.Summary}", $"sorted: {sorted.Summary}", $"picker: {picker.Summary}"]);
     }
 
     private static GateResult LicencePlanted(string temp)

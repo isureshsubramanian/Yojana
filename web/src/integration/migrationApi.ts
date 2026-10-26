@@ -1,9 +1,11 @@
 import * as z from "zod/mini";
 import { apiParsed, ApiError } from "../api/client.ts";
+import type { GridSort } from "../components";
 import { deltaExportUrl } from "./migrationModel.ts";
 import { canonicalFamilyCatalogue, canonicalisationRun, currencyInfo, linkOverridePage, mappingSettings, migrationApply, migrationApplyRefusalPage, migrationBatch, migrationBatchPage, migrationDeltaFindingPage, migrationLoadDetail, migrationLoadPage, migrationLoadReadiness, migrationMap, migrationOutcomeSettings, migrationPlanGapPage, migrationProfile, migrationProfileSamples, migrationReconstruction, migrationReviewDecisionResponse, migrationReviewDetail, migrationReviewPage, migrationSource, migrationSourcePage, migrationSourceTestResult, migrationSyncControlResult, migrationValidation, policyCatalogue, rollBackMigrationLoadResponse, signoffRecord, startMigrationApplyResponse, startMigrationBatchResponse, startValidationResponse, templateKeywordRules, templateMappingDetail, templateMappingSummaryView, templatePatternPage, touchedMigrationLoadUnitPage, validationCheck, validationCheckDetail, validationDifferencePage, validationSample, validationSamplePage, validationSettings, type MigrationOutcomeChoice, type MigrationReviewDecision, type MigrationReviewKind, type MigrationReviewStatus, type TemplateKeywordRule, type TemplateMappingState, type ValidationSampleOutcome, type ValidationSignatureRole, type LinkOverrideUploadResponse, type MappingSettings } from "./migrationTypes.ts";
 
 const root = "/api/migration";
+type GridRequest = { sort: GridSort; pageSize: number };
 function query(values: Record<string, string | number | boolean | undefined>) {
   const result = new URLSearchParams();
   for (const [key, value] of Object.entries(values)) if (value !== undefined && value !== "") result.set(key, String(value));
@@ -48,12 +50,12 @@ export const migrationApi = {
   loads: (sourceId: string, cursor?: string, signal?: AbortSignal) =>
     apiParsed(`${root}/loads${query({ sourceId, cursor, take: 12 })}`, migrationLoadPage, { signal }),
   loadSummary: (loadId: string, signal?: AbortSignal) => apiParsed(`${root}/loads/${loadId}`, migrationLoadDetail, { signal }),
-  deltaFindings: (loadId: string, filters: { kind?: string | undefined; itemCode?: string | undefined; serial?: string | undefined; cursor?: string | undefined } = {}, signal?: AbortSignal) =>
-    apiParsed(`${root}/loads/${loadId}/delta${query({ ...filters, take: 100 })}`, migrationDeltaFindingPage, { signal }),
+  deltaFindings: (loadId: string, grid: GridRequest, filters: { kind?: string | undefined; itemCode?: string | undefined; serial?: string | undefined; cursor?: string | undefined } = {}, signal?: AbortSignal) =>
+    apiParsed(`${root}/loads/${loadId}/delta${query({ ...filters, sort: grid.sort.key, dir: grid.sort.dir, take: grid.pageSize })}`, migrationDeltaFindingPage, { signal }),
   deltaExportUrl: (loadId: string, format: "csv" | "xlsx", filters: { kind?: string; itemCode?: string; serial?: string; sort?: string; dir?: string }) =>
     deltaExportUrl(loadId, format, filters),
-  loadRefusals: (loadId: string, filters: { reason?: string | undefined; itemCode?: string | undefined; serial?: string | undefined; cursor?: string | undefined } = {}, signal?: AbortSignal) =>
-    apiParsed(`${root}/loads/${loadId}/refusals${query({ ...filters, take: 50 })}`, migrationApplyRefusalPage, { signal }),
+  loadRefusals: (loadId: string, grid: GridRequest, filters: { reason?: string | undefined; itemCode?: string | undefined; serial?: string | undefined; cursor?: string | undefined } = {}, signal?: AbortSignal) =>
+    apiParsed(`${root}/loads/${loadId}/refusals${query({ ...filters, sort: grid.sort.key, dir: grid.sort.dir, take: grid.pageSize })}`, migrationApplyRefusalPage, { signal }),
   loadRefusalsExportUrl: (loadId: string, filters: { reason?: string; itemCode?: string; serial?: string; sort?: string; dir?: string }) =>
     `${root}/loads/${loadId}/refusals/export.csv${query(filters)}`,
   touchedLoadUnits: (loadId: string, cursor?: string, take = 50, signal?: AbortSignal) =>
@@ -89,8 +91,8 @@ export const migrationApi = {
     expectedVersion: settings.version,
   } }),
   currencyCatalogue: (signal?: AbortSignal) => apiParsed("/api/tenant/currency/catalogue", z.array(currencyInfo), { signal }),
-  linkOverrides: (batchId: string | undefined, unused: boolean | undefined, cursor?: string, signal?: AbortSignal) =>
-    apiParsed(`${root}/link-overrides${query({ batchId, unused: unused || undefined, cursor, take: 12 })}`, linkOverridePage, { signal }),
+  linkOverrides: (batchId: string | undefined, unused: boolean | undefined, cursor: string | undefined, signal: AbortSignal | undefined, grid: GridRequest) =>
+    apiParsed(`${root}/link-overrides${query({ batchId, unused: unused || undefined, cursor, sort: grid.sort.key, dir: grid.sort.dir, take: grid.pageSize })}`, linkOverridePage, { signal }),
   linkExportUrl: (batchId: string) => `${root}/batches/${batchId}/links/export.csv`,
   uploadLinkOverrides: (file: File) => uploadCsv(`${root}/link-overrides/upload`, file),
   removeLinkOverrides: () => apiParsed(`${root}/link-overrides`, z.object({ removed: z.number() }), { method: "DELETE", body: { confirm: true } }),

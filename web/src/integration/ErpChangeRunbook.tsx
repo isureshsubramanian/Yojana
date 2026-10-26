@@ -4,6 +4,7 @@ import { KpiStrip, StatusBadge, type GridColumn } from "../components";
 import { Rail } from "../shell/Drawer";
 import { Icon } from "../shell/Icons";
 import { closeDrawer, openDrawer } from "../shell/drawerStore";
+import { useSession } from "../session/session";
 import { ErrorNote, Section } from "../units/common";
 import { date, PagedGrid, useAction, useCursorPage } from "./AdminCommon";
 import { adminApi } from "./adminApi";
@@ -88,14 +89,15 @@ function RunbookBody({ run, rights, onChanged, refresh }: { run: ErpChangeRunboo
 }
 
 function PastChangesCard({ onOpen }: { onOpen: (run: ErpChangeRunbookView) => void }) {
-  const fetch = useCallback((cursor?: string, signal?: AbortSignal) => erpChangeApi.history(cursor, signal), []);
-  const source = useCursorPage<ErpChangeRunHistoryRow, ErpChangeRunHistoryPage>(fetch);
+  const session = useSession();
+  const fetch = useCallback((cursor?: string, signal?: AbortSignal, grid?: Parameters<typeof erpChangeApi.history>[2]) => erpChangeApi.history(cursor, signal, grid!), []);
+  const source = useCursorPage<ErpChangeRunHistoryRow, ErpChangeRunHistoryPage>(fetch, { gridId: "integration-erp-change-history", userId: session.user.id, defaultSort: { key: "started", dir: "desc" }, defaultSize: 12, pageSizeOptions: [12, 25, 50] });
   const action = useAction();
   const columns = useMemo<GridColumn<ErpChangeRunHistoryRow>[]>(() => [
     { key: "change", label: "Change", width: 28, render: row => <span className="primary"><span className="t">{row.sourceName} → {row.targetName}</span><span className="sub">Started by {row.startedBy}</span></span> },
-    { key: "started", label: "Started", width: 16, render: row => date(row.startedAt) },
+    { key: "started", label: "Started", width: 16, sort: { key: "started", defaultDir: "desc" }, render: row => date(row.startedAt) },
     { key: "finished", label: "Finished", width: 16, render: row => date(row.finishedAt) },
-    { key: "outcome", label: "Outcome", width: 16, render: row => <StatusBadge tone={row.outcome === "completed" ? "ok" : row.outcome === "cancelled" ? "warn" : "neutral"}>{({ completed: "Completed", cancelled: "Cancelled", reversed: "Reversed", in_progress: "In progress" } as Record<string, string>)[row.outcome] ?? row.outcome}</StatusBadge> },
+    { key: "outcome", label: "Outcome", width: 16, sort: { key: "status", defaultDir: "asc" }, render: row => <StatusBadge tone={row.outcome === "completed" ? "ok" : row.outcome === "cancelled" ? "warn" : "neutral"}>{({ completed: "Completed", cancelled: "Cancelled", reversed: "Reversed", in_progress: "In progress" } as Record<string, string>)[row.outcome] ?? row.outcome}</StatusBadge> },
     { key: "step", label: "Current / last step", width: 24, render: row => `${row.currentStep} · ${row.currentStepName}` },
   ], []);
   return <section className="card" aria-labelledby="erp-past"><div className="card-header"><h2 id="erp-past">Past changes</h2><span className="meta">newest first · select a row to open it read-only</span></div>
@@ -359,7 +361,7 @@ function ReverseForm({ run, onChanged }: { run: ErpChangeRunbookView; onChanged:
 }
 
 function StartErpChange({ onStarted }: { onStarted: (value: ErpChangeRunbookView) => void }) {
-  const fetch = useCallback((cursor?: string, signal?: AbortSignal) => adminApi.connections(cursor, false, signal), []);
+  const fetch = useCallback((cursor?: string, signal?: AbortSignal) => adminApi.connectionChoices(cursor, signal), []);
   const connections = useCursorPage(fetch);
   const [sourceId, setSourceId] = useState("");
   return <section className="card" aria-labelledby="erp-start"><div className="card-header"><h2 id="erp-start">Start an ERP change</h2></div><div className="card-body stack">

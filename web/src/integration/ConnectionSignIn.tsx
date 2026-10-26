@@ -5,6 +5,7 @@ import { Rail } from "../shell/Drawer";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { Icon } from "../shell/Icons";
 import { closeDrawer, openDrawer } from "../shell/drawerStore";
+import { useSession } from "../session/session";
 import { ErrorNote, Section } from "../units/common";
 import { date, PagedGrid, RoleAccess, useAction, useConnectionDetail, useCursorPage } from "./AdminCommon";
 import { signInApi } from "./erpChangeApi";
@@ -28,7 +29,7 @@ function SignInScreen() {
   const [view, setView] = useState<ConnectionAuthorisationView | null>(null); const [error, setError] = useState<unknown>(null); const [revision, setRevision] = useState(0);
   useEffect(() => {
     const controller = new AbortController(); setError(null);
-    signInApi.read(connectionId, undefined, controller.signal).then(value => { if (!controller.signal.aborted) setView(value); }).catch(reason => { if (!controller.signal.aborted) setError(reason); });
+    signInApi.read(connectionId, undefined, controller.signal, { sort: { key: "when", dir: "desc" }, pageSize: 12 }).then(value => { if (!controller.signal.aborted) setView(value); }).catch(reason => { if (!controller.signal.aborted) setError(reason); });
     return () => controller.abort();
   }, [connectionId, revision]);
   const refresh = () => setRevision(value => value + 1);
@@ -58,13 +59,14 @@ function SignInScreen() {
 }
 
 function SignInBody({ connectionId, view }: { connectionId: string; view: ConnectionAuthorisationView }) {
+  const session = useSession();
   const note = signInNote(view); const days = daysUntil(view.refreshChainExpiresAt);
-  const fetch = useCallback((cursor?: string, signal?: AbortSignal) => signInApi.read(connectionId, cursor, signal).then(value => ({ items: value.history.items, nextCursor: value.history.nextCursor })), [connectionId]);
-  const history = useCursorPage<SignInHistoryItem>(fetch);
+  const fetch = useCallback((cursor?: string, signal?: AbortSignal, grid?: Parameters<typeof signInApi.read>[3]) => signInApi.read(connectionId, cursor, signal, grid!).then(value => ({ items: value.history.items, nextCursor: value.history.nextCursor })), [connectionId]);
+  const history = useCursorPage<SignInHistoryItem>(fetch, { gridId: "integration-sign-in-history", userId: session.user.id, defaultSort: { key: "when", dir: "desc" }, defaultSize: 12, pageSizeOptions: [12, 25, 50] });
   const columns = useMemo<GridColumn<SignInHistoryItem>[]>(() => [
     { key: "event", label: "Event", width: 34, render: item => <span className="primary"><span className="t">{historyEvent(item)}</span>{item.reason && <span className="sub">{item.reason}</span>}</span> },
     { key: "by", label: "By", width: 30, render: item => historyBy(item) },
-    { key: "when", label: "When", width: 18, render: item => item.kind === "access_renewed" ? parallelDate(item.occurredAt) : date(item.occurredAt) },
+    { key: "when", label: "When", width: 18, sort: { key: "when", defaultDir: "desc" }, render: item => item.kind === "access_renewed" ? parallelDate(item.occurredAt) : date(item.occurredAt) },
     { key: "result", label: "Result", width: 18, render: item => { const [label, tone] = historyResult(item); return <StatusBadge tone={tone}>{label}</StatusBadge>; } },
   ], []);
   const disabled = view.status === "disabled";
