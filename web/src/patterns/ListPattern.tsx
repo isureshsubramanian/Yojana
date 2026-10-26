@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { DataGrid, KpiStrip, ScanInput, StatusBadge, openSearch, useGridState, type GridColumn } from "../components";
+import { DataGrid, KpiStrip, ScanInput, StatusBadge, openSearch, useGridState, type GridColumn, sortCaption } from "../components";
 import { Icon } from "../shell/Icons";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { unitKpis, unitsPage, type UnitRow } from "./fixtures";
@@ -42,11 +42,11 @@ export function Component() {
                 <button type="button" className="chip">Location · All</button>
                 <button type="button" className="chip"><Icon name="filter" />Filter</button>
               </div>
-              <span className="meta nowrap" id="h-units">Sorted by last event</span>
+              <span className="meta nowrap" id="h-units">{sortCaption(columns, grid, "Sorted by last event")}</span>
             </div>
             <DataGrid columns={columns} page={data} rowId={(r) => r.id} onPage={grid.onPage} selection={{ selected, onChange: setSelected, label: (r) => r.serial }} viewportHeight={560}
               gridId="patterns-units" userId={session.user.id} sort={grid.sort} defaultSort={{ key: "last_event", dir: "desc" }} onSort={grid.onSort}
-              pageSize={grid.pageSize} defaultPageSize={50} onPageSize={grid.onPageSize} footerNote={`Sorted by ${grid.sort.key.replace("_", " ")}`} />
+              pageSize={grid.pageSize} defaultPageSize={50} onPageSize={grid.onPageSize} footerNote={sortCaption(columns, grid, "Sorted by last event")} />
           </section>
         </div>
       </main>

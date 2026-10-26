@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { DataGrid, KpiStrip, StatusBadge, type GridColumn } from "../components";
+import { DataGrid, KpiStrip, StatusBadge, sortCaption, type GridColumn, type GridSort } from "../components";
 import { openDrawer, updateDrawer } from "../shell/drawerStore";
 import { Rail } from "../shell/Drawer";
 import { Breadcrumbs } from "../shell/PageHeader";
@@ -19,10 +19,13 @@ type InboxRow =
   | { id: string; kind: "exception"; title: string; subject: string; reason: string; units: number; raisedAt: string; status: string; exception: WarrantyLineException }
   | { id: string; kind: "correction"; title: string; subject: string; reason: string; units: number; raisedAt: string; status: string; correction: WorkbenchRequestRow };
 
+const INBOX_DEFAULT_SORT: GridSort = { key: "raised", dir: "asc" };
+
 export function Component() {
   const session = useSession();
   const actor = useActor();
   const [requirements, setRequirements] = useState<EntitlementRequirement[]>([]);
+  const [sort, setSort] = useState<GridSort>(INBOX_DEFAULT_SORT);
   const [exceptions, setExceptions] = useState<WarrantyLineException[]>([]);
   const [approvals, setApprovals] = useState<BulkApprovalRequest[]>([]);
   const [corrections, setCorrections] = useState<WorkbenchRequestRow[]>([]);
@@ -73,7 +76,7 @@ export function Component() {
       <ErrorNote error={error} />
       <div className="stack">
         <KpiStrip kpis={[{ label: "Waiting for you", value: rows.length.toLocaleString(), detail: `${corrections.length} corrections · ${approvals.length} bulk · ${rows.length - approvals.length - corrections.length} single`, trend: null }, { label: "Oldest", value: `${oldest} d`, detail: rows[0]?.title ?? "Nothing waiting", trend: null }, { label: "Due today", value: requirements.length.toLocaleString(), detail: "manager requirements on this page", trend: null }, { label: "Bulk approvals", value: approvals.length.toLocaleString(), detail: "frozen previews · server", trend: null }]} />
-        <section className="card" aria-labelledby="approval-list"><div className="card-header"><h2 id="approval-list">Requests <span className="meta">{rows.length} waiting · sorted oldest first</span></h2><div className="segmented plain" aria-label="Approval scope"><button type="button" aria-pressed="true">Mine <span className="n">{rows.length}</span></button><button type="button">Finance review</button><button type="button">All open</button></div></div><DataGrid columns={columns} page={{ rows, total: rows.length, page: 1, pageSize: 100, continuation: null }} rowId={(row) => row.id} onPage={() => undefined} onRowClick={open} activeRowId={active} loading={loading} emptyText="Nothing is waiting for your approval. New requests will appear here with the command preview and required evidence." viewportHeight={620} footer={`${rows.length.toLocaleString()} requests · complete list`} gridId="approval-inbox" userId={session.user.id} defaultSort={{ key: "raised", dir: "asc" }} defaultPageSize={100} /></section>
+        <section className="card" aria-labelledby="approval-list"><div className="card-header"><h2 id="approval-list">Requests <span className="meta">{rows.length} waiting · {sortCaption(columns, { sort, defaultSort: INBOX_DEFAULT_SORT }, "sorted oldest first")}</span></h2><div className="segmented plain" aria-label="Approval scope"><button type="button" aria-pressed="true">Mine <span className="n">{rows.length}</span></button><button type="button">Finance review</button><button type="button">All open</button></div></div><DataGrid columns={columns} sort={sort} defaultSort={INBOX_DEFAULT_SORT} onSort={setSort} page={{ rows, total: rows.length, page: 1, pageSize: 100, continuation: null }} rowId={(row) => row.id} onPage={() => undefined} onRowClick={open} activeRowId={active} loading={loading} emptyText="Nothing is waiting for your approval. New requests will appear here with the command preview and required evidence." viewportHeight={620} footer={`${rows.length.toLocaleString()} requests · complete list`} gridId="approval-inbox" userId={session.user.id} defaultPageSize={100} /></section>
       </div>
     </main>
     <Rail label="Approval sources"><Section title="What appears here"><div className="job"><div><div className="t">Entitlement requirements</div><div className="s">backend · exception status</div></div><StatusBadge tone="bad">{requirements.length}</StatusBadge></div><div className="job"><div><div className="t">Warranty-line exceptions</div><div className="s">backend · open status</div></div><StatusBadge tone="warn">{exceptions.length}</StatusBadge></div><div className="job"><div><div className="t">Bulk previews</div><div className="s">backend · pending status</div></div><StatusBadge tone="info">{approvals.length}</StatusBadge></div></Section><Section title="Boundary"><p className="muted">The screen does not invent approval state. Every row here is persisted on the server. A bulk request executes the requester's exact arguments under your own roles, and never after its units have changed.</p></Section></Rail>

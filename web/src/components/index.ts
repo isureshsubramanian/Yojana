@@ -5,6 +5,7 @@ export { DataGrid, type GridColumn } from "./DataGrid";
 export { PageSizeSelect } from "./PageSizeSelect";
 export { SortHeader } from "./SortHeader";
 export { useGridQuery, useGridState, resetGridQuery } from "./useGridQuery";
+export { sortCaption } from "./sortCaption";
 export type { GridSort, SortDirection } from "./gridPreferences";
 export { CollapsibleCard } from "./CollapsibleCard";
 export { FindBar } from "./FindBar";

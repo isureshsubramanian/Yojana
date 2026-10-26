@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { apiParsed, checkedBody } from "../api/client";
-import { DataGrid, FindBar, KpiStrip, StatusBadge, useGridQuery, type GridColumn } from "../components";
+import { DataGrid, FindBar, KpiStrip, StatusBadge, useGridQuery, type GridColumn, sortCaption } from "../components";
 import { useSession } from "../session/session";
 import { useReferenceNames } from "../corrections/ReferenceFields";
 import { referenceNamesRequest, referenceNamesResponse } from "../corrections/referenceSchemas";
@@ -157,7 +157,7 @@ export function Component() {
           <FilterSelect label="Service country" value={filters.serviceCountry} onChange={(serviceCountry) => setFilter({ serviceCountry })} options={["", ...(summary?.serviceCountries ?? [])]} empty="All" />
           <FilterSelect label="Recovery" value={filters.recovery} onChange={(recovery) => setFilter({ recovery })} options={["", "raised", "none"]} empty="Any" />
         </div></div></section>
-        <section className="card" aria-labelledby="claims-list"><div className="card-header"><h2 id="claims-list">{statusLabel} <span className="meta">{page?.total.toLocaleString() ?? "—"} claims · {summary?.coverageSources.length ?? "—"} coverage sources · {summary?.serviceCountries.length ?? "—"} service countries</span></h2><span className="meta nowrap">Sorted by age, oldest first</span></div>
+        <section className="card" aria-labelledby="claims-list"><div className="card-header"><h2 id="claims-list">{statusLabel} <span className="meta">{page?.total.toLocaleString() ?? "—"} claims · {summary?.coverageSources.length ?? "—"} coverage sources · {summary?.serviceCountries.length ?? "—"} service countries</span></h2><span className="meta nowrap">{sortCaption(columns, query, "Sorted by age, oldest first")}</span></div>
           <DataGrid columns={columns} page={gridPage} rowId={(row) => row.claimId} onPage={query.onPage} onRowClick={(row) => void openClaim(row)} activeRowId={active} loading={query.loading} emptyText="No claims match these filters." viewportHeight={560} footerNote={`${summary?.allClaims.toLocaleString() ?? "—"} claims since go-live`} gridId="claims" userId={session.user.id} sort={query.sort} defaultSort={{ key: "submitted", dir: "asc" }} onSort={query.onSort} pageSize={query.pageSize} defaultPageSize={PAGE_SIZE} onPageSize={query.onPageSize} />
         </section>
       </div>

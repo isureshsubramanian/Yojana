@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../shell/Icons";
 import { Link } from "react-router";
 import { ApiError } from "../api/client";
-import { DataGrid, FormActions, StatusBadge, useGridQuery, type GridColumn } from "../components";
+import { DataGrid, FormActions, StatusBadge, useGridQuery, type GridColumn, sortCaption } from "../components";
 import { useSession } from "../session/session";
 import { ErrorNote } from "../units/common";
 import { fmtDateTime } from "../units/format";
@@ -138,7 +138,7 @@ function MigrationSettings() {
         <div className="card-header"><h2 id="migration-overrides-table-title">Overrides</h2><label className="checkrow"><input type="checkbox" checked={unusedOnly} onChange={event => setUnusedOnly(event.target.checked)} /><span>Unused only</span></label></div>
         <ErrorNote error={overrides.error} /><DataGrid columns={columns} page={overrideGrid} rowId={row => row.sourceKey} onPage={overrides.onPage} loading={overrides.loading} emptyText={unusedOnly ? "No unused overrides." : "No per-link overrides."} viewportHeight={430}
           gridId="migration-link-overrides" userId={session.user.id} sort={overrides.sort} defaultSort={{ key: "document", dir: "asc" }} onSort={overrides.onSort}
-          pageSize={overrides.pageSize} defaultPageSize={12} pageSizeOptions={[12, 25, 50]} onPageSize={overrides.onPageSize} footerNote="Sorted by document number" />
+          pageSize={overrides.pageSize} defaultPageSize={12} pageSizeOptions={[12, 25, 50]} onPageSize={overrides.onPageSize} footerNote={sortCaption(columns, overrides, "Sorted by document number")} />
         <div className="card-footer"><span className="muted">Server-paged in document-number order · an unused override is kept for a later mapping run</span></div>
       </section>
     </div>}
