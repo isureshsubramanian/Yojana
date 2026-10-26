@@ -46,6 +46,7 @@ public sealed class DeveloperDbContext(DbContextOptions<DeveloperDbContext> opti
             b.Property(x => x.RowVersion).IsRowVersion();
             b.HasIndex(x => new { x.TenantId, x.Name }).IsUnique();
             b.HasIndex(x => new { x.TenantId, x.Status, x.CreatedAt, x.ClientId });
+            b.HasIndex(x => new { x.TenantId, x.Status, x.ClientId });
         });
         modelBuilder.Entity<ApiAccessToken>(b =>
         {
@@ -105,6 +106,7 @@ public sealed class DeveloperDbContext(DbContextOptions<DeveloperDbContext> opti
                 .HasFilter("[replay_of] IS NULL").HasDatabaseName("ux_webhook_delivery_first");
             b.HasIndex(x => new { x.TenantId, x.SubscriptionId, x.Status, x.NextAttemptAt, x.DeliveryId });
             b.HasIndex(x => new { x.TenantId, x.SubscriptionId, x.CreatedAt, x.DeliveryId });
+            b.HasIndex(x => new { x.TenantId, x.SubscriptionId, x.Status, x.DeliveryId });
             // created_at is millisecond precision and v7 ids do not sort by time in SQL Server, so neither orders a
             // burst of deliveries; the queue position does. Rows inserted one at a time take the default; a caller
             // inserting several ordered rows at once reserves a range (WebhookDeliveryQueue).

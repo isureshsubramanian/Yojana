@@ -20,29 +20,18 @@ public sealed class WebhookSubscriptionService(DeveloperDbContext db, ITenantCon
     DeveloperWebhookSettings settings, WebhookTargetGuard guard, WebhookTransport transport,
     IUserSecretProtector protector, SecurityEventWriter security, PlatformDbContext platform)
 {
-    public async Task<WebhookSubscriptionPage> ListAsync(string? after, int? requestedTake,
-        CancellationToken cancellationToken)
+    public async Task<WebhookSubscriptionPage> ListAsync(string? sort, string? direction, string? cursor,
+        int? take, CancellationToken cancellationToken)
     {
-        var take = Math.Clamp(requestedTake ?? 50, 1, 200);
-        var cursor = DecodeCursor(after);
-        var query = db.Subscriptions.AsNoTracking().Where(row => row.TenantId == tenant.TenantId)
-            .Select(row => new SubscriptionListProjection
-            {
-                Row = row,
-                Attention = row.Status == WebhookSubscriptionStatus.Paused ? 0
-                    : row.Status == WebhookSubscriptionStatus.PendingVerification ? 1
-                    : row.Status == WebhookSubscriptionStatus.Active ? 2 : 3,
-            });
-        if (cursor is { } key) query = query.Where(row => row.Attention > key.Attention
-            || row.Attention == key.Attention && (row.Row.UpdatedAt < key.UpdatedAt
-            || row.Row.UpdatedAt == key.UpdatedAt && row.Row.SubscriptionId.CompareTo(key.Id) > 0));
-        var rows = await query.OrderBy(row => row.Attention).ThenByDescending(row => row.Row.UpdatedAt)
-            .ThenBy(row => row.Row.SubscriptionId).Take(take + 1).ToListAsync(cancellationToken);
-        var selected = rows.Take(take).ToList();
-        var activities = await ActivitiesAsync(selected.Select(row => row.Row.SubscriptionId).ToList(),
+        var paging = DeveloperEndpoints.WebhookPages.Parse(sort, direction, take, cursor);
+        var rows = await paging.Apply(db.Subscriptions.AsNoTracking()
+                .Where(row => row.TenantId == tenant.TenantId))
+            .Take(paging.Take + 1).ToListAsync(cancellationToken);
+        var selected = rows.Take(paging.Take).ToList();
+        var activities = await ActivitiesAsync(selected.Select(row => row.SubscriptionId).ToList(),
             cancellationToken);
-        var page = selected.Select(row => View(row.Row,
-            activities.GetValueOrDefault(row.Row.SubscriptionId, new(0, 0, 0)))).ToList();
+        var page = selected.Select(row => View(row,
+            activities.GetValueOrDefault(row.SubscriptionId, new(0, 0, 0)))).ToList();
         var since = clock.UtcNow.AddHours(-24);
         var delivered = await db.Deliveries.AsNoTracking().LongCountAsync(row => row.TenantId == tenant.TenantId
             && row.Status == WebhookDeliveryStatus.Succeeded && row.SucceededAt >= since, cancellationToken);
@@ -52,9 +41,7 @@ public sealed class WebhookSubscriptionService(DeveloperDbContext db, ITenantCon
             && row.Status == WebhookDeliveryStatus.Parked, cancellationToken);
         var paused = await db.Subscriptions.AsNoTracking().CountAsync(row => row.TenantId == tenant.TenantId
             && row.Status == WebhookSubscriptionStatus.Paused, cancellationToken);
-        var next = rows.Count > take && selected.Count > 0
-            ? EncodeCursor(selected[^1].Attention, selected[^1].Row.UpdatedAt,
-                selected[^1].Row.SubscriptionId) : null;
+        var next = rows.Count > paging.Take && selected.Count > 0 ? paging.CursorFor(selected[^1]) : null;
         return new(page, next, new(delivered, waiting, parked, paused));
     }
 
@@ -358,31 +345,6 @@ public sealed class WebhookSubscriptionService(DeveloperDbContext db, ITenantCon
         row.Status, row.RelayId, row.RatePerSecond, row.VerifiedAt, row.FailingSince,
         row.PausedAt, row.PausedReason, row.CreatedAt, row.UpdatedAt,
         Convert.ToBase64String(row.RowVersion), row.PreviousSecretExpiresAt, activity ?? new(0, 0, 0));
-
-    private static string EncodeCursor(int attention, DateTime updatedAt, Guid id) => Convert.ToBase64String(
-        Encoding.UTF8.GetBytes($"{attention}:{updatedAt.Ticks}:{id:N}"));
-
-    private static (int Attention, DateTime UpdatedAt, Guid Id)? DecodeCursor(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return null;
-        try
-        {
-            var parts = Encoding.UTF8.GetString(Convert.FromBase64String(value)).Split(':');
-            return parts.Length == 3 && int.TryParse(parts[0], out var attention)
-                && long.TryParse(parts[1], out var ticks) && Guid.TryParseExact(parts[2], "N", out var id)
-                ? (attention, new DateTime(ticks, DateTimeKind.Utc), id) : null;
-        }
-        catch (FormatException)
-        {
-            throw new CommandRefusedException("webhook_cursor_invalid", "The webhook cursor is invalid.");
-        }
-    }
-
-    private sealed class SubscriptionListProjection
-    {
-        public required WebhookSubscription Row { get; init; }
-        public int Attention { get; init; }
-    }
 
     private static string EncodeSecret(byte[] secret) => WebhookSigner.EncodeSecret(secret);
     private static string Base64Url(byte[] value) => Convert.ToBase64String(value).TrimEnd('=').Replace('+', '-').Replace('/', '_');

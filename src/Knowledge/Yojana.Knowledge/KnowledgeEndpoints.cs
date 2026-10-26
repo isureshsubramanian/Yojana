@@ -8,11 +8,14 @@ using Yojana.Knowledge.Entries;
 using Yojana.Knowledge.Questions;
 using Yojana.Knowledge.Reports;
 using Yojana.Knowledge.Training;
+using Yojana.Knowledge.Data.Entities;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Platform.Contracts.Records;
 using Yojana.Platform.Contracts.Files;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
+using CommandRefusedException = Yojana.Platform.Contracts.CommandRefusedException;
 
 namespace Yojana.Knowledge;
 
@@ -34,6 +37,18 @@ public sealed record RedactQuestionPersonalDataRequest(Guid PersonId, Guid Reque
 
 public static class KnowledgeEndpoints
 {
+    internal static readonly SortedPage<Question, Guid> MyQuestionPages = new("asked", row => row.QuestionId,
+        new SortColumn<Question, DateTime>("asked", row => row.AskedAt),
+        new SortColumn<Question, string>("status", row => row.Status));
+    internal static readonly SortedPage<KnowledgeEntry, Guid> EntryPages = new("published", row => row.EntryId,
+        new SortColumn<KnowledgeEntry, DateTime>("published", row => row.PublishedAt!.Value,
+            SortDirection.Descending),
+        new SortColumn<KnowledgeEntry, DateTime>("relevance", row => row.PublishedAt!.Value,
+            SortDirection.Descending));
+    internal static readonly SortedPage<EntryReviewProjection, Guid> ReviewPages = new("activity",
+        row => row.EntryId,
+        new SortColumn<EntryReviewProjection, DateTime>("activity", row => row.ActivityAt));
+
     public static IEndpointRouteBuilder MapKnowledgeEndpoints(this IEndpointRouteBuilder app)
     {
         var questions = app.MapGroup("/api/questions").RequireAuthorization(YojanaPolicy.StaffMember);
@@ -116,9 +131,10 @@ public static class KnowledgeEndpoints
             await Read(async () => Results.Ok(await notifications.UpdatePreferenceAsync(
                 Actor(user).UserId, request.Mode, ct))));
         questions.MapGet("/mine", async (string? scope, string? status, string? recordKind, string? age,
-            string? search, string? cursor, int? take, ClaimsPrincipal user, QuestionQueries queries,
+            string? search, string? sort, string? dir, string? cursor, int? take,
+            ClaimsPrincipal user, QuestionQueries queries,
             CancellationToken ct) => await Read(async () => Results.Ok(await queries.MyAsync(scope, status,
-                recordKind, age, search, cursor, take ?? 25, Viewer(user), ct))));
+                recordKind, age, search, sort, dir, cursor, take, Viewer(user), ct))));
         questions.MapGet("/search", async (string query, bool? answeredOnly, string? cursor, int? take,
             ClaimsPrincipal user, QuestionQueries queries, CancellationToken ct) => await Read(async () =>
                 Results.Ok(await queries.SearchAsync(query, answeredOnly ?? false, cursor, take ?? 10,
@@ -143,12 +159,14 @@ public static class KnowledgeEndpoints
         var entries = app.MapGroup("/api/knowledge/entries").RequireAuthorization(YojanaPolicy.StaffMember);
         entries.MapGet("/tag-choices", async (KnowledgeEntryQueries queries, CancellationToken ct) =>
             await Read(async () => Results.Ok(await queries.TagChoicesAsync(ct))));
-        entries.MapGet("/review", async (string? filter, string? cursor, int? take, ClaimsPrincipal user,
+        entries.MapGet("/review", async (string? filter, string? sort, string? dir, string? cursor, int? take,
+            ClaimsPrincipal user,
             KnowledgeEntryQueries queries, CancellationToken ct) => await Read(async () => Results.Ok(
-                await queries.ReviewQueueAsync(filter, cursor, take ?? 25, Viewer(user), ct))));
-        entries.MapGet("/", async (string? query, string? role, string? task, string? cursor, int? take,
+                await queries.ReviewQueueAsync(filter, sort, dir, cursor, take, Viewer(user), ct))));
+        entries.MapGet("/", async (string? query, string? role, string? task, string? sort, string? dir,
+            string? cursor, int? take,
             KnowledgeEntryQueries queries, CancellationToken ct) => await Read(async () => Results.Ok(
-                await queries.BrowseAsync(query, role, task, cursor, take ?? 25, ct))));
+                await queries.BrowseAsync(query, role, task, sort, dir, cursor, take, ct))));
         entries.MapGet("/{entryId:guid}", async (Guid entryId, ClaimsPrincipal user,
             KnowledgeEntryQueries queries, CancellationToken ct) => await Read(async () =>
                 await queries.EntryAsync(entryId, Viewer(user), ct) is { } result
@@ -260,6 +278,15 @@ public static class KnowledgeEndpoints
     {
         try { return await action(); }
         catch (QuestionRuleException ex) { return Problem(ex); }
+        catch (CommandRefusedException ex)
+        {
+            return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: StatusCodes.Status400BadRequest,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["rule"] = ex.Rule,
+                    ["unblockingStep"] = ex.UnblockingStep,
+                });
+        }
         catch (QuestionSearchUnavailableException ex)
         {
             return Results.Problem(title: "question_search_unavailable", detail: ex.Message,

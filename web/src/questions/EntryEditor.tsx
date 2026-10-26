@@ -1,35 +1,46 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { DataGrid, StatusBadge, type GridColumn, type PageResult } from "../components";
+import { DataGrid, StatusBadge, useGridQuery, type GridColumn, type PageResult } from "../components";
+import { useSession } from "../session/session";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { ErrorNote } from "../units/common";
 import { knowledgeApi } from "./api";
 import { KnowledgeSubnav } from "./KnowledgeSubnav";
 import { humanise } from "./model";
-import type { EntryDraftRequest, EntryFieldChange, EntryReviewItem, EntryReviewPage, EntryTagChoices, EntryTagInput, KnowledgeEntry, ReferenceChoice, WrittenAgainst } from "./types";
+import { entryReviewPage, type EntryDraftRequest, type EntryFieldChange, type EntryReviewItem, type EntryTagChoices, type EntryTagInput, type KnowledgeEntry, type ReferenceChoice, type WrittenAgainst } from "./types";
 import "./questions.css";
 
 const dateTime = (value: string) => new Date(value).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
 export function Component() {
   const route = useParams<{ entryId?: string }>(); const navigate = useNavigate();
-  const [queue, setQueue] = useState<EntryReviewPage | null>(null); const [entry, setEntry] = useState<KnowledgeEntry | null>(null);
+  const session = useSession();
+  const [entry, setEntry] = useState<KnowledgeEntry | null>(null);
   const [choices, setChoices] = useState<EntryTagChoices | null>(null); const [changes, setChanges] = useState<EntryFieldChange[]>([]);
   const [draft, setDraft] = useState<EntryDraftRequest | null>(null); const [note, setNote] = useState("");
   const [filter, setFilter] = useState<"pending" | "needs_review">("pending");
   const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>(null); const [revision, setRevision] = useState(0);
-  const loadQueue = useCallback((signal?: AbortSignal) => knowledgeApi.review(filter, undefined, signal), [filter]);
-  useEffect(() => { const c = new AbortController(); void Promise.all([loadQueue(c.signal), knowledgeApi.tagChoices(c.signal)]).then(([next, tagChoices]) => { setQueue(next); setChoices(tagChoices); if (!route.entryId && next.items[0]) navigate(`/knowledge/entries/${next.items[0].entryId}`, { replace: true }); }).catch(reason => { if (!c.signal.aborted) setError(reason); }); return () => c.abort(); }, [loadQueue, navigate, revision, route.entryId]);
+  const filters = useMemo(() => new URLSearchParams({ filter }), [filter]);
+  const query = useGridQuery("/api/knowledge/entries/review", entryReviewPage, {
+    gridId: "knowledge-review", userId: session.user.id, defaultSort: { key: "activity", dir: "asc" },
+    defaultSize: 20, params: filters, paging: "cursor", sortKeys: ["activity"], reloadKey: revision,
+    pageFacts: value => ({ continuation: value.nextCursor }),
+  });
+  const queue = query.data;
+  useEffect(() => { const c = new AbortController(); void knowledgeApi.tagChoices(c.signal).then(setChoices).catch(reason => { if (!c.signal.aborted) setError(reason); }); return () => c.abort(); }, []);
+  useEffect(() => { if (!route.entryId && queue?.items[0]) navigate(`/knowledge/entries/${queue.items[0].entryId}`, { replace: true }); }, [navigate, queue, route.entryId]);
   useEffect(() => { if (!route.entryId) { setEntry(null); setDraft(null); return; } const c = new AbortController(); void Promise.all([knowledgeApi.entry(route.entryId, c.signal), knowledgeApi.changes(route.entryId, c.signal)]).then(([next, diff]) => { setEntry(next); setChanges(diff); setDraft({ title: next.title, problem: next.problem, answer: next.answer, steps: next.steps, tags: next.tags.map(tag => ({ kind: tag.kind, value: tag.value })), recordLinks: next.recordLinks.visible.map(link => ({ recordKind: link.recordKind, recordId: link.recordId })), writtenAgainst: next.writtenAgainst }); setNote(""); }).catch(reason => { if (!c.signal.aborted) setError(reason); }); return () => c.abort(); }, [route.entryId, revision]);
   const run = async (action: () => Promise<unknown>) => { setBusy(true); setError(null); try { await action(); setRevision(value => value + 1); } catch (reason) { setError(reason); } finally { setBusy(false); } };
   const columns: GridColumn<EntryReviewItem>[] = [
     { key: "entry", label: filter === "needs_review" ? "Needs review" : "Waiting for review", width: 66, render: row => <span className="primary wrap">{row.title}<span className="sub">Version {row.currentVersion}{row.round ? ` · round ${row.round}` : " · may be out of date"}</span></span> },
-    { key: "activity", label: filter === "needs_review" ? "Flagged" : "Submitted", width: 34, render: row => <>{row.authorName}<span className="sub">{dateTime(row.activityAt)}</span></> },
+    { key: "activity", label: filter === "needs_review" ? "Flagged" : "Submitted", width: 34, sort: { key: "activity", defaultDir: "asc" }, render: row => <>{row.authorName}<span className="sub">{dateTime(row.activityAt)}</span></> },
   ];
-  const rows: PageResult<EntryReviewItem> = { rows: queue?.items ?? [], total: queue?.items.length ?? 0, page: 1, pageSize: 20, continuation: queue?.nextCursor ?? null, totalIsExact: false, hasMore: !!queue?.nextCursor };
+  const rows: PageResult<EntryReviewItem> = { rows: queue?.items ?? [], total: (query.page - 1) * query.pageSize + (queue?.items.length ?? 0) + (queue?.nextCursor ? 1 : 0), page: query.page, pageSize: query.pageSize, continuation: queue?.nextCursor ?? null, totalIsExact: false, hasMore: !!queue?.nextCursor };
   const pageTitle = entry?.title ?? "Entries to review";
-  return <main className="content" id="main" tabIndex={-1}><Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Knowledge base", to: "/knowledge" }, { label: entry ? `Version ${entry.currentVersion}` : "Entries to review" }]} /><PageHeader eyebrow={entry ? `Knowledge entry · version ${entry.currentVersion} · ${humanise(entry.status)}` : "Questions and knowledge"} title={pageTitle} sub="Made from an accepted answer. Nothing reaches the knowledge base until one of the tenant’s reviewer roles approves it." actions={entry && <EditorActions entry={entry} note={note} busy={busy} run={run} />} /><KnowledgeSubnav current="review" /><ErrorNote error={error} />
-    <div className="knowledge-editor-split"><div className="stack"><section className="card"><div className="card-header"><h2>Entries to review</h2><span className="meta">oldest first</span></div><div className="card-body"><div className="tagset" role="group" aria-label="Review queue filter"><button type="button" className={`chip${filter === "pending" ? " on" : ""}`} onClick={() => setFilter("pending")}>Awaiting approval</button><button type="button" className={`chip${filter === "needs_review" ? " on" : ""}`} onClick={() => setFilter("needs_review")}>Needs review</button></div></div><DataGrid columns={columns} page={rows} rowId={row => row.entryId} onPage={() => undefined} onRowClick={row => navigate(`/knowledge/entries/${row.entryId}`)} activeRowId={route.entryId} emptyText={filter === "needs_review" ? "No published entries need review." : "No entries are waiting for review."} viewportHeight={280} /></section>{entry && <EntryContext entry={entry} changes={changes} />}</div>{entry && draft ? <EntryForm entry={entry} draft={draft} setDraft={setDraft} choices={choices} note={note} setNote={setNote} busy={busy} run={run} /> : <section className="card"><div className="empty"><h2>No entry selected</h2><p className="hint">Choose an entry awaiting review, or turn an accepted answer into a draft from its question.</p></div></section>}</div>
+  return <main className="content" id="main" tabIndex={-1}><Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Knowledge base", to: "/knowledge" }, { label: entry ? `Version ${entry.currentVersion}` : "Entries to review" }]} /><PageHeader eyebrow={entry ? `Knowledge entry · version ${entry.currentVersion} · ${humanise(entry.status)}` : "Questions and knowledge"} title={pageTitle} sub="Made from an accepted answer. Nothing reaches the knowledge base until one of the tenant’s reviewer roles approves it." actions={entry && <EditorActions entry={entry} note={note} busy={busy} run={run} />} /><KnowledgeSubnav current="review" /><ErrorNote error={error ?? query.error} onReload={query.reload} />
+    <div className="knowledge-editor-split"><div className="stack"><section className="card"><div className="card-header"><h2>Entries to review</h2><span className="meta">oldest first</span></div><div className="card-body"><div className="tagset" role="group" aria-label="Review queue filter"><button type="button" className={`chip${filter === "pending" ? " on" : ""}`} onClick={() => setFilter("pending")}>Awaiting approval</button><button type="button" className={`chip${filter === "needs_review" ? " on" : ""}`} onClick={() => setFilter("needs_review")}>Needs review</button></div></div><DataGrid columns={columns} page={rows} rowId={row => row.entryId} onPage={query.onPage} loading={query.loading} onRowClick={row => navigate(`/knowledge/entries/${row.entryId}`)} activeRowId={route.entryId} emptyText={filter === "needs_review" ? "No published entries need review." : "No entries are waiting for review."} viewportHeight={280}
+      gridId="knowledge-review" userId={session.user.id} sort={query.sort} defaultSort={{ key: "activity", dir: "asc" }} onSort={query.onSort}
+      pageSize={query.pageSize} defaultPageSize={20} onPageSize={query.onPageSize} /></section>{entry && <EntryContext entry={entry} changes={changes} />}</div>{entry && draft ? <EntryForm entry={entry} draft={draft} setDraft={setDraft} choices={choices} note={note} setNote={setNote} busy={busy} run={run} /> : <section className="card"><div className="empty"><h2>No entry selected</h2><p className="hint">Choose an entry awaiting review, or turn an accepted answer into a draft from its question.</p></div></section>}</div>
   </main>;
 }
 

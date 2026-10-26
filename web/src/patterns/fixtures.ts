@@ -108,7 +108,8 @@ export interface DocumentSerialRow { id: string; serial: string; line: number; i
 
 export const DOCUMENT_TOTAL = 1000;
 
-export function documentPage(query: string, facet: string | null, page: number, pageSize = 50): PageResult<DocumentSerialRow> & { matches: number } {
+export function documentPage(query: string, facet: string | null, page: number, pageSize = 50,
+  sort = "document", direction: "asc" | "desc" = "asc"): PageResult<DocumentSerialRow> & { matches: number } {
   const all: DocumentSerialRow[] = [];
   for (let n = 0; n < DOCUMENT_TOTAL; n++) {
     const line = Math.floor(n / 250) + 1;
@@ -128,6 +129,8 @@ export function documentPage(query: string, facet: string | null, page: number, 
   }
   const q = query.trim();
   const filtered = all.filter((r) => (!q || r.serial.startsWith(q)) && (facet === null || (facet === "exceptions" ? r.tone !== "ok" : facet.startsWith("line-") ? r.line === Number(facet.slice(5)) : true)));
+  const value = (row: DocumentSerialRow) => sort === "document" ? Number(row.id.slice(2)) : sort === "item" ? row.item : sort === "status" ? row.status : sort === "line" ? row.line : row.serial;
+  filtered.sort((left, right) => { const order = String(value(left)).localeCompare(String(value(right)), undefined, { numeric: true }); return (direction === "asc" ? order : -order) || left.serial.localeCompare(right.serial); });
   const start = (page - 1) * pageSize;
   return { rows: filtered.slice(start, start + pageSize), total: filtered.length, page, pageSize, continuation: null, matches: filtered.length };
 }

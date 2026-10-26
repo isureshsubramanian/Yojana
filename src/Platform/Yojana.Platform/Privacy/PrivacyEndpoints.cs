@@ -4,31 +4,37 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Yojana.Platform.Contracts;
 using Yojana.Platform.Contracts.Privacy;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Platform.Data.Platform.Entities;
 
 namespace Yojana.Platform.Privacy;
 
 public static class PrivacyEndpoints
 {
+    internal static readonly SortedPage<ErasureRequest, Guid> Pages = new("recorded", row => row.ErasureId,
+        new SortColumn<ErasureRequest, DateTime>("recorded", row => row.RequestedAt, SortDirection.Descending),
+        new SortColumn<ErasureRequest, string>("reference", row => row.RequestReference),
+        new SortColumn<ErasureRequest, DateOnly>("received", row => row.RequestReceivedOn,
+            SortDirection.Descending),
+        new SortColumn<ErasureRequest, string>("status", row => row.Status));
+
     public static IEndpointRouteBuilder MapYojanaPrivacyEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/privacy/erasures")
             .RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.TenantAdministrator));
         group.MapPost("/preview", PreviewAsync);
         group.MapPost("/confirm", ConfirmAsync);
-        group.MapGet("/export", (PersonalDataErasureService service, CancellationToken cancellationToken) =>
-            Results.Stream(stream => service.ExportCsvAsync(stream, cancellationToken),
+        group.MapGet("/export", (string? sort, string? dir, PersonalDataErasureService service,
+            CancellationToken cancellationToken) =>
+            Results.Stream(stream => service.ExportCsvAsync(stream, sort, dir, cancellationToken),
                 "text/csv; charset=utf-8", "personal-data-erasure-log.csv"));
-        group.MapGet("/", async (string? cursor, int? take, PersonalDataErasureService service,
+        group.MapGet("/", async (string? sort, string? dir, string? cursor, int? take,
+            PersonalDataErasureService service,
             CancellationToken cancellationToken) =>
         {
-            try { return Results.Ok(await service.ListAsync(cursor, take ?? 50, cancellationToken)); }
+            try { return Results.Ok(await service.ListAsync(sort, dir, cursor, take, cancellationToken)); }
             catch (CommandRefusedException exception) { return Problem(exception); }
-            catch (ArgumentOutOfRangeException exception)
-            {
-                return Results.Problem(title: "erasure_page_size_invalid", detail: exception.Message,
-                    statusCode: StatusCodes.Status400BadRequest);
-            }
         });
         group.MapGet("/{erasureId:guid}", async (Guid erasureId, PersonalDataErasureService service,
             CancellationToken cancellationToken) =>

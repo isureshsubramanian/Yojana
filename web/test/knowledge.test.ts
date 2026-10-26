@@ -20,7 +20,7 @@ test("Knowledge base searches its server-paged table as you type and browses by 
   assert.match(routes, /path: "knowledge".*KnowledgeBase/s);
   assert.match(routes, /path: "knowledge\/:entryId".*KnowledgeBase/s);
   assert.match(base, /Search this table as you type/);
-  assert.match(base, /knowledgeApi\.browse\(\{ query, role, task \}, cursor/);
+  assert.match(base, /useGridQuery\("\/api\/knowledge\/entries"/);
   assert.match(base, /<DataGrid/);
   assert.match(base, /Browse by role/);
   assert.match(base, /By task/);

@@ -249,22 +249,18 @@ public sealed class PersonalDataErasureService(
             ?? throw new InvalidOperationException("The saved erasure request was not readable.");
     }
 
-    public async Task<PersonalDataErasurePage> ListAsync(string? cursor, int take,
+    public Task<PersonalDataErasurePage> ListAsync(string? cursor, int? take,
+        CancellationToken cancellationToken) =>
+        ListAsync(null, null, cursor, take, cancellationToken);
+
+    public async Task<PersonalDataErasurePage> ListAsync(string? sort, string? direction, string? cursor, int? take,
         CancellationToken cancellationToken)
     {
-        if (take is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(take));
-        var after = DecodeCursor(cursor);
-        var query = db.ErasureRequests.AsNoTracking().Where(x => x.TenantId == tenant.TenantId);
-        if (after is not null)
-            query = query.Where(x => x.RequestedAt < after.Value.At
-                || (x.RequestedAt == after.Value.At && x.ErasureId.CompareTo(after.Value.Id) < 0));
-        var rows = await query.OrderByDescending(x => x.RequestedAt).ThenByDescending(x => x.ErasureId)
-            .Take(take + 1).Select(x => new
-            {
-                x.ErasureId, x.SubjectKind, x.SubjectId, x.RequestReference, x.RequestedBy,
-                x.RequestReceivedOn, x.Status, x.RequestedAt, x.CompletedAt, x.FailureRule,
-            }).ToListAsync(cancellationToken);
-        var pageRows = rows.Take(take).ToList();
+        var paging = PrivacyEndpoints.Pages.Parse(sort, direction, take, cursor);
+        var rows = await paging.Apply(db.ErasureRequests.AsNoTracking()
+                .Where(x => x.TenantId == tenant.TenantId))
+            .Take(paging.Take + 1).ToListAsync(cancellationToken);
+        var pageRows = rows.Take(paging.Take).ToList();
         var requesterReferences = pageRows.Select(x => x.RequestedBy.ToString("D")).Distinct().ToList();
         var requesterNames = await users.DisplayNamesAsync(requesterReferences, cancellationToken);
         var page = pageRows.Select(x =>
@@ -275,8 +271,8 @@ public sealed class PersonalDataErasureService(
                 x.RequestReference, requesterNames.GetValueOrDefault(requester) ?? "Unavailable user",
                 x.RequestReceivedOn, x.Status, x.RequestedAt, x.CompletedAt, x.FailureRule);
         }).ToList();
-        return new(page, rows.Count > take && page.Count > 0
-            ? EncodeCursor(page[^1].RequestedAt, page[^1].ErasureId) : null,
+        return new(page, rows.Count > paging.Take && pageRows.Count > 0
+            ? paging.CursorFor(pageRows[^1]) : null,
             await SummaryAsync(cancellationToken));
     }
 
@@ -301,14 +297,15 @@ public sealed class PersonalDataErasureService(
             row.RetentionBasis, counts, row.FailureRule, row.FailureDetail, blockers);
     }
 
-    public async Task ExportCsvAsync(Stream output, CancellationToken cancellationToken)
+    public async Task ExportCsvAsync(Stream output, string? sort, string? direction,
+        CancellationToken cancellationToken)
     {
         await using var writer = new StreamWriter(output, new UTF8Encoding(false), 16 * 1024, leaveOpen: true);
         await WriteCsvRowAsync(writer,
             ["request_reference", "subject", "kind", "request_received_on", "recorded_at", "status", "refusal_rule"],
             cancellationToken);
-        var rows = db.ErasureRequests.AsNoTracking().Where(x => x.TenantId == tenant.TenantId)
-            .OrderByDescending(x => x.RequestedAt).ThenByDescending(x => x.ErasureId)
+        var paging = PrivacyEndpoints.Pages.Parse(sort, direction, 50);
+        var rows = paging.Apply(db.ErasureRequests.AsNoTracking().Where(x => x.TenantId == tenant.TenantId))
             .Select(x => new
             {
                 x.SubjectKind, x.SubjectId, x.RequestReference, x.RequestReceivedOn,
@@ -433,22 +430,4 @@ public sealed class PersonalDataErasureService(
                 $"The {label} is required and must be at most {maximum} characters.");
     }
 
-    private static string EncodeCursor(DateTime at, Guid id) => Convert.ToBase64String(
-        Encoding.UTF8.GetBytes($"{at:O}\n{id:D}"));
-
-    private static (DateTime At, Guid Id)? DecodeCursor(string? cursor)
-    {
-        if (string.IsNullOrWhiteSpace(cursor)) return null;
-        try
-        {
-            var parts = Encoding.UTF8.GetString(Convert.FromBase64String(cursor)).Split('\n');
-            if (parts.Length != 2) throw new FormatException();
-            return (DateTime.Parse(parts[0], null, System.Globalization.DateTimeStyles.RoundtripKind),
-                Guid.Parse(parts[1]));
-        }
-        catch (Exception exception) when (exception is FormatException or ArgumentException)
-        {
-            throw new CommandRefusedException("erasure_cursor_invalid", "The erasure cursor is invalid.");
-        }
-    }
 }

@@ -1,45 +1,51 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { DataGrid, StatusBadge, type GridColumn, type PageResult } from "../components";
+import { DataGrid, StatusBadge, useGridQuery, type GridColumn, type PageResult } from "../components";
+import { useSession } from "../session/session";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { ErrorNote } from "../units/common";
 import { knowledgeApi } from "./api";
 import { KnowledgeSubnav } from "./KnowledgeSubnav";
 import { humanise, recordPath } from "./model";
-import type { KnowledgeEntry, KnowledgeEntryListItem, KnowledgeEntryPage } from "./types";
+import { knowledgeEntryPage, type KnowledgeEntry, type KnowledgeEntryListItem } from "./types";
 import "./questions.css";
 
 const date = (value: string) => new Date(value).toLocaleDateString([], { dateStyle: "medium" });
 
 export function Component() {
   const route = useParams<{ entryId?: string }>(); const navigate = useNavigate();
+  const session = useSession();
   const [input, setInput] = useState(""); const [query, setQuery] = useState("");
   const [role, setRole] = useState(""); const [task, setTask] = useState("");
-  const [result, setResult] = useState<KnowledgeEntryPage | null>(null); const [entry, setEntry] = useState<KnowledgeEntry | null>(null);
-  const [busy, setBusy] = useState(true); const [error, setError] = useState<unknown>(null);
-  const [page, setPage] = useState(1); const [cursor, setCursor] = useState<string | undefined>();
-  const cursors = useRef<Array<string | undefined>>([undefined]);
+  const [entry, setEntry] = useState<KnowledgeEntry | null>(null);
+  const [error, setError] = useState<unknown>(null);
   useEffect(() => { const timer = window.setTimeout(() => setQuery(input.trim()), 250); return () => window.clearTimeout(timer); }, [input]);
-  useEffect(() => { setPage(1); setCursor(undefined); cursors.current = [undefined]; }, [query, role, task]);
-  const load = useCallback((signal?: AbortSignal) => knowledgeApi.browse({ query, role, task }, cursor, signal), [query, role, task, cursor]);
-  useEffect(() => { const c = new AbortController(); setBusy(true); setError(null); void load(c.signal).then(next => { setResult(next); if (!route.entryId && next.items[0]) navigate(`/knowledge/${next.items[0].entryId}`, { replace: true }); }).catch(reason => { if (!c.signal.aborted) setError(reason); }).finally(() => { if (!c.signal.aborted) setBusy(false); }); return () => c.abort(); }, [load, navigate, route.entryId]);
+  const filters = useMemo(() => { const value = new URLSearchParams(); if (query) value.set("query", query); if (role) value.set("role", role); if (task) value.set("task", task); return value; }, [query, role, task]);
+  const gridQuery = useGridQuery("/api/knowledge/entries", knowledgeEntryPage, {
+    gridId: "knowledge-base", userId: session.user.id, defaultSort: query ? { key: "relevance", dir: "desc" } : { key: "published", dir: "desc" },
+    defaultSize: 12, params: filters, paging: "cursor", sortKeys: query ? ["relevance"] : ["published"],
+    pageFacts: value => ({ continuation: value.nextCursor }),
+  });
+  const result = gridQuery.data;
+  useEffect(() => { if (!route.entryId && result?.items[0]) navigate(`/knowledge/${result.items[0].entryId}`, { replace: true }); }, [navigate, result, route.entryId]);
   useEffect(() => { if (!route.entryId) { setEntry(null); return; } const c = new AbortController(); void knowledgeApi.entry(route.entryId, c.signal).then(setEntry).catch(reason => { if (!c.signal.aborted) setError(reason); }); return () => c.abort(); }, [route.entryId]);
-  const onPage = (target: number) => { if (target < 1 || busy) return; const next = target > page ? result?.nextCursor ?? undefined : cursors.current[target - 1]; if (target > page && !next) return; cursors.current[target - 1] = next; setCursor(next); setPage(target); };
-  const rows: PageResult<KnowledgeEntryListItem> = { rows: result?.items ?? [], total: (page - 1) * 12 + (result?.items.length ?? 0), page, pageSize: 12, continuation: result?.nextCursor ?? null, totalIsExact: false, hasMore: !!result?.nextCursor };
+  const rows: PageResult<KnowledgeEntryListItem> = { rows: result?.items ?? [], total: (gridQuery.page - 1) * gridQuery.pageSize + (result?.items.length ?? 0), page: gridQuery.page, pageSize: gridQuery.pageSize, continuation: result?.nextCursor ?? null, totalIsExact: false, hasMore: !!result?.nextCursor };
   const columns: GridColumn<KnowledgeEntryListItem>[] = [
     { key: "entry", label: "Reviewed entry", width: 58, render: row => <span className="primary wrap">{row.title}{row.needsReview && <span className="sub"><StatusBadge tone="warn">May be out of date</StatusBadge></span>}<span className="sub">{row.answer}</span></span> },
     { key: "tags", label: "Role · task", width: 24, render: row => <>{row.tags.filter(tag => tag.kind === "role").map(tag => tag.label).join(", ") || "All roles"}<span className="sub">{row.tags.filter(tag => tag.kind === "task").map(tag => tag.label).join(", ") || "No task tag"}</span></> },
-    { key: "review", label: "Reviewed", width: 18, render: row => <><StatusBadge tone="ok">Reviewed</StatusBadge><span className="sub">{row.reviewerName} · {date(row.publishedAt)}</span></> },
+    { key: "review", label: "Reviewed", width: 18, ...(query ? {} : { sort: { key: "published", defaultDir: "desc" as const } }), render: row => <><StatusBadge tone="ok">Reviewed</StatusBadge><span className="sub">{row.reviewerName} · {date(row.publishedAt)}</span></> },
   ];
   return <main className="content" id="main" tabIndex={-1}>
     <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Questions", to: "/questions" }, { label: "Knowledge base" }]} />
     <PageHeader eyebrow="Questions and knowledge · reviewed entries" title="Knowledge base" sub="Answers the team has checked and written down once, so the same question is not asked again." />
-    <KnowledgeSubnav current="knowledge" /><ErrorNote error={error} />
+    <KnowledgeSubnav current="knowledge" /><ErrorNote error={error ?? gridQuery.error} onReload={gridQuery.reload} />
     <div className="knowledge-split">
       <section className="card" aria-labelledby="knowledge-list"><div className="card-header"><h2 id="knowledge-list">Find <span className="meta">reviewed first</span></h2></div>
         <div className="questions-findbar"><label className="field questions-search"><span className="lbl">Search this table as you type</span><input className="input" type="search" value={input} onChange={event => setInput(event.target.value)} placeholder="Problem, answer or steps" /></label></div>
         <div className="knowledge-facets"><span className="eyebrow">Browse by role</span><div className="tagset"><button type="button" className={`chip${!role ? " on" : ""}`} onClick={() => setRole("")}>All</button>{result?.roles.map(facet => <button type="button" className={`chip${role === facet.value ? " on" : ""}`} key={facet.value} onClick={() => setRole(role === facet.value ? "" : facet.value)}>{facet.label} · {facet.count}</button>)}</div><span className="eyebrow">By task</span><div className="tagset"><button type="button" className={`chip${!task ? " on" : ""}`} onClick={() => setTask("")}>All</button>{result?.tasks.map(facet => <button type="button" className={`chip${task === facet.value ? " on" : ""}`} key={facet.value} onClick={() => setTask(task === facet.value ? "" : facet.value)}>{facet.label} · {facet.count}</button>)}</div></div>
-        <DataGrid columns={columns} page={rows} rowId={row => row.entryId} onPage={onPage} loading={busy} onRowClick={row => navigate(`/knowledge/${row.entryId}`)} activeRowId={route.entryId} emptyText="No reviewed entries match." viewportHeight={520} footerNote="Search and filters run on the server" />
+        <DataGrid columns={columns} page={rows} rowId={row => row.entryId} onPage={gridQuery.onPage} loading={gridQuery.loading} onRowClick={row => navigate(`/knowledge/${row.entryId}`)} activeRowId={route.entryId} emptyText="No reviewed entries match." viewportHeight={520} footerNote="Search and filters run on the server"
+          gridId="knowledge-base" userId={session.user.id} sort={gridQuery.sort} defaultSort={query ? { key: "relevance", dir: "desc" } : { key: "published", dir: "desc" }} onSort={gridQuery.onSort}
+          pageSize={gridQuery.pageSize} defaultPageSize={12} onPageSize={gridQuery.onPageSize} />
       </section>
       {entry ? <EntryArticle entry={entry} /> : <section className="card"><div className="empty"><h2>No reviewed entry selected</h2><p className="hint">Choose an entry from the ranked list.</p></div></section>}
     </div>

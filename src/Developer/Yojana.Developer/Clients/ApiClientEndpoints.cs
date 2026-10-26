@@ -2,6 +2,8 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Yojana.Developer.Data.Entities;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Security;
 using CommandRefusedException = Yojana.Platform.Contracts.CommandRefusedException;
@@ -10,11 +12,19 @@ namespace Yojana.Developer.Clients;
 
 public static class ApiClientEndpoints
 {
+    internal static readonly SortedPage<ApiClient, Guid> ApiClientPages = new("attention", row => row.ClientId,
+        new CompoundSortColumn<ApiClient, int, DateTime>("attention",
+            row => row.Status == ApiClientService.Active ? 0 : 1, row => row.CreatedAt,
+            secondaryDirection: SortDirection.Descending),
+        new SortColumn<ApiClient, string>("name", row => row.Name),
+        new SortColumn<ApiClient, string>("status", row => row.Status));
+
     public static RouteGroupBuilder MapApiClientEndpoints(this RouteGroupBuilder screens)
     {
         var clients = screens.MapGroup("/clients");
-        clients.MapGet("", async (string? after, int? limit, ApiClientService service, CancellationToken ct) =>
-            Results.Ok(await service.PageAsync(after, limit ?? 50, ct)));
+        clients.MapGet("", async (string? sort, string? dir, string? cursor, int? take,
+            ApiClientService service, CancellationToken ct) =>
+            Results.Ok(await service.PageAsync(sort, dir, cursor, take, ct)));
         clients.MapGet("/{clientId}", GetAsync);
         clients.MapPost("", async (CreateApiClientRequest request, ClaimsPrincipal user, HttpContext http,
             ApiClientService service, CancellationToken ct) => await Guard(() => service.CreateAsync(request,

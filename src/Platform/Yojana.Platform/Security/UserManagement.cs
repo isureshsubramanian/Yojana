@@ -1,5 +1,3 @@
-using System.Text;
-using System.Text.Json;
 using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Platform.Contracts.Security;
@@ -32,6 +30,14 @@ public sealed record TenantUserSummary(int Active, int Invited, int Deactivated,
 public sealed record TenantUserDetail(TenantUserRow User, IReadOnlyList<string> AlsoMemberOf,
     int OtherMembershipCount, DateTime? PasswordChangedAt, bool SecondStepResetAllowed);
 
+public sealed class UserListProjection
+{
+    public Guid Id { get; init; }
+    public bool Invitation { get; init; }
+    public required string DisplayName { get; init; }
+    public required string PageKey { get; init; }
+}
+
 public sealed class UserManagementService(
     PlatformDbContext db,
     ITenantContext tenant,
@@ -44,20 +50,23 @@ public sealed class UserManagementService(
 {
     private const string CustomerPortalRole = "customer_portal";
 
-    public async Task<TenantUserPage> PageAsync(string? status, string? role, string? q, string? cursor, int take,
-        CancellationToken cancellationToken)
+    public Task<TenantUserPage> PageAsync(string? status, string? role, string? q, string? cursor,
+        int? take, CancellationToken cancellationToken) =>
+        PageAsync(status, role, q, null, null, cursor, take, cancellationToken);
+
+    public async Task<TenantUserPage> PageAsync(string? status, string? role, string? q, string? sort,
+        string? direction, string? cursor, int? take, CancellationToken cancellationToken)
     {
-        if (take is < 1 or > 100) throw new UserManagementInputException("take_invalid", "Take must be from 1 to 100.");
+        var paging = UserManagementEndpoints.Pages.Parse(sort, direction, take, cursor);
         status = string.IsNullOrWhiteSpace(status) ? "all" : status.Trim().ToLowerInvariant();
         if (status is not ("all" or "active" or "invited" or "deactivated" or "no_second_step"))
             throw new UserManagementInputException("status_invalid", "Status must be all, active, invited, no_second_step or deactivated.");
         if (!string.IsNullOrWhiteSpace(role) && !YojanaRole.IsKnown(role))
             throw new UserManagementInputException("role_invalid", "The role is unknown.");
 
-        var after = DecodeCursor(cursor);
         var tenantId = tenant.TenantId;
         var search = q?.Trim();
-        var candidates = new List<Candidate>(take * 2 + 2);
+        IQueryable<UserListProjection>? keyQuery = null;
 
         if (status is "all" or "active" or "deactivated" or "no_second_step")
         {
@@ -71,18 +80,11 @@ public sealed class UserManagementService(
             if (!string.IsNullOrWhiteSpace(role)) users = users.Where(m => m.Roles.Contains(role));
             if (!string.IsNullOrWhiteSpace(search))
                 users = users.Where(m => m.User!.DisplayName.Contains(search) || m.User.Email.Contains(search));
-            if (after is not null)
-                users = users.Where(m => m.User!.DisplayName.CompareTo(after.Name) > 0 ||
-                                         (m.User.DisplayName == after.Name && m.UserId.CompareTo(after.Id) > 0));
-            var rows = await users.OrderBy(m => m.User!.DisplayName).ThenBy(m => m.UserId).Take(take + 1)
-                .Select(m => new
-                {
-                    m.UserId, m.User!.DisplayName, m.User.Email, m.User.PasswordHash, m.Roles,
-                    m.DeactivatedAt, m.DeactivatedByUserId, m.Version,
-                }).ToListAsync(cancellationToken);
-            candidates.AddRange(rows.Select(row => new Candidate(row.UserId, null, row.DisplayName, row.Email,
-                row.Roles, row.PasswordHash is null ? [] : ["password"], row.DeactivatedAt,
-                row.DeactivatedByUserId, null, row.Version, false, 0)));
+            keyQuery = users.Select(m => new UserListProjection
+            {
+                Id = m.UserId, Invitation = false, DisplayName = m.User!.DisplayName,
+                PageKey = "user:" + m.UserId,
+            });
         }
 
         if (status is "all" or "invited")
@@ -93,21 +95,43 @@ public sealed class UserManagementService(
             if (!string.IsNullOrWhiteSpace(role)) invitations = invitations.Where(i => i.Roles.Contains(role));
             if (!string.IsNullOrWhiteSpace(search))
                 invitations = invitations.Where(i => i.DisplayName.Contains(search) || i.Email.Contains(search));
-            if (after is not null)
-                invitations = invitations.Where(i => i.DisplayName.CompareTo(after.Name) > 0 ||
-                                                       (i.DisplayName == after.Name && i.Id.CompareTo(after.Id) > 0));
-            var rows = await invitations.OrderBy(i => i.DisplayName).ThenBy(i => i.Id).Take(take + 1)
-                .Select(i => new { i.Id, i.DisplayName, i.Email, i.Roles, i.ExpiresAt }).ToListAsync(cancellationToken);
-            candidates.AddRange(rows.Select(row => new Candidate(null, row.Id, row.DisplayName, row.Email,
-                row.Roles, [], null, null, row.ExpiresAt, null, false, 0)));
+            var invitationKeys = invitations.Select(i => new UserListProjection
+            {
+                Id = i.Id, Invitation = true, DisplayName = i.DisplayName,
+                PageKey = "invitation:" + i.Id,
+            });
+            keyQuery = keyQuery is null ? invitationKeys : keyQuery.Concat(invitationKeys);
         }
 
-        // The tie-break must order ids as SQL Server does (SqlGuid), or equal names at a page boundary are skipped or
-        // repeated: the cursor predicate above is evaluated by the database.
-        var ordered = candidates.OrderBy(row => row.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(row => new System.Data.SqlTypes.SqlGuid(row.Id)).Take(take + 1).ToList();
-        var hasMore = ordered.Count > take;
-        if (hasMore) ordered.RemoveAt(ordered.Count - 1);
+        var keys = keyQuery is null ? [] : await paging.Apply(keyQuery).Take(paging.Take + 1)
+            .ToListAsync(cancellationToken);
+        var hasMore = keys.Count > paging.Take;
+        if (hasMore) keys.RemoveAt(keys.Count - 1);
+        var selectedUserIds = keys.Where(row => !row.Invitation).Select(row => row.Id).ToList();
+        var selectedInvitationIds = keys.Where(row => row.Invitation).Select(row => row.Id).ToList();
+        var candidates = new Dictionary<(bool Invitation, Guid Id), Candidate>();
+        if (selectedUserIds.Count > 0)
+        {
+            var rows = await db.Memberships.AsNoTracking().Where(m => m.TenantId == tenantId
+                    && selectedUserIds.Contains(m.UserId)).Select(m => new
+                {
+                    m.UserId, m.User!.DisplayName, m.User.Email, m.User.PasswordHash, m.Roles,
+                    m.DeactivatedAt, m.DeactivatedByUserId, m.Version,
+                }).ToListAsync(cancellationToken);
+            foreach (var row in rows) candidates[(false, row.UserId)] = new(row.UserId, null, row.DisplayName,
+                row.Email, row.Roles, row.PasswordHash is null ? [] : ["password"], row.DeactivatedAt,
+                row.DeactivatedByUserId, null, row.Version, false, 0);
+        }
+        if (selectedInvitationIds.Count > 0)
+        {
+            var rows = await db.UserInvitations.AsNoTracking().Where(i => i.TenantId == tenantId
+                    && selectedInvitationIds.Contains(i.Id))
+                .Select(i => new { i.Id, i.DisplayName, i.Email, i.Roles, i.ExpiresAt })
+                .ToListAsync(cancellationToken);
+            foreach (var row in rows) candidates[(true, row.Id)] = new(null, row.Id, row.DisplayName, row.Email,
+                row.Roles, [], null, null, row.ExpiresAt, null, false, 0);
+        }
+        var ordered = keys.Select(row => candidates[(row.Invitation, row.Id)]).ToList();
 
         var userIds = ordered.Where(row => row.UserId is not null).Select(row => row.UserId!.Value).ToList();
         var authenticators = await db.UserAuthenticators.AsNoTracking().Where(row => userIds.Contains(row.UserId) &&
@@ -144,7 +168,7 @@ public sealed class UserManagementService(
             .Select(row => row.Email).ToList(), cancellationToken);
 
         var result = ordered.Select(row => ToView(row, lastSignIns, actorNames, locks)).ToList();
-        return new TenantUserPage(result, hasMore ? EncodeCursor(ordered[^1]) : null);
+        return new TenantUserPage(result, hasMore ? paging.CursorFor(keys[^1]) : null);
     }
 
     public async Task<TenantUserSummary> SummaryAsync(CancellationToken cancellationToken)
@@ -343,23 +367,6 @@ public sealed class UserManagementService(
         return reason[..Math.Min(100, reason.Length)];
     }
 
-    private static string EncodeCursor(Candidate row) => Convert.ToBase64String(Encoding.UTF8.GetBytes(
-        JsonSerializer.Serialize(new UserCursor(row.DisplayName, row.Id))));
-
-    private static UserCursor? DecodeCursor(string? cursor)
-    {
-        if (string.IsNullOrWhiteSpace(cursor)) return null;
-        try
-        {
-            return JsonSerializer.Deserialize<UserCursor>(Encoding.UTF8.GetString(Convert.FromBase64String(cursor)))
-                   ?? throw new FormatException();
-        }
-        catch (Exception exception) when (exception is FormatException or JsonException)
-        {
-            throw new UserManagementInputException("cursor_invalid", "The user-list cursor is invalid.");
-        }
-    }
-
     private sealed record Candidate(Guid? UserId, Guid? InvitationId, string DisplayName, string Email,
         IReadOnlyList<string> Roles, IReadOnlyList<string> SignInMethods, DateTime? DeactivatedAt,
         Guid? DeactivatedByUserId, DateTime? InvitationExpiresAt, byte[]? Version,
@@ -368,7 +375,6 @@ public sealed class UserManagementService(
         public Guid Id => UserId ?? InvitationId!.Value;
     }
 
-    private sealed record UserCursor(string Name, Guid Id);
 }
 
 public sealed class UserManagementInputException(string code, string message) : Exception(message)

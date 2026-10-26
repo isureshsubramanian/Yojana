@@ -82,7 +82,7 @@ test("My questions keeps search and chips on its server-paged table and summarie
   assert.match(routes, /path: "questions".*MyQuestions/s);
   assert.match(navigation, /path: "\/questions", label: "My questions"/);
   assert.match(mine, /Search this table as you type/);
-  assert.match(mine, /questionsApi\.mine\(filters, cursor/);
+  assert.match(mine, /useGridQuery\("\/api\/questions\/mine"/);
   assert.match(mine, /<DataGrid/);
   for (const label of ["Asked by me", "Directed at me", "At my roles", "Status", "Record kind", "Age"])
     assert.ok(mine.includes(label), label);

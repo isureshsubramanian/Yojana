@@ -11,6 +11,8 @@ using Yojana.Developer.Contracts;
 using Yojana.Developer.Delivery;
 using Yojana.Developer.Events;
 using Yojana.Developer.Webhooks;
+using Yojana.Developer.Data.Entities;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Security;
 
@@ -25,6 +27,19 @@ public static class DeveloperEndpoints
 {
     public const string ScreensPrefix = "/api/developer";
     public const string PublicPrefix = "/api/public/v1";
+
+    internal static readonly SortedPage<WebhookSubscription, Guid> WebhookPages = new("attention",
+        row => row.SubscriptionId,
+        new CompoundSortColumn<WebhookSubscription, int, DateTime>("attention", row =>
+            row.Status == WebhookSubscriptionStatus.Paused ? 0
+                : row.Status == WebhookSubscriptionStatus.PendingVerification ? 1
+                : row.Status == WebhookSubscriptionStatus.Active ? 2 : 3,
+            row => row.UpdatedAt, secondaryDirection: SortDirection.Descending),
+        new SortColumn<WebhookSubscription, string>("name", row => row.Name),
+        new SortColumn<WebhookSubscription, string>("status", row => row.Status));
+    internal static readonly SortedPage<WebhookDelivery, Guid> DeliveryPages = new("sent", row => row.DeliveryId,
+        new SortColumn<WebhookDelivery, DateTime>("sent", row => row.CreatedAt, SortDirection.Descending),
+        new SortColumn<WebhookDelivery, string>("status", row => row.Status));
 
     public static IEndpointRouteBuilder MapDeveloperEndpoints(this IEndpointRouteBuilder app)
     {
@@ -44,8 +59,9 @@ public static class DeveloperEndpoints
         webhooks.MapPut("/settings", (UpdateWebhookSettingsRequest request, ClaimsPrincipal user,
             HttpContext http, DeveloperWebhookSettingsService service, CancellationToken ct) =>
             service.UpdateAsync(request, Actor(user), Request(http), ct));
-        webhooks.MapGet("/", (string? after, int? take, WebhookSubscriptionService service,
-            CancellationToken ct) => service.ListAsync(after, take, ct));
+        webhooks.MapGet("/", (string? sort, string? dir, string? cursor, int? take,
+            WebhookSubscriptionService service, CancellationToken ct) =>
+            service.ListAsync(sort, dir, cursor, take, ct));
         webhooks.MapGet("/{id:guid}", async (Guid id, WebhookSubscriptionService service,
             CancellationToken ct) => await service.GetAsync(id, ct) is { } value
                 ? Results.Ok(value) : Results.NotFound());
@@ -76,8 +92,9 @@ public static class DeveloperEndpoints
         webhooks.MapPost("/{id:guid}/test", (Guid id, SendWebhookTestRequest request,
             WebhookSubscriptionService service, CancellationToken ct) => service.SendTestAsync(id, request, ct));
         webhooks.MapGet("/{id:guid}/deliveries", (Guid id, string? status, string? eventType,
-            DateTime? from, DateTime? to, string? cursor, int? take, WebhookDeliveryQueries queries,
-            CancellationToken ct) => queries.ListAsync(id, status, eventType, from, to, cursor, take, ct));
+            DateTime? from, DateTime? to, string? sort, string? dir, string? cursor, int? take,
+            WebhookDeliveryQueries queries, CancellationToken ct) =>
+            queries.ListAsync(id, status, eventType, from, to, sort, dir, cursor, take, ct));
         webhooks.MapGet("/{id:guid}/deliveries/{deliveryId:guid}", async (Guid id, Guid deliveryId,
             WebhookDeliveryQueries queries, CancellationToken ct) =>
             await queries.DetailAsync(id, deliveryId, ct) is { } value ? Results.Ok(value) : Results.NotFound());
