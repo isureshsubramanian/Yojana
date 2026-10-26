@@ -12,6 +12,10 @@ import { useReferenceNames } from "../corrections/ReferenceFields";
 import { QuestionsPanel } from "../questions/QuestionsPanel";
 import { RecordQuestionsTabs, useQuestionsTab } from "../questions/RecordQuestionsTabs";
 import { certificateApi } from "./api";
+import { CopyPanel, CorrectionPanel } from "./CertificateCorrection";
+import { correctState, printCopyState, type ActionState } from "./correction";
+import { Icon, type IconName } from "../shell/Icons";
+import { useSession } from "../session/session";
 import { certificateEventLabel, formLabel, humanise, shortHash, statusTone } from "./format";
 import type { CertificateDetail, CertificateListRow, CertificateVersionChain } from "./types";
 import "./certificates.css";
@@ -25,13 +29,15 @@ export function Component() {
   const presence = useDocumentPresence("certificate", id, false);
   const people = usePeople(certificate?.reprints.map((row) => row.requestedBy) ?? []);
   const names = useReferenceNames({ items: [certificate?.itemId] });
+  const roles = useSession().roles;
+  const [revision, setRevision] = useState(0);
   useEffect(() => {
     const controller = new AbortController(); setError(null);
     certificateApi.detail(id, controller.signal).then(async (detail) => {
       setCertificate(detail); setChain(await certificateApi.chain(detail.unitId, controller.signal));
     }).catch((reason) => { if (!controller.signal.aborted) setError(reason); });
     return () => controller.abort();
-  }, [id]);
+  }, [id, revision]);
 
   if (!certificate) return <main className="content" id="main" tabIndex={-1}><Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Certificates", to: "/certificates" }, { label: "Certificate" }]} /><ErrorNote error={error} /><div className="empty"><h2>{error ? "Certificate unavailable" : "Loading certificate…"}</h2></div></main>;
   const triggerSchema = objectValue(certificate.payload, "trigger", "schema");
@@ -46,6 +52,14 @@ export function Component() {
     : humanise(certificate.provenance);
   const eyebrow = `${humanise(certificate.documentKind)} · version ${certificate.version} of ${totalVersions} · issued ${certificate.issuedAtDisplay}`
     + (predecessor ? ` · supersedes ${predecessor} (${humanise(certificate.supersedeReason)})` : "");
+  const reload = () => setRevision((value) => value + 1);
+  const copyState = printCopyState(roles);
+  const correction = correctState(certificate, ownChain, roles);
+  const copyName = `${certificate.primarySerial}-${certificate.trackingNumber}-v${certificate.version}-copy.pdf`;
+  const openCopy = () => openDrawer({ eyebrow: "Print copy", title: certificate.trackingNumber, mono: true },
+    <CopyPanel certificateId={certificate.certificateId} fallbackName={copyName} onPrinted={reload} />);
+  const openCorrection = () => openDrawer({ eyebrow: `Correct release record · v${certificate.version}`, title: certificate.trackingNumber, mono: true },
+    <CorrectionPanel certificateId={certificate.certificateId} onIssued={reload} />);
   const openVersion = (row: CertificateListRow) => openDrawer({ eyebrow: `${humanise(row.documentKind)} · version ${row.version}`, title: row.trackingNumber, mono: true }, <>
     <Section title="Version"><Kv rows={[["Status", humanise(row.status)], ["Issued", row.issuedAtDisplay], ["Form", formLabel(row.formType, row.documentKind)], ["Provenance", provenanceLabel(row)]]} /></Section>
     <div className="act"><Link className="btn primary block" to={`/certificates/${row.certificateId}`}>Open this version</Link></div>
@@ -55,7 +69,7 @@ export function Component() {
     <main className="content" id="main" tabIndex={-1}>
       <Breadcrumbs crumbs={[{ label: "Home", to: "/" }, { label: "Certificates", to: "/certificates" }, { label: certificate.trackingNumber }]} />
       <PageHeader eyebrow={eyebrow} title={`${certificate.primarySerial} · ${itemName}`} sub={`A signed ${humanise(certificate.documentKind).toLowerCase()} whose payload and presentation snapshot never change.`}
-        actions={<><PresenceChips users={presence} />{chain?.releaseRecords.length && chain.warrantyCertificates.length ? <a className="btn" href={`/api/certificates/units/${certificate.unitId}/composite`} target="_blank" rel="noreferrer">Composite print</a> : null}<Link className="btn" to={`/units/${certificate.unitId}`}>Open unit</Link></>} />
+        actions={<><PresenceChips users={presence} />{chain?.releaseRecords.length && chain.warrantyCertificates.length ? <a className="btn" href={`/api/certificates/units/${certificate.unitId}/composite`} target="_blank" rel="noreferrer">Composite print</a> : null}<GatedAction state={copyState} icon="print" label="Print copy" onRun={openCopy} />{correction && <GatedAction state={correction} icon="check" label="Correct and reissue" onRun={openCorrection} />}<Link className="btn" to={`/units/${certificate.unitId}`}>Open unit</Link></>} />
       <RecordQuestionsTabs recordKind="certificate" recordId={id} />
       {questionsTab && <QuestionsPanel recordKind="certificate" recordId={id} />}
       <div hidden={questionsTab}>
@@ -90,6 +104,12 @@ export function Component() {
     </main>
     <Rail label="Certificate"><Section title="Integrity"><Kv rows={[["Tracking number", <span className="mono" key="tracking">{certificate.trackingNumber}</span>], ["Payload SHA-256", <span className="mono" key="payload">{shortHash(certificate.payloadHash)}</span>], ["Signatures", certificate.signatures.length], ["Certificate version", `v${certificate.version}`]]} /></Section><Section title="Rendering boundary"><p className="muted">The stored HTML is displayed in a sandboxed iframe with no script permission. The renderer also sends a content-security policy that blocks scripts and network resources.</p></Section></Rail>
   </>;
+}
+
+/** A header action with a visible label; when not allowed it stays focusable so its tooltip explains why. */
+function GatedAction({ state, icon, label, onRun }: { state: ActionState; icon: IconName; label: string; onRun: () => void }) {
+  return <button type="button" className={`btn${state.enabled ? "" : " disabled"}`} aria-disabled={!state.enabled} title={state.tip}
+    onClick={() => { if (state.enabled) onRun(); }}><Icon name={icon} />{label}</button>;
 }
 
 function ChainCard({ title, meta, rows, currentId, onOpen, empty }: { title: string; meta: string; rows: CertificateListRow[]; currentId: string; onOpen: (row: CertificateListRow) => void; empty?: string }) {
