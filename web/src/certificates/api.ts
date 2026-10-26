@@ -7,8 +7,11 @@ import {
   certificateTemplateSummarySchema, certificateTemplateVersionSchema, certificateVersionChainSchema,
   fieldCatalogueEntrySchema, issueCertificateRequestSchema, labelTemplateDetailSchema, labelTemplateSummarySchema,
   pageSchema, templateValidationSchema, tenantAssetSchema, type CertificateRunResult,
+  certificateCorrectionPreviewSchema, printCertificateCopyRequestSchema, reissueCertificateRequestSchema,
+  reissueCertificateResultSchema,
   type CertificateSelectionPreviewRequest, type IssueCertificateRequest, type TenantAsset,
 } from "./types.ts";
+import { dispositionFileName } from "./correction.ts";
 
 const text = z.string();
 const nullableText = z.nullable(text);
@@ -51,20 +54,39 @@ export const certificateApi = {
   async uploadAsset(file: File, legalEntityId: string | null): Promise<TenantAsset> {
     const body = new FormData(); body.append("commandId", crypto.randomUUID()); body.append("file", file); if (legalEntityId) body.append("legalEntityId", legalEntityId);
     const response = await fetch("/api/tenant-assets/", { method: "POST", credentials: "same-origin", body });
-    if (!response.ok) {
-      const fallback = `Something went wrong (HTTP ${response.status})`;
-      try {
-        const problem = z.parse(problemSchema, await response.json());
-        const title = problem.title ?? null;
-        const detail = problem.detail ?? null;
-        const rule = problem.rule ?? null;
-        throw new ApiError(response.status, detail ?? title ?? rule ?? fallback, title, detail, rule);
-      } catch (reason) {
-        if (reason instanceof ApiError) throw reason;
-        throw new ApiError(response.status, fallback);
-      }
-    }
+    if (!response.ok) throw await problemError(response);
     return parseResponse("/api/tenant-assets/", tenantAssetSchema, await response.json());
+  },
+};
+
+async function problemError(response: Response): Promise<ApiError> {
+  const fallback = `Something went wrong (HTTP ${response.status})`;
+  try {
+    const problem = z.parse(problemSchema, await response.json());
+    const title = problem.title ?? null;
+    const detail = problem.detail ?? null;
+    const rule = problem.rule ?? null;
+    return new ApiError(response.status, detail ?? title ?? rule ?? fallback, title, detail, rule);
+  } catch {
+    return new ApiError(response.status, fallback);
+  }
+}
+
+/** ADR-0023: correct a release record into a new version, and print one logged copy from the viewer. */
+export const certificateCorrectionApi = {
+  preview: (id: string, signal?: AbortSignal) => apiParsed(`/api/certificates/${id}/correction-preview`, certificateCorrectionPreviewSchema, { signal }),
+  reissue: (id: string, reason: string) => apiParsed(`/api/certificates/${id}/reissue`, reissueCertificateResultSchema,
+    { method: "POST", body: checkedBody(reissueCertificateRequestSchema, { commandId: newCommandId(), certificateId: id, reason: reason.trim() }) }),
+  /** Downloads the rendered copy. htmlFallback is true when no PDF render worker answered and the copy is HTML. */
+  async printCopy(id: string, reason: string, fallbackName: string): Promise<{ fileName: string; htmlFallback: boolean }> {
+    const body = checkedBody(printCertificateCopyRequestSchema, { commandId: newCommandId(), certificateId: id, reason: reason.trim() });
+    const response = await fetch(`/api/certificates/${id}/copy`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!response.ok) throw await problemError(response);
+    const fileName = dispositionFileName(response.headers.get("Content-Disposition"), fallbackName);
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a"); link.href = url; link.download = fileName; link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    return { fileName, htmlFallback: response.headers.get("X-Yojana-Render") === "html-fallback" };
   },
 };
 

@@ -94,6 +94,31 @@ public sealed class CertificateTests
     }
 
     [Fact]
+    public void Every_release_starter_prints_the_escaped_correction_note_and_reason_at_its_bumped_version()
+    {
+        var starterType = typeof(CertificateHtmlComposer).Assembly.GetType(
+            "Yojana.Serialisation.Certificates.CertificateStarterLayouts", throwOnError: true)!;
+        var definitions = ((IEnumerable)starterType.GetField("All",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!)
+            .Cast<object>().ToList();
+        var release = definitions.Where(definition => (string)definition.GetType().GetProperty("Kind")!
+            .GetValue(definition)! == CertificateDocumentKind.ReleaseRecord).ToList();
+
+        Assert.All(release, definition =>
+        {
+            var body = (string)definition.GetType().GetProperty("Body")!.GetValue(definition)!;
+            Assert.Contains("{{trigger.note}}", body, StringComparison.Ordinal);
+            Assert.Contains("{{trigger.reason}}", body, StringComparison.Ordinal);
+        });
+        Assert.Equal([7, 7, 6, 6, 6, 7], release.Select(definition =>
+            (int)definition.GetType().GetProperty("Version")!.GetValue(definition)!));
+        var warranty = definitions.Single(definition => (string)definition.GetType().GetProperty("Kind")!
+            .GetValue(definition)! == CertificateDocumentKind.WarrantyCertificate);
+        Assert.DoesNotContain("trigger.note",
+            (string)warranty.GetType().GetProperty("Body")!.GetValue(warranty)!, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Installed_parts_sum_current_components_per_part_and_print_plain_quantities()
     {
         // Owner 2026-10-26: show how many of each part went in; installed quantity, because the ERP BOM can change.
@@ -125,6 +150,42 @@ public sealed class CertificateTests
         const string before = """{"as_maintained":[{"slot":"BAY-01"}],"trigger":{"id":"a"}}""";
         const string after = """{"as_maintained":[{"slot":"BAY-01"}],"installed_parts":[{"quantity":1}],"trigger":{"id":"b"}}""";
         Assert.Equal(CertificateVersioningEngine.FactsHash(before), CertificateVersioningEngine.FactsHash(after));
+    }
+
+    [Fact]
+    public void Correction_diff_groups_repeating_part_names_and_marks_installed_parts_derived()
+    {
+        var beforeParts = string.Join(',', Enumerable.Range(1, 8).Select(index =>
+            $$"""{"slot":"BAY-{{index:00}}","item_code":"ITEM-97156C8D","item_name":"ITEM-97156C8D","quantity":1}"""));
+        var afterParts = string.Join(',', Enumerable.Range(1, 8).Select(index =>
+            $$"""{"slot":"BAY-{{index:00}}","item_code":"YD-HDD","item_name":"Quill 16 TB hard drive","quantity":1}"""));
+        var before = $$"""{"trigger":{"event_id":"old"},"model":{"name":"ITEM-8C647191"},"as_maintained":[{{beforeParts}}]}""";
+        var after = $$"""{"trigger":{"event_id":"new"},"model":{"name":"Kestrel Systems 2U storage server"},"as_maintained":[{{afterParts}}],"installed_parts":[{"item_code":"YD-HDD","item_name":"Quill 16 TB hard drive","quantity":8}]}""";
+
+        var changes = CertificateCorrectionDiff.Compare(before, after);
+
+        Assert.Contains(changes, row => row.Path == "model.name" && row.Label == "Model"
+            && row.Before == "ITEM-8C647191" && row.After == "Kestrel Systems 2U storage server");
+        Assert.Contains(changes, row => row.Path == "as_maintained.part" && row.Label == "Part"
+            && row.Before == "ITEM-97156C8D" && row.After == "Quill 16 TB hard drive · YD-HDD"
+            && row.Rows == 8 && !row.Derived);
+        Assert.Contains(changes, row => row.Path == "installed_parts" && row.Derived);
+        Assert.DoesNotContain(changes, row => row.Path.StartsWith("trigger", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Correction_diff_is_bounded_to_two_hundred_rows()
+    {
+        var before = JsonSerializer.Serialize(Enumerable.Range(0, 205)
+            .ToDictionary(index => $"field_{index:000}", _ => "before"));
+        var after = JsonSerializer.Serialize(Enumerable.Range(0, 205)
+            .ToDictionary(index => $"field_{index:000}", _ => "after"));
+
+        var changes = CertificateCorrectionDiff.Compare(before, after);
+
+        Assert.Equal(200, changes.Count);
+        Assert.Equal("… 6 more", changes[^1].Label);
+        Assert.Equal(6, changes[^1].Rows);
     }
 
     [Fact]

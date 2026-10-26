@@ -107,3 +107,17 @@ export type CertificateSelectionPreviewRequest = z.infer<typeof certificateSelec
 export const issueCertificateRequestSchema = z.object({ commandId: text, selectionId: text, documentKind: text, formType: text, issuerEntityId: text, language: text, reprintReason: text, includeBundle: z.boolean() });
 export type IssueCertificateRequest = z.infer<typeof issueCertificateRequestSchema>;
 export type CertificateSelectionSource = SelectionSource;
+
+// ADR-0023: matches CertificateCorrectionPreview, ReissueCertificate(Result) and PrintCertificateCopy in
+// CertificateContracts.cs. Change both sides together.
+export const certificateCorrectionChangeSchema = z.object({ path: text, label: text, before: nullableText, after: nullableText, rows: count, derived: z.boolean() });
+export type CertificateCorrectionChange = z.infer<typeof certificateCorrectionChangeSchema>;
+export const certificateCorrectionPreviewSchema = z.object({
+  certificateId: text, trackingNumber: text, fromVersion: count, toVersion: count, canCorrect: z.boolean(),
+  refusalCode: nullableText, refusalDetail: nullableText, changes: z.array(certificateCorrectionChangeSchema),
+});
+export type CertificateCorrectionPreview = z.infer<typeof certificateCorrectionPreviewSchema>;
+export const reissueCertificateRequestSchema = z.object({ commandId: text, certificateId: text, reason: text });
+export const reissueCertificateResultSchema = z.object({ commandId: text, replayed: z.boolean(), supersededCertificateId: text, certificateId: text, version: count, trackingNumber: text });
+export type ReissueCertificateResult = z.infer<typeof reissueCertificateResultSchema>;
+export const printCertificateCopyRequestSchema = z.object({ commandId: text, certificateId: text, reason: text });

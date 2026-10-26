@@ -373,7 +373,7 @@ public sealed record IssueCertificateVersion(Guid TriggeringEventId, Guid UnitId
     string? SupersedeReason, DateTime EffectiveAt, string ActorRef, Guid IssuerEntityId,
     string Provenance = CertificateProvenance.SystemGenerated, IReadOnlyList<string>? Unknowns = null,
     IReadOnlyList<string>? Evidence = null, string Language = "en", string? TriggerSchema = null,
-    Guid? MigrationLoadId = null);
+    Guid? MigrationLoadId = null, Guid? ExpectedCurrentCertificateId = null, string? TriggerNote = null);
 
 public sealed record IssueCertificateVersionResult(bool Issued, bool Replayed, Guid? CertificateId, int? Version,
     string? TrackingNumber, string? RefusalRule = null, string? RefusalDetail = null, bool Absorbed = false);
@@ -454,3 +454,36 @@ public sealed record TenantAssetContent(Guid AssetId, string MediaType, byte[] B
 public sealed record UploadTenantLogo(Guid CommandId, Guid? LegalEntityId, byte[] Bytes, string ActorRef = "",
     string? OriginalFileName = null);
 public sealed record TenantAssetUploadResult(TenantAssetRow Asset, bool Replayed);
+
+// ADR-0023 corrected reissue and print copy from the certificate viewer. The server (preview, reissue, copy) and the
+// web viewer are built against these records in parallel; change both sides together.
+public static class CertificateCorrectionRefusal
+{
+    public const string NothingToCorrect = "certificate_nothing_to_correct";
+    public const string NotCurrent = "certificate_not_current";
+    public const string ReleaseRecordsOnly = "certificate_correction_release_records_only";
+    public const string ReasonRequired = "certificate_correction_reason_required";
+    public const int ReasonMinimumLength = 10;
+    public const int ReasonMaximumLength = 500;
+}
+
+/// <summary>
+/// One field that differs between the signed version and today's data. Repeating rows with the same before and after
+/// are grouped (<paramref name="Rows"/> &gt; 1). <paramref name="Derived"/> marks values that are shown but are not
+/// certificate facts (the installed-parts summary), so they never on their own make a correction possible.
+/// </summary>
+public sealed record CertificateCorrectionChange(string Path, string Label, string? Before, string? After, int Rows,
+    bool Derived);
+
+public sealed record CertificateCorrectionPreview(Guid CertificateId, string TrackingNumber, int FromVersion,
+    int ToVersion, bool CanCorrect, string? RefusalCode, string? RefusalDetail,
+    IReadOnlyList<CertificateCorrectionChange> Changes);
+
+/// <summary>Issues version N+1 of a current release record with reason correction; facts must differ.</summary>
+public sealed record ReissueCertificate(Guid CommandId, Guid CertificateId, string Reason, string ActorRef = "");
+
+public sealed record ReissueCertificateResult(Guid CommandId, bool Replayed, Guid SupersededCertificateId,
+    Guid CertificateId, int Version, string TrackingNumber);
+
+/// <summary>Renders one Copy of a certificate and logs it in the reprint log; no version is created.</summary>
+public sealed record PrintCertificateCopy(Guid CommandId, Guid CertificateId, string Reason, string ActorRef = "");

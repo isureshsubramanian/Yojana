@@ -14,8 +14,8 @@ internal static class CertificateStarterLayouts
         """;
 
     private const string Identity = """
-        <h2>Identity</h2><table><thead><tr><th>Identifier</th><th>Value and lineage</th><th>Issuer / validity</th></tr></thead><tbody>
-        {{#each identifiers}}<tr><td>{{label type}}</td><td class="numeric">{{value}}{{#if replaces}}<div class="fine">Previous: {{replaces}}</div>{{/if}}{{#if replaced_by}}<div class="fine">Replaced by: {{replaced_by}}</div>{{/if}}</td><td>{{#if issuer}}{{issuer}}{{/if}}{{#if valid_from}}<div class="fine">Valid from {{date valid_from}}{{#if valid_to}} to {{date valid_to}}{{/if}}</div>{{/if}}</td></tr>{{else}}<tr><td colspan="3" class="quiet">No identifiers recorded</td></tr>{{/each}}
+        <h2>Identity</h2><table><thead><tr><th>Identifier</th><th>Value and lineage</th><th>Issuer / in use</th></tr></thead><tbody>
+        {{#each identifiers}}<tr><td>{{label type}}</td><td class="numeric">{{value}}{{#if replaces}}<div class="fine">Previous: {{replaces}}</div>{{/if}}{{#if replaced_by}}<div class="fine">Replaced by: {{replaced_by}}</div>{{/if}}</td><td>{{#if issuer}}{{issuer}}{{/if}}{{#if valid_from}}<div class="fine">{{#if valid_to}}In use {{date valid_from}} – {{date valid_to}}{{else}}In use since {{date valid_from}}{{/if}}</div>{{/if}}</td></tr>{{else}}<tr><td colspan="3" class="quiet">No identifiers recorded</td></tr>{{/each}}
         <tr><td class="key">Model</td><td colspan="2">{{#if model.name}}{{model.name}}{{else}}{{model.code}}{{/if}}{{#if model.name}}<span class="fine"> · {{model.code}}</span>{{/if}}{{#if model.revision}} · Revision {{model.revision}}{{/if}}</td></tr>
         {{#if build_date}}<tr><td class="key">Release date</td><td colspan="2">{{date build_date}}{{#if facility}} · {{facility}}{{/if}}{{#if work_reference}} · {{work_reference}}{{/if}}</td></tr>{{/if}}
         {{#if condition}}<tr><td class="key">Condition</td><td colspan="2">{{label condition}}{{#if refurbishment_cycle}} · Refurbishment cycle {{refurbishment_cycle}}{{/if}}{{#if refurbisher}} · {{refurbisher}}{{/if}}</td></tr>{{/if}}</tbody></table>
@@ -35,6 +35,10 @@ internal static class CertificateStarterLayouts
         {{#if sanitisation_reference}}<tr><td class="key">Sanitisation</td><td colspan="2">{{sanitisation_reference}}</td></tr>{{/if}}{{#if firmware}}<tr><td class="key">Firmware</td><td colspan="2">{{firmware}}</td></tr>{{/if}}</tbody></table>
         """;
 
+    private const string Correction = """
+        {{#if trigger.note}}<div class="declaration"><strong>{{trigger.note}}</strong>{{#if trigger.reason}}<div>{{trigger.reason}}</div>{{/if}}</div>{{/if}}
+        """;
+
     private const string Integrity = """
         <div class="integrity avoid"><div><strong>Integrity</strong>Payload SHA-256<br><span class="numeric hash">{{certificate.payload_hash}}</span></div><div><strong>Verify</strong><span class="numeric hash">{{certificate.verify_reference}}</span><br><span class="fine">Signature name, meaning, time and method are printed below and bound to this payload.</span></div></div>
         """;
@@ -42,37 +46,37 @@ internal static class CertificateStarterLayouts
     private const string Footer = "<div class=\"certificate-footer\">{{issuer.name}} · controlled certificate · verify {{certificate.verify_reference}}</div>";
 
     private static string Release(string title, string intro = "") => CertificateDocumentStyle.StyleTag + "<article class=\"certificate-sheet\">" + Meta
-        + $"<h1>{title}</h1>" + intro + Identity + AsBuilt + Tests + Integrity + "</article>";
+        + $"<h1>{title}</h1>" + intro + Correction + Identity + AsBuilt + Tests + Integrity + "</article>";
 
     public static readonly IReadOnlyList<CertificateStarterDefinition> All =
     [
         new("builtin-generic-release", "Generic release record", CertificateDocumentKind.ReleaseRecord,
-            CertificateFormType.GenericRelease, 6, Release("Release record"), Footer: Footer),
+            CertificateFormType.GenericRelease, 7, Release("Release record"), Footer: Footer),
         new("builtin-coc", "Certificate of conformity", CertificateDocumentKind.ReleaseRecord,
-            CertificateFormType.CertificateOfConformity, 6, Release("Certificate of conformity",
+            CertificateFormType.CertificateOfConformity, 7, Release("Certificate of conformity",
                 "<div class=\"declaration\">The identified unit was built, inspected and released against its recorded model, revision and as-built configuration. This certificate reports the signed release facts; it is not a warranty statement.</div>"), Footer: Footer),
         new("builtin-production-history", "Production-history extract", CertificateDocumentKind.ReleaseRecord,
-            CertificateFormType.DeviceHistoryExtract, 5, Release("Production-history extract",
+            CertificateFormType.DeviceHistoryExtract, 6, Release("Production-history extract",
                 "<p class=\"fine\">Controlled extract of identity, production, inspection and release history.</p>"), Footer: Footer),
         new("builtin-8130-3-style", "8130-3-style release block", CertificateDocumentKind.ReleaseRecord,
-            CertificateFormType.Release81303Style, 5, Airworthiness("8130-3-style release block"), Footer: Footer),
+            CertificateFormType.Release81303Style, 6, Airworthiness("8130-3-style release block"), Footer: Footer),
         new("builtin-easa-form-1-style", "EASA Form 1-style release block", CertificateDocumentKind.ReleaseRecord,
-            CertificateFormType.EasaForm1Style, 5, Airworthiness("EASA Form 1-style release block"), Footer: Footer),
+            CertificateFormType.EasaForm1Style, 6, Airworthiness("EASA Form 1-style release block"), Footer: Footer),
         new("builtin-battery-passport", "Battery passport", CertificateDocumentKind.ReleaseRecord,
-            CertificateFormType.BatteryPassport, 6, Battery(), Footer: Footer),
+            CertificateFormType.BatteryPassport, 7, Battery(), Footer: Footer),
         new("builtin-warranty", "Warranty certificate", CertificateDocumentKind.WarrantyCertificate,
             CertificateFormType.WarrantyCertificate, 5, Warranty(), Footer: Footer),
     ];
 
     private static string Airworthiness(string title) => CertificateDocumentStyle.StyleTag + "<article class=\"certificate-sheet\"><div class=\"form-warning\">"
-        + title + " · a rendering of the Yojana release record, not the regulated form itself</div>" + Meta
+        + title + " · a rendering of the Yojana release record, not the regulated form itself</div>" + Meta + Correction
         + "<table class=\"numbered\"><tbody><tr><td><span class=\"box-number\">1. Approving authority</span>{{issuer.name}}</td><td><span class=\"box-number\">2. Tracking number</span>{{certificate.tracking_number}}</td></tr>"
         + "<tr><td><span class=\"box-number\">3. Organisation</span>{{issuer.name}}{{#if issuer.address}}<br>{{issuer.address}}{{/if}}{{#if issuer.registration_code}}<br>Registration {{issuer.registration_code}}{{/if}}</td><td><span class=\"box-number\">4. Work reference</span>{{#if work_reference}}{{work_reference}}{{else}}Not recorded{{/if}}</td></tr>"
         + "<tr><td colspan=\"2\"><span class=\"box-number\">5–12. Item identification and status</span>" + Identity + AsBuilt + "</td></tr>"
         + "<tr><td colspan=\"2\"><span class=\"box-number\">13. Remarks, tests and release basis</span>" + Tests + "</td></tr></tbody></table>" + Integrity + "</article>";
 
     private static string Battery() => CertificateDocumentStyle.StyleTag + "<article class=\"certificate-sheet\">" + Meta
-        + "<h1>Battery passport</h1>"
+        + "<h1>Battery passport</h1>" + Correction
         + Identity + "<h2>Linked predecessor passport</h2><table><thead><tr><th>Current identifier</th><th>Predecessor</th></tr></thead><tbody>"
         + "{{#each identifiers}}<tr><td>{{label type}}<div class=\"numeric\">{{value}}</div></td><td>{{#if replaces}}<span class=\"numeric\">{{replaces}}</span>{{else}}<span class=\"quiet\">No linked predecessor passport recorded</span>{{/if}}</td></tr>{{else}}<tr><td colspan=\"2\" class=\"quiet\">No identifier lineage recorded</td></tr>{{/each}}</tbody></table>"
         + "{{#if battery}}<h2>Battery details</h2><table><tbody><tr><td class=\"key\">Chemistry</td><td>{{#if battery.chemistry}}{{battery.chemistry}}{{else}}Not recorded{{/if}}</td></tr><tr><td class=\"key\">Rated capacity</td><td>{{#if battery.rated_capacity_kwh}}{{battery.rated_capacity_kwh}} kWh{{else}}Not recorded{{/if}}</td></tr><tr><td class=\"key\">State of health</td><td>{{#if battery.state_of_health_percent}}{{battery.state_of_health_percent}}%{{else}}Not recorded{{/if}}</td></tr><tr><td class=\"key\">Carbon footprint</td><td>{{#if battery.carbon_footprint_kg_co2e}}{{battery.carbon_footprint_kg_co2e}} kg CO2e{{else}}Not recorded{{/if}}</td></tr><tr><td class=\"key\">Manufactured</td><td>{{#if battery.manufactured_at}}{{battery.manufactured_at}}{{else}}Not recorded{{/if}}</td></tr><tr><td class=\"key\">Responsible operator</td><td>{{#if battery.responsible_operator}}{{battery.responsible_operator}}{{else}}Not recorded{{/if}}</td></tr></tbody></table>{{/if}}"
