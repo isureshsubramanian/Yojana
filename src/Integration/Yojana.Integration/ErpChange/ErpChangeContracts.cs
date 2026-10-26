@@ -42,7 +42,8 @@ public sealed record ErpChangeRunbookView(Guid RunId, string Status, int Current
     int DeliberateUnitHistoriesChanged = 0,
     DateTime? UnitHistoryCheckedAt = null);
 
-public sealed record ErpChangeRunListRequest(string? Cursor, int Take = 25);
+public sealed record ErpChangeRunListRequest(string? Cursor, int Take = 25, string? Sort = null,
+    string? Direction = null);
 public sealed record ErpChangeRunHistoryRow(Guid RunId, string SourceName, string TargetName,
     DateTime StartedAt, DateTime? FinishedAt, string Outcome, string StartedBy,
     int CurrentStep, string CurrentStepName);

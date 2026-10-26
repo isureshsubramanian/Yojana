@@ -318,7 +318,7 @@ export function handOverSentence(
   const lead = `Sync hand-over: ${handOver.connectionName} will read source changes from ${from} (source clock when ${load.batchDisplayNumber} started).`;
   return handOver.syncState === "running" ? `${lead} The connection is running.` : `${lead} The connection is stopped — Resume the sync.`;
 }
-export function deltaExportUrl(loadId: string, format: "csv" | "xlsx", filters: { kind?: string; itemCode?: string; serial?: string }): string {
+export function deltaExportUrl(loadId: string, format: "csv" | "xlsx", filters: { kind?: string; itemCode?: string; serial?: string; sort?: string; dir?: string }): string {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) if (value) query.set(key, value);
   const suffix = query.toString();

@@ -188,6 +188,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.TargetOutboundMode).HasMaxLength(40).IsUnicode(false);
             b.HasIndex(x => new { x.TenantId, x.Status }).IsUnique()
                 .HasFilter("[status] = 'active'");
+            b.HasIndex(x => new { x.TenantId, x.Status, x.ErpChangeRunId });
             b.HasIndex(x => new { x.TenantId, x.StartedAt, x.ErpChangeRunId });
         });
         modelBuilder.Entity<ErpChangeStepCheck>(b =>
@@ -366,6 +367,8 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.Property(x => x.NotificationControlFailureCode).HasMaxLength(40).IsUnicode(false);
             b.Property(x => x.NotificationControlAction).HasMaxLength(16).IsUnicode(false);
             b.HasIndex(x => new { x.TenantId, x.Status, x.CreatedAt, x.ConnectionId });
+            b.HasIndex(x => new { x.TenantId, x.DisplayLabel, x.ConnectionId });
+            b.HasIndex(x => new { x.TenantId, x.Status, x.ConnectionId });
             b.HasIndex(x => new { x.TenantId, x.ConnectorCode, x.ConnectionId });
             b.HasIndex(x => new { x.TenantId, x.NotificationControlNextAttemptAt, x.ConnectionId });
             b.HasIndex(x => new { x.TenantId, x.RegistrationRequestId }).IsUnique()
@@ -675,6 +678,8 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.RecordType, x.RecordKey, x.FieldName })
                 .IsUnique().HasFilter("[status] <> 'closed'");
             b.HasIndex(x => new { x.TenantId, x.Status, x.DetectedAt, x.ConflictId });
+            b.HasIndex(x => new { x.TenantId, x.DetectedAt, x.ConflictId });
+            b.HasIndex(x => new { x.TenantId, x.Status, x.ConflictId });
             b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.Status, x.DetectedAt, x.ConflictId });
         });
         modelBuilder.Entity<CoexistenceScanState>(b =>
@@ -824,6 +829,7 @@ public sealed class IntegrationDbContext(DbContextOptions<IntegrationDbContext> 
             b.HasIndex(x => new { x.TenantId, x.OutboundCommandId }).IsUnique();
             b.HasIndex(x => new { x.TenantId, x.Status, x.CreatedAt, x.ManualOutboundTaskId });
             b.HasIndex(x => new { x.TenantId, x.Status, x.Desk, x.CreatedAt, x.ManualOutboundTaskId });
+            b.HasIndex(x => new { x.TenantId, x.Status, x.Desk, x.ManualOutboundTaskId });
             b.HasOne<DeadLetterItem>().WithOne().HasForeignKey<ManualOutboundTask>(x =>
                 new { x.TenantId, x.DeadLetterItemId }).OnDelete(DeleteBehavior.Restrict);
         });

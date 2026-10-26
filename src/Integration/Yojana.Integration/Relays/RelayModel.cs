@@ -20,6 +20,8 @@ internal static class RelayModel
             b.Property(x => x.ErpVersion).HasMaxLength(160);
             b.Property(x => x.ProbedErpVersion).HasMaxLength(160);
             b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.Status, x.LastSeenAt, x.RelayId });
+            b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.DisplayName, x.RelayId });
+            b.HasIndex(x => new { x.TenantId, x.ConnectionId, x.Status, x.RelayId });
             b.HasOne<Connection>().WithMany().HasForeignKey(x => new { x.TenantId, x.ConnectionId }).OnDelete(DeleteBehavior.Restrict);
         });
         model.Entity<RelayRequestRow>(b =>

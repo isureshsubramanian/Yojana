@@ -22,6 +22,9 @@ test("verification record shows manifest figures, client-paged facts and the fac
   assert.match(screen, /<DataGrid/);
   assert.match(screen, /onRowClick=\{openFact\}/);
   assert.match(screen, /openDrawer\(\{ eyebrow: `\$\{human\(fact\.kind\)\} fact`/);
+  assert.match(screen, /footer=\{`\$\{filtered\.length\.toLocaleString\(\)\}/);
+  for (const key of ["id", "fact", "value", "kind"]) assert.match(screen, new RegExp(`sort: \\{ key: "${key}"`));
+  assert.match(screen, /gridId="connection-verification-facts"/);
 });
 
 test("acceptance runs support the whole operator workflow without a browser actor", () => {

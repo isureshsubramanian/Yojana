@@ -14,6 +14,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Platform.Scheduling;
 using Yojana.Platform.Tenancy;
+using Yojana.Platform.Contracts.Paging;
 
 namespace Yojana.Integration.Connectors.CX04;
 
@@ -23,6 +24,17 @@ public sealed record Cx04ConsentResult(string Status, DateTime RefreshChainExpir
 public sealed record Cx04DisableRequest(string? Reason, bool Confirm);
 public sealed record Cx04DisableResult(string Status, bool TokensDeleted, bool RemoteSignOutAttempted,
     DateTime DisabledAt, string Reason);
+
+internal sealed class Cx04HistoryProjection
+{
+    public long Sequence { get; init; }
+    public required string EventType { get; init; }
+    public required string ActorRef { get; init; }
+    public DateTime OccurredAt { get; init; }
+    public required string DetailsJson { get; init; }
+    public int Count { get; init; }
+    public bool Renewal { get; init; }
+}
 
 public sealed class Cx04AuthorisationException(string rule, string message) : Exception(message)
 {
@@ -35,7 +47,6 @@ public sealed class Cx04Authorisation(IntegrationDbContext db, ITenantContext te
     Cx04SignInNotifications notifications, IUserDirectory people, IConnectionThrottleProfileStore throttles)
 {
     private static readonly TimeSpan StateLifetime = TimeSpan.FromMinutes(10);
-
     public async Task<Cx04ConsentStart> BeginAsync(Guid connectionId, CancellationToken ct)
     {
         await EnsureConnectionAsync(connectionId, ct);
@@ -203,11 +214,10 @@ public sealed class Cx04Authorisation(IntegrationDbContext db, ITenantContext te
         return new(row.Status, true, signOutAttempted, row.DisabledAt.Value, reason);
     }
 
-    public async Task<ConnectionAuthorisationView> ReadAsync(Guid connectionId, string? cursor,
-        int take, CancellationToken ct)
+    public async Task<ConnectionAuthorisationView> ReadAsync(Guid connectionId, string? sort, string? direction,
+        string? cursor, int? take, CancellationToken ct)
     {
         await EnsureConnectionAsync(connectionId, ct);
-        take = Math.Clamp(take, 1, 100);
         var row = await db.Cx04AuthorisationStates.AsNoTracking().SingleAsync(value =>
             value.TenantId == tenant.TenantId && value.ConnectionId == connectionId, ct);
         var configured = await settings.GetAsync(connectionId, ct);
@@ -229,7 +239,7 @@ public sealed class Cx04Authorisation(IntegrationDbContext db, ITenantContext te
         var governed = throttle?.Profile.RequestsPerMinute
             ?? Cx04Capabilities.For(configured).Throttle.DefaultProfile.RequestsPerMinute
             ?? throw new InvalidOperationException("The CX04 request lane has no per-minute limit.");
-        var history = await HistoryAsync(connectionId, cursor, take, ct);
+        var history = await HistoryAsync(connectionId, sort, direction, cursor, take, ct);
         return new(row.Status, row.RefreshChainExpiresAt, row.RefreshExpiryMode, row.RefreshLifetimeDays,
             row.LastCallAt, reminders.DaysBeforeExpiry, reminders.RecipientRoles, sent,
             reminders.DaysBeforeExpiry.FirstOrDefault(day => !sent.Contains(day)) is var next && next > 0 ? next : null,
@@ -241,7 +251,10 @@ public sealed class Cx04Authorisation(IntegrationDbContext db, ITenantContext te
     }
 
     public Task<ConnectionAuthorisationView> ReadAsync(Guid connectionId, CancellationToken ct) =>
-        ReadAsync(connectionId, null, 50, ct);
+        ReadAsync(connectionId, null, null, null, 50, ct);
+
+    public Task<ConnectionAuthorisationView> ReadAsync(Guid connectionId, string? cursor, int take,
+        CancellationToken ct) => ReadAsync(connectionId, null, null, cursor, take, ct);
 
     private async Task EnsureConnectionAsync(Guid connectionId, CancellationToken ct)
     {
@@ -257,14 +270,9 @@ public sealed class Cx04Authorisation(IntegrationDbContext db, ITenantContext te
 
     private static string Base64Url(ReadOnlySpan<byte> bytes) =>
         Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-    private async Task<Cx04SignInHistoryPage> HistoryAsync(Guid connectionId, string? cursor, int take,
-        CancellationToken ct)
+    private async Task<Cx04SignInHistoryPage> HistoryAsync(Guid connectionId, string? sort, string? direction,
+        string? cursor, int? take, CancellationToken ct)
     {
-        long? before = null;
-        if (!string.IsNullOrWhiteSpace(cursor)
-            && (!long.TryParse(cursor, out var parsed) || parsed < 1))
-            throw new Cx04AuthorisationException("cursor_invalid", "The sign-in history cursor is invalid.");
-        else if (!string.IsNullOrWhiteSpace(cursor)) before = long.Parse(cursor);
         var since = clock.UtcNow.AddDays(-90);
         var query = db.ConnectionEvents.AsNoTracking().Where(value => value.TenantId == tenant.TenantId
             && value.ConnectionId == connectionId && value.OccurredAt >= since
@@ -276,32 +284,42 @@ public sealed class Cx04Authorisation(IntegrationDbContext db, ITenantContext te
                 || value.EventType == nameof(ConnectionAuditEventType.ConsentExpiryReminder)
                 || value.EventType == nameof(ConnectionAuditEventType.ConsentPauseNotified)
                 || value.EventType == nameof(ConnectionAuditEventType.ConsentRenewed)));
-        var eventQuery = query.Where(value => value.EventType != nameof(ConnectionAuditEventType.ConsentRenewed));
-        if (before is { } eventSequence)
-            eventQuery = eventQuery.Where(value => value.SequenceNo < eventSequence);
-        var rows = await eventQuery.OrderByDescending(value => value.SequenceNo).Take(take + 1).ToListAsync(ct);
+        var eventQuery = query.Where(value => value.EventType != nameof(ConnectionAuditEventType.ConsentRenewed))
+            .Select(value => new Cx04HistoryProjection
+            {
+                Sequence = value.SequenceNo,
+                EventType = value.EventType,
+                ActorRef = value.ActorRef,
+                OccurredAt = value.OccurredAt,
+                DetailsJson = value.DetailsJson,
+                Count = 1,
+                Renewal = false,
+            });
         var renewalQuery = query.Where(value => value.EventType == nameof(ConnectionAuditEventType.ConsentRenewed))
             .GroupBy(value => value.OccurredAt.Date)
-            .Select(group => new Cx04RenewalHistoryProjection
+            .Select(group => new Cx04HistoryProjection
             {
                 Sequence = group.Max(value => value.SequenceNo),
+                EventType = nameof(ConnectionAuditEventType.ConsentRenewed),
+                ActorRef = "system:renewal",
                 OccurredAt = group.Key,
+                DetailsJson = "{}",
                 Count = group.Count(),
+                Renewal = true,
             });
-        if (before is { } renewalSequence)
-            renewalQuery = renewalQuery.Where(value => value.Sequence < renewalSequence);
-        var renewals = await renewalQuery.OrderByDescending(value => value.Sequence).Take(take + 1).ToListAsync(ct);
-        var actorRefs = rows.Where(value => !value.ActorRef.StartsWith("system:", StringComparison.Ordinal))
+        var paging = Cx04AuthorisationEndpoints.HistoryPages.Parse(sort, direction, take, cursor, defaultTake: 50);
+        var rows = await paging.Apply(eventQuery.Concat(renewalQuery)).Take(paging.Take + 1).ToListAsync(ct);
+        var pageRows = rows.Take(paging.Take).ToList();
+        var actorRefs = pageRows.Where(value => !value.ActorRef.StartsWith("system:", StringComparison.Ordinal))
             .Select(value => value.ActorRef).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var names = actorRefs.Count == 0 ? new Dictionary<string, string>()
             : await people.DisplayNamesAsync(actorRefs, ct);
-        var items = rows.Select(value => HistoryItem(value.SequenceNo, value.EventType, value.ActorRef,
-                value.OccurredAt, value.DetailsJson, names)).Concat(renewals.Select(value =>
-                new Cx04SignInHistoryItem(value.Sequence, "access_renewed", "System", value.OccurredAt,
-                    "ok", value.Count)))
-            .OrderByDescending(value => value.Sequence).Take(take + 1).ToList();
-        var page = items.Take(take).ToList();
-        return new(page, items.Count > take ? page[^1].Sequence.ToString(System.Globalization.CultureInfo.InvariantCulture) : null);
+        var items = pageRows.Select(value => value.Renewal
+            ? new Cx04SignInHistoryItem(value.Sequence, "access_renewed", "System", value.OccurredAt,
+                "ok", value.Count)
+            : HistoryItem(value.Sequence, value.EventType, value.ActorRef, value.OccurredAt,
+                value.DetailsJson, names)).ToList();
+        return new(items, rows.Count > paging.Take ? paging.CursorFor(pageRows[^1]) : null);
     }
 
     private static Cx04SignInHistoryItem HistoryItem(long sequence, string eventType, string actor,
@@ -337,12 +355,6 @@ public sealed class Cx04Authorisation(IntegrationDbContext db, ITenantContext te
         : actor.StartsWith("system:", StringComparison.Ordinal) ? "System"
         : names.GetValueOrDefault(actor) ?? "Unknown user";
 
-    private sealed class Cx04RenewalHistoryProjection
-    {
-        public long Sequence { get; init; }
-        public DateTime OccurredAt { get; init; }
-        public int Count { get; init; }
-    }
 }
 
 public sealed class Cx04ConsentExpiryReminders(IntegrationDbContext db, ITenantContext tenant, IClock clock,

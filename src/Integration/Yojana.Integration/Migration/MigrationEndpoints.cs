@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
+using Yojana.Platform.Contracts.Paging;
+using CommandRefusedException = Yojana.Platform.Contracts.CommandRefusedException;
 using Yojana.Integration.LegacyMigration.Templates;
 using Yojana.Integration.LegacyMigration.Profiling;
 using Yojana.Integration.LegacyMigration.Canonicalisation;
@@ -18,6 +20,22 @@ namespace Yojana.Integration.LegacyMigration;
 
 public static class MigrationEndpoints
 {
+    internal static readonly SortedPage<MigrationDeltaItem, Guid> DeltaPages = new("load_order",
+        row => row.ItemId,
+        new SortColumn<MigrationDeltaItem, Guid>("load_order", row => row.ItemId),
+        new SortColumn<MigrationDeltaItem, string>("kind", row => row.Kind),
+        new SortColumn<MigrationDeltaItem, string>("item", row => row.ItemCode ?? ""),
+        new SortColumn<MigrationDeltaItem, string>("serial", row => row.Serial ?? ""));
+    internal static readonly SortedPage<MigrationApplyRefusalRow, Guid> RefusalPages = new("load_order",
+        row => row.RefusalId,
+        new SortColumn<MigrationApplyRefusalRow, Guid>("load_order", row => row.RefusalId),
+        new SortColumn<MigrationApplyRefusalRow, string>("item", row => row.ItemCode));
+    internal static readonly SortedPage<MigrationLinkOverride, string> LinkOverridePages = new("document",
+        row => row.SourceKey,
+        new SortColumn<MigrationLinkOverride, string>("document", row => row.SourceKey),
+        new SortColumn<MigrationLinkOverride, DateTime>("uploaded", row => row.UploadedAt,
+            SortDirection.Descending));
+
     public static IEndpointRouteBuilder MapMigrationEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/migration");
@@ -204,19 +222,21 @@ public static class MigrationEndpoints
             catch (ApplyRuleException ex) { return Problem(ex); }
         });
         review.MapGet("/loads/{loadId:guid}/delta", async (Guid loadId, string? kind, string? itemCode,
-            string? serial, string? cursor, int? take, ApplyService service, CancellationToken ct) =>
+            string? serial, string? sort, string? dir, string? cursor, int? take, ApplyService service,
+            CancellationToken ct) =>
         {
-            try { return Results.Ok(await service.DeltaItemsAsync(loadId, kind, itemCode, serial, cursor, take ?? 50, ct)); }
+            try { return Results.Ok(await service.DeltaItemsAsync(loadId, kind, itemCode, serial, sort, dir, cursor, take, ct)); }
             catch (ApplyRuleException ex) { return Problem(ex); }
+            catch (CommandRefusedException ex) { return Problem(ex); }
         });
         review.MapGet("/loads/{loadId:guid}/delta/export.csv", (Guid loadId, string? kind, string? itemCode,
-            string? serial, HttpContext http, ApplyService service,
+            string? serial, string? sort, string? dir, HttpContext http, ApplyService service,
             [Microsoft.AspNetCore.Mvc.FromServices] ITabularExporter exporter) =>
-                DeltaExport(loadId, kind, itemCode, serial, "csv", http, service, exporter));
+                DeltaExport(loadId, kind, itemCode, serial, sort, dir, "csv", http, service, exporter));
         review.MapGet("/loads/{loadId:guid}/delta/export.xlsx", (Guid loadId, string? kind, string? itemCode,
-            string? serial, HttpContext http, ApplyService service,
+            string? serial, string? sort, string? dir, HttpContext http, ApplyService service,
             [Microsoft.AspNetCore.Mvc.FromServices] ITabularExporter exporter) =>
-                DeltaExport(loadId, kind, itemCode, serial, "xlsx", http, service, exporter));
+                DeltaExport(loadId, kind, itemCode, serial, sort, dir, "xlsx", http, service, exporter));
         // P9-T34: what each load action allows and why not, and every load of a source with its undo state.
         review.MapGet("/batches/{batchId:guid}/load-readiness", async (Guid batchId, ApplyService service,
             CancellationToken ct) =>
@@ -229,15 +249,17 @@ public static class MigrationEndpoints
         review.MapGet("/loads/{loadId:guid}", async (Guid loadId, ApplyService service, CancellationToken ct) =>
             await service.LoadAsync(loadId, ct) is { } result ? Results.Ok(result) : Results.NotFound());
         review.MapGet("/loads/{loadId:guid}/refusals", async (Guid loadId, string? reason, string? itemCode,
-            string? serial, string? cursor, int? take, ApplyService service, CancellationToken ct) =>
-            Results.Ok(await service.RefusalsAsync(loadId, reason, itemCode, serial, cursor, take ?? 50, ct)));
+            string? serial, string? sort, string? dir, string? cursor, int? take, ApplyService service,
+            CancellationToken ct) => await InvokePaging(() =>
+                service.RefusalsAsync(loadId, reason, itemCode, serial, sort, dir, cursor, take, ct)));
         review.MapGet("/loads/{loadId:guid}/refusals/export.csv", async (Guid loadId, string? reason,
-            string? itemCode, string? serial, ApplyService service, CancellationToken ct) =>
-            Results.File(await service.ExportRefusalsAsync(loadId, reason, itemCode, serial, ct),
-                "text/csv; charset=utf-8", "migration-load-refusals.csv"));
+            string? itemCode, string? serial, string? sort, string? dir, ApplyService service,
+            CancellationToken ct) => await InvokeFile(() =>
+                service.ExportRefusalsAsync(loadId, reason, itemCode, serial, sort, dir, ct),
+                "migration-load-refusals.csv"));
         review.MapGet("/loads/{loadId:guid}/rollback/touched-units", async (Guid loadId, string? cursor,
             int? take, ApplyService service, CancellationToken ct) =>
-            Results.Ok(await service.TouchedUnitsAsync(loadId, cursor, take ?? 50, ct)));
+            await InvokePaging(() => service.TouchedUnitsAsync(loadId, cursor, take ?? 50, ct)));
         admin.MapPost("/loads/{loadId:guid}/rollback", async (Guid loadId, ClaimsPrincipal user,
             ApplyService service, CancellationToken ct) =>
         {
@@ -284,9 +306,10 @@ public static class MigrationEndpoints
         {
             MultipartBodyLengthLimit = LinkOverrideService.MaxFileBytes + 65_536,
         });
-        review.MapGet("/link-overrides", (Guid? batchId, bool? unused, string? cursor, int? take,
+        review.MapGet("/link-overrides", (Guid? batchId, bool? unused, string? sort, string? dir,
+            string? cursor, int? take,
             LinkOverrideService service, CancellationToken ct) => InvokeLinkOverrides(() =>
-                service.ListAsync(batchId, unused, cursor, take ?? 50, ct)));
+                service.ListAsync(batchId, unused, sort, dir, cursor, take, ct)));
         review.MapDelete("/link-overrides", ([Microsoft.AspNetCore.Mvc.FromBody] DeleteLinkOverridesRequest request,
             LinkOverrideService service, CancellationToken ct) =>
             InvokeLinkOverrides(() => service.DeleteAllAsync(request, ct)));
@@ -434,18 +457,32 @@ public static class MigrationEndpoints
     {
         try { return Results.Ok(await action()); }
         catch (LinkOverrideRuleException ex) { return Problem(ex); }
+        catch (CommandRefusedException ex) { return Problem(ex); }
     }
 
-    private static IResult DeltaExport(Guid loadId, string? kind, string? itemCode, string? serial, string format,
-        HttpContext http, ApplyService service, ITabularExporter exporter)
+    private static IResult DeltaExport(Guid loadId, string? kind, string? itemCode, string? serial, string? sort,
+        string? direction, string format, HttpContext http, ApplyService service, ITabularExporter exporter)
     {
         try
         {
-            var table = service.ExportDeltaItems(loadId, kind, itemCode, serial);
+            var table = service.ExportDeltaItems(loadId, kind, itemCode, serial, sort, direction);
             return Results.Stream(stream => exporter.WriteAsync(format, table, stream, http.RequestAborted),
                 exporter.ContentType(format), $"migration-delta-findings{exporter.Extension(format)}");
         }
         catch (ApplyRuleException ex) { return Problem(ex); }
+        catch (CommandRefusedException ex) { return Problem(ex); }
+    }
+
+    private static async Task<IResult> InvokePaging<T>(Func<Task<T>> action)
+    {
+        try { return Results.Ok(await action()); }
+        catch (CommandRefusedException ex) { return Problem(ex); }
+    }
+
+    private static async Task<IResult> InvokeFile(Func<Task<byte[]>> action, string fileName)
+    {
+        try { return Results.File(await action(), "text/csv; charset=utf-8", fileName); }
+        catch (CommandRefusedException ex) { return Problem(ex); }
     }
 
     private static async Task<IResult> ValidationExport(Guid batchId, string format, HttpContext http,
@@ -487,4 +524,12 @@ public static class MigrationEndpoints
     private static IResult Problem(LinkOverrideRuleException ex) => Results.Problem(title: ex.Rule,
         detail: ex.Message, statusCode: ex.Rule.EndsWith("not_found", StringComparison.Ordinal) ? 404 : 422,
         extensions: new Dictionary<string, object?> { ["rule"] = ex.Rule });
+
+    private static IResult Problem(CommandRefusedException ex) => Results.Problem(title: ex.Rule,
+        detail: ex.Message, statusCode: StatusCodes.Status400BadRequest,
+        extensions: new Dictionary<string, object?>
+        {
+            ["rule"] = ex.Rule,
+            ["unblockingStep"] = ex.UnblockingStep,
+        });
 }

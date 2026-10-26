@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Integration.Contracts;
@@ -7,6 +6,7 @@ using Yojana.Integration.Data.Entities;
 using Yojana.Integration.Security.Audit;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Platform.Contracts.Paging;
 
 namespace Yojana.Integration.Coexistence;
 
@@ -14,10 +14,9 @@ namespace Yojana.Integration.Coexistence;
 public sealed class CoexistenceConflicts(IntegrationDbContext db, ITenantContext tenant, IClock clock,
     IConnectionAuditSink audit, NativeWarrantyPushService nativeWarranty)
 {
-    public async Task<CoexistenceConflictPage> ListAsync(Guid? connectionId, string? status, string? cursor, int take,
-        CancellationToken ct)
+    public async Task<CoexistenceConflictPage> ListAsync(Guid? connectionId, string? status, string? sort,
+        string? direction, string? cursor, int? take, CancellationToken ct)
     {
-        take = Math.Clamp(take, 1, 200);
         var query = db.CoexistenceConflicts.AsNoTracking().Where(x => x.TenantId == tenant.TenantId);
         if (connectionId is { } id) query = query.Where(x => x.ConnectionId == id);
         query = status switch
@@ -28,23 +27,17 @@ public sealed class CoexistenceConflicts(IntegrationDbContext db, ITenantContext
                 or CoexistenceConflictStatus.Closed => query.Where(x => x.Status == status),
             _ => throw new CoexistenceRuleException("conflict_status_invalid", "Unknown conflict status filter."),
         };
-        if (!string.IsNullOrEmpty(cursor))
-        {
-            var parts = cursor.Split('_');
-            if (parts.Length != 2 || !long.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var ticks)
-                || !Guid.TryParse(parts[1], out var after))
-                throw new CoexistenceRuleException("cursor_invalid", "The conflict cursor is invalid.");
-            var at = new DateTime(ticks, DateTimeKind.Utc);
-            query = query.Where(x => x.DetectedAt < at || (x.DetectedAt == at && x.ConflictId.CompareTo(after) < 0));
-        }
-        var rows = await query.OrderByDescending(x => x.DetectedAt).ThenByDescending(x => x.ConflictId)
-            .Take(take + 1).ToListAsync(ct);
-        var more = rows.Count > take;
-        if (more) rows.RemoveAt(take);
-        var labels = await LabelsAsync(rows.Select(x => x.ConnectionId), ct);
-        var next = more ? rows[^1].DetectedAt.Ticks.ToString(CultureInfo.InvariantCulture) + "_" + rows[^1].ConflictId.ToString("N") : null;
-        return new(rows.Select(x => View(x, labels)).ToList(), next);
+        var paging = CoexistenceEndpoints.ConflictPages.Parse(sort, direction, take, cursor, defaultTake: 50);
+        var rows = await paging.Apply(query).Take(paging.Take + 1).ToListAsync(ct);
+        var more = rows.Count > paging.Take;
+        var pageRows = rows.Take(paging.Take).ToList();
+        var labels = await LabelsAsync(pageRows.Select(x => x.ConnectionId), ct);
+        var next = more ? paging.CursorFor(pageRows[^1]) : null;
+        return new(pageRows.Select(x => View(x, labels)).ToList(), next);
     }
+
+    public Task<CoexistenceConflictPage> ListAsync(Guid? connectionId, string? status, string? cursor, int take,
+        CancellationToken ct) => ListAsync(connectionId, status, null, null, cursor, take, ct);
 
     public async Task<CoexistenceConflictView> GetAsync(Guid conflictId, CancellationToken ct)
     {

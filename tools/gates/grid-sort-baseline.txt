@@ -1,13 +1,5 @@
 # ADR-0021 rollout baseline. Entries may only be removed; new files must use the shared paging pieces.
 [web]
-web/src/integration/AdminCommon.tsx
-web/src/integration/ConnectionVerification.tsx
-web/src/integration/ManualTasks.tsx
-web/src/integration/MessagesAttention.tsx
-web/src/integration/MigrationDelta.tsx
-web/src/integration/MigrationLoadUndo.tsx
-web/src/integration/MigrationRefusals.tsx
-web/src/integration/MigrationSettings.tsx
 web/src/patterns/DocumentPattern.tsx
 web/src/questions/EntryEditor.tsx
 web/src/questions/KnowledgeBase.tsx
@@ -20,13 +12,6 @@ web/src/settings/SecurityEvents.tsx
 web/src/settings/Users.tsx
 [server]
 src/Developer/Yojana.Developer/DeveloperEndpoints.cs
-src/Integration/Yojana.Integration/Coexistence/CoexistenceEndpoints.cs
-src/Integration/Yojana.Integration/Connections/ConnectionEndpoints.cs
-src/Integration/Yojana.Integration/Connectors/CX04/Cx04AuthorisationEndpoints.cs
-src/Integration/Yojana.Integration/ErpChange/ErpChangeEndpoints.cs
-src/Integration/Yojana.Integration/IntegrationEndpoints.cs
-src/Integration/Yojana.Integration/Migration/MigrationEndpoints.cs
-src/Integration/Yojana.Integration/Relays/RelayEndpoints.cs
 src/Knowledge/Yojana.Knowledge/KnowledgeEndpoints.cs
 src/Platform/Yojana.Platform/Privacy/PrivacyEndpoints.cs
 src/Platform/Yojana.Platform/Security/SecurityEndpoints.cs

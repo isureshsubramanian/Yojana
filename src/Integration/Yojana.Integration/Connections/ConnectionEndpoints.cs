@@ -3,19 +3,38 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Yojana.Platform.Contracts;
+using Yojana.Platform.Contracts.Paging;
 using Yojana.Platform.Contracts.Security;
+using Yojana.Integration.Data.Entities;
 
 namespace Yojana.Integration.Connections;
 
 public static class ConnectionEndpoints
 {
+    internal static readonly SortedPage<ConnectorCatalogueEntry, string> ConnectorPages = new("code",
+        row => row.ConnectorCode,
+        new SortColumn<ConnectorCatalogueEntry, string>("code", row => row.ConnectorCode),
+        new SortColumn<ConnectorCatalogueEntry, string>("name", row => row.DisplayName));
+    internal static readonly SortedPage<Connection, Guid> ConnectionPages = new("registration_order",
+        row => row.ConnectionId,
+        new SortColumn<Connection, Guid>("registration_order", row => row.ConnectionId),
+        new SortColumn<Connection, string>("name", row => row.DisplayLabel),
+        new SortColumn<Connection, string>("connector", row => row.ConnectorCode),
+        new SortColumn<Connection, string>("status", row => row.Status));
+    internal static readonly SortedPage<ConnectionEventEntity, long> EventPages = new("when",
+        row => row.SequenceNo,
+        new SortColumn<ConnectionEventEntity, DateTime>("when", row => row.OccurredAt,
+            SortDirection.Descending));
+
     public static IEndpointRouteBuilder MapConnectionEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/integration/connections").RequireAuthorization(YojanaPolicy.IntegrationOperations);
-        group.MapGet("/registration-connectors", (string? cursor, int? take, ConnectionQueries queries, CancellationToken ct) =>
-            Invoke(() => queries.RegistrationConnectorsAsync(cursor, take ?? 12, ct)));
-        group.MapGet("", (string? cursor, int? take, bool? archived, ConnectionQueries queries, CancellationToken ct) =>
-            Invoke(() => queries.ListAsync(cursor, take ?? 50, archived ?? false, ct)));
+        group.MapGet("/registration-connectors", (string? sort, string? dir, string? cursor, int? take,
+            ConnectionQueries queries, CancellationToken ct) =>
+            Invoke(() => queries.RegistrationConnectorsAsync(sort, dir, cursor, take, ct)));
+        group.MapGet("", (string? sort, string? dir, string? cursor, int? take, bool? archived,
+            ConnectionQueries queries, CancellationToken ct) =>
+            Invoke(() => queries.ListAsync(sort, dir, cursor, take, archived ?? false, ct)));
         group.MapGet("/{connectionId:guid}", (Guid connectionId, ConnectionQueries queries, CancellationToken ct) =>
             Invoke(() => queries.DetailAsync(connectionId, ct)));
         group.MapPost("", (RegisterConnection request, ClaimsPrincipal user, ConnectionCommands commands, CancellationToken ct) =>
@@ -48,10 +67,12 @@ public static class ConnectionEndpoints
                     user.HasClaim(YojanaClaim.Role, YojanaRole.TenantAdministrator), ct)));
         group.MapGet("/{connectionId:guid}/health", (Guid connectionId, ConnectionQueries queries, CancellationToken ct) =>
             Invoke(() => queries.HealthAsync(connectionId, ct)));
-        group.MapGet("/{connectionId:guid}/events", (Guid connectionId, string? cursor, int? take,
-            ConnectionQueries queries, CancellationToken ct) => Invoke(() => queries.EventsAsync(connectionId, cursor, take ?? 50, ct)));
-        app.MapGet("/api/integration/status", (string? cursor, int? take, ConnectionQueries queries, CancellationToken ct) =>
-            Invoke(() => queries.StatusAsync(cursor, take ?? 50, ct))).RequireAuthorization(YojanaPolicy.IntegrationIndicator);
+        group.MapGet("/{connectionId:guid}/events", (Guid connectionId, string? sort, string? dir,
+            string? cursor, int? take, ConnectionQueries queries, CancellationToken ct) =>
+            Invoke(() => queries.EventsAsync(connectionId, sort, dir, cursor, take, ct)));
+        app.MapGet("/api/integration/status", (string? sort, string? dir, string? cursor, int? take,
+            ConnectionQueries queries, CancellationToken ct) =>
+            Invoke(() => queries.StatusAsync(sort, dir, cursor, take, ct))).RequireAuthorization(YojanaPolicy.IntegrationIndicator);
         return app;
     }
 
@@ -69,7 +90,7 @@ public static class ConnectionEndpoints
         }
         catch (CommandRefusedException ex)
         {
-            return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: 409,
+            return Results.Problem(title: ex.Rule, detail: ex.Message, statusCode: 400,
                 extensions: new Dictionary<string, object?>
                 {
                     ["rule"] = ex.Rule,

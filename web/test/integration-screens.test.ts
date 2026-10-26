@@ -19,6 +19,19 @@ test("both integration screens render the approved headings and shared server-pa
   assert.equal(reasonLabel("item_not_mapped"), "Unknown item");
 });
 
+test("attention and manual-task grids declare sortable headers and reset paging through the shared query", () => {
+  assert.match(messages, /useGridQuery\("\/api\/integration\/dead-letters"/);
+  assert.match(messages, /sort: \{ key: "received"/);
+  assert.match(messages, /onSort=\{query\.onSort\}/);
+  assert.match(messages, /onPageSize=\{query\.onPageSize\}/);
+  assert.match(manual, /useGridQuery\("\/api\/integration\/manual-tasks"/);
+  for (const key of ["created", "desk"]) assert.match(manual, new RegExp(`sort: \\{ key: "${key}"`));
+  assert.match(manual, /onSort=\{query\.onSort\}/);
+  assert.match(manual, /onPageSize=\{query\.onPageSize\}/);
+  assert.match(adminCommon, /useGridState/);
+  assert.match(adminCommon, /gridState\.onPageSize/);
+});
+
 test("message and hand-entry actions call their exact integration endpoints", () => {
   assert.match(api, /dead-letters\/\$\{id\}\/map-and-retry/);
   assert.match(api, /dead-letters\/\$\{id\}\/create-provisional-and-retry/);
@@ -85,6 +98,7 @@ test("remaining routes use shared paged controls and role access", () => {
   assert.match(adminCommon, /<DataGrid/);
   assert.match(adminCommon, /continuation: result\?\.nextCursor/);
   assert.match(adminCommon, /controller\.abort\(\)/);
+  assert.match(adminCommon, /\.\.\.source\.gridOptions/);
 });
 
 test("service-manager status uses its read-only endpoint without operator details", () => {

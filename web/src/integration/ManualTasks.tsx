@@ -1,39 +1,40 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { DataGrid, Shortcut, StatusBadge, useModEnter, type GridColumn, type PageResult } from "../components";
+import { useEffect, useMemo, useState } from "react";
+import { DataGrid, Shortcut, StatusBadge, useGridQuery, useModEnter, type GridColumn, type PageResult } from "../components";
 import { ApiError } from "../api/client";
 import { openDrawer } from "../shell/drawerStore";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
+import { useSession } from "../session/session";
 import { ErrorNote, Kv, Section } from "../units/common";
 import { integrationApi } from "./api";
 import { IntegrationAccess, IntegrationTabs, useIntegrationTabCounts } from "./Common";
 import { age, displayValue, draftValueIsMono, human, localDate, parseDraft, recordLabel } from "./model";
-import type { ManualDraft, ManualTask, ManualTaskPage } from "./types";
+import { manualTaskPage, type ManualDraft, type ManualTask, type ManualTaskPage } from "./types";
 import "./integration.css";
 
 const empty: ManualTaskPage = { items: [], nextCursor: null, total: 0, desks: [] };
-function pageOf(result: ManualTaskPage, page: number): PageResult<ManualTask> {
-  return { rows: result.items, total: result.total, page, pageSize: 12, continuation: result.nextCursor, totalIsExact: true, hasMore: result.nextCursor !== null };
+function pageOf(result: ManualTaskPage, page: number, pageSize: number): PageResult<ManualTask> {
+  return { rows: result.items, total: result.total, page, pageSize, continuation: result.nextCursor, totalIsExact: true, hasMore: result.nextCursor !== null };
 }
 function title(task: ManualTask) { const draft = parseDraft(task); return String(draft.title ?? recordLabel(task.commandType)); }
 function subtitle(task: ManualTask) { const draft = parseDraft(task); return String(draft.subtitle ?? draft.reason ?? task.connectionLabel); }
 
 export function Component() {
+  const session = useSession();
   const tabCounts = useIntegrationTabCounts();
-  const [result, setResult] = useState(empty); const [page, setPage] = useState(1); const [cursors, setCursors] = useState<Array<string | undefined>>([undefined]);
   const [desk, setDesk] = useState(""); const [selected, setSelected] = useState<ManualTask | null>(null); const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null); const [erpNumber, setErpNumber] = useState(""); const [unverified, setUnverified] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
-  const load = useCallback(async (target = 1, cursor?: string) => {
-    setBusy(true); setError(null);
-    try {
-      const next = await integrationApi.manualTasks({ status: "open", desk: desk || undefined, cursor, take: 12 }); setResult(next); setPage(target);
-      if (next.nextCursor) setCursors((current) => { const copy = current.slice(0, target); copy[target] = next.nextCursor!; return copy; });
-      if (!next.items.some((row) => row.manualOutboundTaskId === selected?.manualOutboundTaskId)) {
-        const first = next.items[0] ?? null; setSelected(first); setErpNumber(""); setUnverified(false); setCancelReason("");
-      }
-    } catch (reason) { setError(reason); } finally { setBusy(false); }
-  }, [desk, selected?.manualOutboundTaskId]);
-  useEffect(() => { setCursors([undefined]); void load(); }, [desk]);
+  const filters = useMemo(() => { const value = new URLSearchParams({ status: "open" }); if (desk) value.set("desk", desk); return value; }, [desk]);
+  const query = useGridQuery("/api/integration/manual-tasks", manualTaskPage, {
+    gridId: "integration-manual-tasks", userId: session.user.id, defaultSort: { key: "created", dir: "asc" },
+    defaultSize: 12, params: filters, paging: "cursor", sortKeys: ["created", "desk"],
+    pageFacts: value => ({ continuation: value.nextCursor }),
+  });
+  const result = query.data ?? empty;
+  useEffect(() => {
+    if (!query.data || query.data.items.some(row => row.manualOutboundTaskId === selected?.manualOutboundTaskId)) return;
+    setSelected(query.data.items[0] ?? null); setErpNumber(""); setUnverified(false); setCancelReason("");
+  }, [query.data, selected?.manualOutboundTaskId]);
 
   const select = async (row: ManualTask, drawer = true) => {
     setError(null); setUnverified(false); setErpNumber(""); setCancelReason("");
@@ -46,7 +47,7 @@ export function Component() {
     if (!selected || !erpNumber.trim()) return; setBusy(true); setError(null);
     try {
       await integrationApi.completeManualTask(selected.manualOutboundTaskId, erpNumber.trim(), allowUnverified);
-      setUnverified(false); setSelected(null); await load(1);
+      setUnverified(false); setSelected(null); query.onPage(1); query.reload();
     } catch (reason) {
       if (reason instanceof ApiError && reason.rule === "manual_task_external_id_unverified") setUnverified(true);
       else setError(reason);
@@ -55,7 +56,7 @@ export function Component() {
   const cancel = async () => {
     const deadLetterItemId = selected?.deadLetterItemId;
     if (!deadLetterItemId || !cancelReason.trim()) return; setBusy(true); setError(null);
-    try { await integrationApi.discard(deadLetterItemId, cancelReason.trim()); setSelected(null); await load(1); }
+    try { await integrationApi.discard(deadLetterItemId, cancelReason.trim()); setSelected(null); query.onPage(1); query.reload(); }
     catch (reason) { setError(reason); } finally { setBusy(false); }
   };
   useModEnter(() => complete(false), !selected || busy || !erpNumber.trim());
@@ -64,8 +65,8 @@ export function Component() {
   const counts = useMemo(() => new Map(result.desks.map((row) => [row.desk, row.count])), [result.desks]);
   const columns: GridColumn<ManualTask>[] = [
     { key: "draft", label: "Draft", width: 61, render: (row) => <><span className="primary">{title(row)}</span><span className="sub">{subtitle(row)}</span></> },
-    { key: "desk", label: "Desk", width: 24, render: (row) => result.desks.find((item) => item.desk === row.desk)?.label ?? human(row.desk) },
-    { key: "age", label: "Age", width: 15, numeric: true, render: (row) => age(row.createdAt) },
+    { key: "desk", label: "Desk", width: 24, sort: { key: "desk", defaultDir: "asc" }, render: (row) => result.desks.find((item) => item.desk === row.desk)?.label ?? human(row.desk) },
+    { key: "age", label: "Age", width: 15, numeric: true, sort: { key: "created", defaultDir: "asc" }, render: (row) => age(row.createdAt) },
   ];
 
   return <main className="content" id="main" tabIndex={-1}>
@@ -74,10 +75,12 @@ export function Component() {
       sub="Documents the module has decided on but does not post itself. Each draft is filled in for you: copy it into the ERP, then record the ERP document number here. Warranty decisions never wait for this."
       actions={<button type="button" className="btn primary" disabled={!selected || busy || !erpNumber.trim()} onClick={() => void complete(false)}>Record ERP number <Shortcut keys="mod+enter" /></button>} />
     <IntegrationTabs attention={tabCounts.attention} manual={totalOpen} />
-    <IntegrationAccess><ErrorNote error={error} /><div className="integration-split">
+    <IntegrationAccess><ErrorNote error={error ?? query.error} /><div className="integration-split">
       <section className="card" aria-labelledby="manual-list"><div className="card-header"><h2 id="manual-list">Waiting</h2><span className="meta">oldest first</span></div>
         <div className="segmented integration-desks" role="group" aria-label="Desk"><button type="button" aria-pressed={!desk} onClick={() => setDesk("")}>All<span className="n">{totalOpen}</span></button>{result.desks.map((item) => <button type="button" key={item.desk} aria-pressed={desk === item.desk} onClick={() => setDesk(item.desk)}>{item.label}<span className="n">{counts.get(item.desk) ?? 0}</span></button>)}</div>
-        <DataGrid columns={columns} page={pageOf(result, page)} rowId={(row) => row.manualOutboundTaskId} onPage={(target) => void load(target, target > page ? result.nextCursor ?? undefined : cursors[target - 1])} loading={busy} onRowClick={(row) => void select(row)} activeRowId={selected?.manualOutboundTaskId} viewportHeight={522} emptyText="No ERP entries are waiting." />
+        <DataGrid columns={columns} page={pageOf(result, query.page, query.pageSize)} rowId={(row) => row.manualOutboundTaskId} onPage={query.onPage} loading={busy || query.loading} onRowClick={(row) => void select(row)} activeRowId={selected?.manualOutboundTaskId} viewportHeight={522} emptyText="No ERP entries are waiting."
+          gridId="integration-manual-tasks" userId={session.user.id} sort={query.sort} defaultSort={{ key: "created", dir: "asc" }} onSort={query.onSort}
+          pageSize={query.pageSize} defaultPageSize={12} pageSizeOptions={[12, 25, 50]} onPageSize={query.onPageSize} footerNote="Sorted by age, oldest first" />
       </section>
       <div className="stack">{selected ? <DraftDetail task={selected} erpNumber={erpNumber} setErpNumber={(value) => { setErpNumber(value); setUnverified(false); }} unverified={unverified} complete={complete} busy={busy} cancelReason={cancelReason} setCancelReason={setCancelReason} cancel={cancel} /> : <section className="card integration-empty"><div className="card-body"><h2>No draft selected</h2><p className="muted">Choose a waiting draft to see its copy-ready fields.</p></div></section>}</div>
     </div></IntegrationAccess>

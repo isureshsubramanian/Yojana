@@ -2,18 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../shell/Icons";
 import { Link } from "react-router";
 import { ApiError } from "../api/client";
-import { DataGrid, FormActions, StatusBadge, type GridColumn } from "../components";
+import { DataGrid, FormActions, StatusBadge, useGridQuery, type GridColumn } from "../components";
 import { useSession } from "../session/session";
 import { ErrorNote } from "../units/common";
 import { fmtDateTime } from "../units/format";
-import { useCursorPage } from "./AdminCommon";
 import { MigrationAccess, MigrationPage } from "./MigrationCommon";
 import { migrationApi } from "./migrationApi";
 import { batchLabel } from "./migrationModel";
 import type {
-  ConditionMappingRule, CurrencyInfo, LinkOverride, LinkOverridePage, LinkOverrideUploadResponse,
+  ConditionMappingRule, CurrencyInfo, LinkOverride, LinkOverrideUploadResponse,
   MappingPolicyChoice, MappingSettings as MappingSettingsView, ReplacementLinkValues,
 } from "./migrationTypes";
+import { linkOverridePage } from "./migrationTypes";
 
 const directions = [["customer_facing", "Customer-facing"], ["vendor_facing", "Supplier-facing"]] as const;
 const reasons = [["warranty_defect", "Warranty defect"], ["dead_on_arrival", "Dead on arrival"], ["seller_error", "Seller error"], ["goodwill", "Goodwill"], ["recall", "Recall"]] as const;
@@ -57,10 +57,14 @@ function MigrationSettings() {
 
   useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort(); }, [load]);
 
-  const fetchOverrides = useCallback((cursor?: string, signal?: AbortSignal) =>
-    migrationApi.linkOverrides(batchId || undefined, unusedOnly || undefined, cursor, signal), [batchId, unusedOnly]);
-  const overrides = useCursorPage<LinkOverride, LinkOverridePage>(fetchOverrides);
-  const overrideGrid = { ...overrides.grid, total: unusedOnly ? overrides.result?.unusedCount ?? 0 : overrides.result?.totalCount ?? 0, totalIsExact: true, pageSize: 12 };
+  const overrideParams = useMemo(() => { const value = new URLSearchParams(); if (batchId) value.set("batchId", batchId); if (unusedOnly) value.set("unused", "true"); return value; }, [batchId, unusedOnly]);
+  const overrides = useGridQuery("/api/migration/link-overrides", linkOverridePage, {
+    gridId: "migration-link-overrides", userId: session.user.id,
+    defaultSort: { key: "document", dir: "asc" }, defaultSize: 12, params: overrideParams,
+    paging: "cursor", sortKeys: ["document", "uploaded"], pageFacts: value => ({ continuation: value.nextCursor }),
+  });
+  const overrideGrid = { rows: overrides.data?.items ?? [], total: unusedOnly ? overrides.data?.unusedCount ?? 0 : overrides.data?.totalCount ?? 0,
+    page: overrides.page, pageSize: overrides.pageSize, continuation: overrides.data?.nextCursor ?? null, totalIsExact: true, hasMore: !!overrides.data?.nextCursor };
   const linkErrors = draft ? validateLinks(draft.linkDefaults) : {};
   const dirty = !!saved && !!draft && JSON.stringify(editable(saved)) !== JSON.stringify(editable(draft));
 
@@ -77,7 +81,7 @@ function MigrationSettings() {
 
   const uploadCsv = async (file: File) => {
     setBusy(true); setError(null); setUpload(null); setUploadName(file.name); setConfirmClear(false);
-    try { const result = await migrationApi.uploadLinkOverrides(file); setUpload(result); if (!result.errorTotal) overrides.refresh(); }
+    try { const result = await migrationApi.uploadLinkOverrides(file); setUpload(result); if (!result.errorTotal) overrides.reload(); }
     catch (reason) { setError(reason); }
     finally { setBusy(false); if (fileInput.current) fileInput.current.value = ""; }
   };
@@ -86,7 +90,7 @@ function MigrationSettings() {
     setBusy(true); setError(null);
     try {
       const result = await migrationApi.removeLinkOverrides();
-      setUpload(null); setConfirmClear(false); setNotice(`${result.removed.toLocaleString()} overrides removed.`); overrides.refresh();
+      setUpload(null); setConfirmClear(false); setNotice(`${result.removed.toLocaleString()} overrides removed.`); overrides.reload();
     } catch (reason) { setError(reason); }
     finally { setBusy(false); }
   };
@@ -98,9 +102,9 @@ function MigrationSettings() {
   const access = <p className="page-header-note"><strong>Who can change these:</strong> tenant administrators and the Migration lead. Every saved setting and upload records who made it and when.</p>;
 
   const columns = useMemo<GridColumn<LinkOverride>[]>(() => [
-    { key: "document", label: "Document number", width: 23, render: row => <span className="primary">{row.sourceKey}</span> },
+    { key: "document", label: "Document number", width: 23, sort: { key: "document", defaultDir: "asc" }, render: row => <span className="primary">{row.sourceKey}</span> },
     { key: "values", label: "Overridden values", width: 38, render: row => overrideSummary(row) },
-    { key: "upload", label: "Last upload", width: 25, render: row => <span>{row.uploadFileName}<span className="sub">{fmtDateTime(row.uploadedAt)} · {row.uploadedByName}</span></span> },
+    { key: "upload", label: "Last upload", width: 25, sort: { key: "uploaded", defaultDir: "desc" }, render: row => <span>{row.uploadFileName}<span className="sub">{fmtDateTime(row.uploadedAt)} · {row.uploadedByName}</span></span> },
     { key: "use", label: "Use", width: 14, render: row => row.unused ? <StatusBadge tone="warn">Unused</StatusBadge> : <StatusBadge tone="ok">In plan</StatusBadge> },
   ], []);
 
@@ -116,15 +120,15 @@ function MigrationSettings() {
       <div className="stack">
         <MappingCard value={draft} setValue={setDraft} readOnly={!canEdit || busy} serverRule={serverRule} />
         <section className="card migration-overrides" aria-labelledby="migration-overrides-title">
-          <div className="card-header"><h2 id="migration-overrides-title">Per-link overrides</h2><div className="right"><StatusBadge tone="neutral">{(overrides.result?.totalCount ?? 0).toLocaleString()} links</StatusBadge></div></div>
+          <div className="card-header"><h2 id="migration-overrides-title">Per-link overrides</h2><div className="right"><StatusBadge tone="neutral">{(overrides.data?.totalCount ?? 0).toLocaleString()} links</StatusBadge></div></div>
           <div className="card-body stack">
             <p className="muted">Download the links of the selected mapping run with the values each one will get, change the rows that differ, and upload the file. Rows are matched by the incumbent document number, so overrides survive a new extraction. Leave a row’s value columns empty to remove its override.</p>
             <label className="field"><span className="lbl">Extraction</span><select className="select" value={batchId} onChange={event => setBatchId(event.target.value)}>{batches.map((batch, index) => <option key={batch.batchId} value={batch.batchId}>{batchLabel(batch, index === 0)}</option>)}</select></label>
             <div className="migration-settings-actions">
               <a className={`btn${batchId ? "" : " disabled"}`} aria-disabled={!batchId} href={batchId ? migrationApi.linkExportUrl(batchId) : undefined}>Download links (CSV)</a>
-              {canEdit && <><input ref={fileInput} className="visually-hidden" type="file" accept=".csv,text/csv" aria-label="Upload overrides CSV" onChange={event => { const file = event.target.files?.[0]; if (file) void uploadCsv(file); }} /><button type="button" className="btn primary" disabled={busy} onClick={() => fileInput.current?.click()}>Upload overrides</button><button type="button" className="btn" disabled={busy || (overrides.result?.totalCount ?? 0) === 0} onClick={() => setConfirmClear(true)}>Remove all overrides</button></>}
+              {canEdit && <><input ref={fileInput} className="visually-hidden" type="file" accept=".csv,text/csv" aria-label="Upload overrides CSV" onChange={event => { const file = event.target.files?.[0]; if (file) void uploadCsv(file); }} /><button type="button" className="btn primary" disabled={busy} onClick={() => fileInput.current?.click()}>Upload overrides</button><button type="button" className="btn" disabled={busy || (overrides.data?.totalCount ?? 0) === 0} onClick={() => setConfirmClear(true)}>Remove all overrides</button></>}
             </div>
-            <div className="migration-override-summary"><span className="k">Unused</span><span className="v">{(overrides.result?.unusedCount ?? 0).toLocaleString()} overrides whose link is not in the selected mapping run</span>{upload && !upload.errorTotal && <><span className="k">Result</span><span className="v">{upload.added.toLocaleString()} added · {upload.changed.toLocaleString()} changed · {upload.removed.toLocaleString()} removed · {upload.unchanged.toLocaleString()} unchanged</span></>}</div>
+            <div className="migration-override-summary"><span className="k">Unused</span><span className="v">{(overrides.data?.unusedCount ?? 0).toLocaleString()} overrides whose link is not in the selected mapping run</span>{upload && !upload.errorTotal && <><span className="k">Result</span><span className="v">{upload.added.toLocaleString()} added · {upload.changed.toLocaleString()} changed · {upload.removed.toLocaleString()} removed · {upload.unchanged.toLocaleString()} unchanged</span></>}</div>
             {confirmClear && <div className="migration-settings-confirm note warn"><span><strong>Remove every override?</strong> The tenant defaults will apply to every mapped link.</span><span><button type="button" className="btn danger sm" disabled={busy} onClick={() => void clear()}>Confirm removal</button><button type="button" className="btn sm" onClick={() => setConfirmClear(false)}>Keep overrides</button></span></div>}
           </div>
         </section>
@@ -132,7 +136,9 @@ function MigrationSettings() {
       </div>
       <section className="card migration-overrides-table" aria-labelledby="migration-overrides-table-title">
         <div className="card-header"><h2 id="migration-overrides-table-title">Overrides</h2><label className="checkrow"><input type="checkbox" checked={unusedOnly} onChange={event => setUnusedOnly(event.target.checked)} /><span>Unused only</span></label></div>
-        <ErrorNote error={overrides.error} /><DataGrid columns={columns} page={overrideGrid} rowId={row => row.sourceKey} onPage={overrides.onPage} loading={overrides.busy} emptyText={unusedOnly ? "No unused overrides." : "No per-link overrides."} viewportHeight={430} />
+        <ErrorNote error={overrides.error} /><DataGrid columns={columns} page={overrideGrid} rowId={row => row.sourceKey} onPage={overrides.onPage} loading={overrides.loading} emptyText={unusedOnly ? "No unused overrides." : "No per-link overrides."} viewportHeight={430}
+          gridId="migration-link-overrides" userId={session.user.id} sort={overrides.sort} defaultSort={{ key: "document", dir: "asc" }} onSort={overrides.onSort}
+          pageSize={overrides.pageSize} defaultPageSize={12} pageSizeOptions={[12, 25, 50]} onPageSize={overrides.onPageSize} footerNote="Sorted by document number" />
         <div className="card-footer"><span className="muted">Server-paged in document-number order · an unused override is kept for a later mapping run</span></div>
       </section>
     </div>}

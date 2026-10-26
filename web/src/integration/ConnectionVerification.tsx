@@ -3,6 +3,7 @@ import { useParams } from "react-router";
 import { DataGrid, KpiStrip, StatusBadge, type GridColumn, type PageResult } from "../components";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { closeDrawer, openDrawer } from "../shell/drawerStore";
+import { useSession } from "../session/session";
 import { ErrorNote, Kv } from "../units/common";
 import { date, RoleAccess, useAction } from "./AdminCommon";
 import { ConnectionTabs } from "./ConnectionTabs";
@@ -59,20 +60,20 @@ function VerificationBody({ connectionId, view, refresh }: { connectionId: strin
 }
 
 function FactsCard({ facts }: { facts: VerificationFact[] }) {
-  const [kind, setKind] = useState<"all" | VerificationFactKind>("all"); const [page, setPage] = useState(1);
+  const session = useSession();
+  const [kind, setKind] = useState<"all" | VerificationFactKind>("all");
   const filtered = useMemo(() => kind === "all" ? facts : facts.filter(fact => fact.kind === kind), [facts, kind]);
-  const maxPage = Math.max(1, Math.ceil(filtered.length / factPageSize));
-  useEffect(() => { setPage(1); }, [kind]);
-  const rows = filtered.slice((page - 1) * factPageSize, page * factPageSize);
-  const grid: PageResult<VerificationFact> = { rows, total: filtered.length, page: Math.min(page, maxPage), pageSize: factPageSize, continuation: null };
+  const grid: PageResult<VerificationFact> = { rows: filtered, total: filtered.length, page: 1, pageSize: factPageSize, continuation: null };
   const columns: GridColumn<VerificationFact>[] = [
-    { key: "id", label: "Fact", width: 12, mono: true, render: fact => fact.id },
-    { key: "fact", label: "Protocol fact", width: 42, render: fact => <span className="primary"><span className="t">{fact.fact}</span><span className="sub">Used by {fact.usedAt}</span></span> },
-    { key: "value", label: "Value used", width: 29, render: fact => fact.valueUsed },
-    { key: "kind", label: "Kind", width: 17, render: fact => <StatusBadge tone={fact.kind === "assumed" ? "warn" : fact.kind === "documented" ? "ok" : "neutral"}>{human(fact.kind)}</StatusBadge> },
+    { key: "id", label: "Fact", width: 12, mono: true, sort: { key: "id", value: fact => fact.id }, render: fact => fact.id },
+    { key: "fact", label: "Protocol fact", width: 42, sort: { key: "fact", value: fact => fact.fact }, render: fact => <span className="primary"><span className="t">{fact.fact}</span><span className="sub">Used by {fact.usedAt}</span></span> },
+    { key: "value", label: "Value used", width: 29, sort: { key: "value", value: fact => fact.valueUsed }, render: fact => fact.valueUsed },
+    { key: "kind", label: "Kind", width: 17, sort: { key: "kind", value: fact => fact.kind }, render: fact => <StatusBadge tone={fact.kind === "assumed" ? "warn" : fact.kind === "documented" ? "ok" : "neutral"}>{human(fact.kind)}</StatusBadge> },
   ];
   return <section className="card" aria-labelledby="verification-facts"><div className="card-header"><h2 id="verification-facts">Protocol facts <span className="meta">client-paged · 25 per page</span></h2><label className="field"><span className="lbl">Kind</span><select className="select" value={kind} onChange={event => setKind(event.target.value as typeof kind)}>{factKinds.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
-    <DataGrid columns={columns} page={grid} rowId={fact => fact.id} onPage={setPage} onRowClick={openFact} emptyText="No facts match this kind." viewportHeight={500} />
+    <DataGrid key={kind} columns={columns} page={grid} rowId={fact => fact.id} onPage={() => undefined} onRowClick={openFact} emptyText="No facts match this kind." viewportHeight={500}
+      footer={`${filtered.length.toLocaleString()} fact${filtered.length === 1 ? "" : "s"}`} gridId="connection-verification-facts" userId={session.user.id}
+      defaultSort={{ key: "", dir: "asc" }} defaultPageSize={factPageSize} />
   </section>;
 }
 

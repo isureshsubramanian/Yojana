@@ -6,6 +6,7 @@ using Yojana.Integration.Data.Entities;
 using Yojana.Integration.LegacyMigration.Mapping;
 using Yojana.Integration.LegacyMigration.Reconstruction;
 using Yojana.Serialisation.Contracts;
+using Yojana.Platform.Contracts.Paging;
 
 namespace Yojana.Integration.LegacyMigration.Apply;
 
@@ -28,7 +29,6 @@ public sealed partial class ApplyService
 {
     public const string OwnerFieldName = "owner";
     public const string MigratedUnitRecordType = "migrated_unit";
-
     public async Task<StartApplyResponse> EnqueueDeltaAsync(Guid batchId, string actor,
         CancellationToken cancellationToken)
     {
@@ -93,9 +93,9 @@ public sealed partial class ApplyService
     }
 
     public async Task<MigrationDeltaItemPage> DeltaItemsAsync(Guid loadId, string? kind, string? itemCode,
-        string? serial, string? cursor, int take, CancellationToken cancellationToken)
+        string? serial, string? sort, string? direction, string? cursor, int? take,
+        CancellationToken cancellationToken)
     {
-        take = Math.Clamp(take, 1, 200);
         var all = DeltaFindings(loadId);
         var counts = (await all.GroupBy(row => row.Kind).Select(group => new { group.Key, Count = group.LongCount() })
                 .ToListAsync(cancellationToken))
@@ -103,33 +103,42 @@ public sealed partial class ApplyService
             .Select(row => new MigrationDeltaKindCount(row.Key, DeltaItemKind.Label(row.Key), row.Count)).ToList();
         var filtered = FilterDeltaFindings(all, kind, itemCode, serial);
         var total = await filtered.LongCountAsync(cancellationToken);
-        Guid? after = Guid.TryParse(cursor, out var parsed) ? parsed : null;
-        var rows = await filtered.Where(row => after == null || row.ItemId.CompareTo(after.Value) > 0)
-            .OrderBy(row => row.ItemId).Take(take + 1).ToListAsync(cancellationToken);
-        var items = rows.Take(take).Select(DeltaView).ToList();
-        return new(counts, total, items, rows.Count > take ? items[^1].ItemId.ToString("D") : null,
+        var paging = MigrationEndpoints.DeltaPages.Parse(sort, direction, take, cursor, defaultTake: 50);
+        var rows = await paging.Apply(filtered).Take(paging.Take + 1).ToListAsync(cancellationToken);
+        var pageRows = rows.Take(paging.Take).ToList();
+        var items = pageRows.Select(DeltaView).ToList();
+        return new(counts, total, items, rows.Count > paging.Take ? paging.CursorFor(pageRows[^1]) : null,
             counts.Sum(row => row.Count));
     }
 
+    public Task<MigrationDeltaItemPage> DeltaItemsAsync(Guid loadId, string? kind, string? itemCode,
+        string? serial, string? cursor, int take, CancellationToken cancellationToken) =>
+        DeltaItemsAsync(loadId, kind, itemCode, serial, null, null, cursor, take, cancellationToken);
+
     /// <summary>The filtered findings as a table for the CSV and Excel exports (OD-63), in the order the page shows.</summary>
-    public TabularExport ExportDeltaItems(Guid loadId, string? kind, string? itemCode, string? serial)
+    public TabularExport ExportDeltaItems(Guid loadId, string? kind, string? itemCode, string? serial,
+        string? sort, string? direction)
     {
         var filtered = FilterDeltaFindings(DeltaFindings(loadId), kind, itemCode, serial);
         return new(["Serial", "Item", "Kind", "What happened"], Rows());
 
         async IAsyncEnumerable<IReadOnlyList<string?>> Rows()
         {
-            Guid? after = null;
+            string? cursor = null;
             while (true)
             {
-                var page = await filtered.Where(row => after == null || row.ItemId.CompareTo(after.Value) > 0)
-                    .OrderBy(row => row.ItemId).Take(1000).ToListAsync();
+                var paging = MigrationEndpoints.DeltaPages.Parse(sort, direction,
+                    SortedPage<MigrationDeltaItem, Guid>.MaximumTake, cursor);
+                var page = await paging.Apply(filtered).Take(paging.Take).ToListAsync();
                 foreach (var row in page) yield return [row.Serial, row.ItemCode, DeltaItemKind.Label(row.Kind), row.Detail];
-                if (page.Count < 1000) yield break;
-                after = page[^1].ItemId;
+                if (page.Count < paging.Take) yield break;
+                cursor = paging.CursorFor(page[^1]);
             }
         }
     }
+
+    public TabularExport ExportDeltaItems(Guid loadId, string? kind, string? itemCode, string? serial) =>
+        ExportDeltaItems(loadId, kind, itemCode, serial, null, null);
 
     private IQueryable<MigrationDeltaItem> DeltaFindings(Guid loadId) => db.Set<MigrationDeltaItem>().AsNoTracking()
         .Where(row => row.TenantId == tenant.TenantId && row.RunId == loadId);

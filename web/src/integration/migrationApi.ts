@@ -50,14 +50,14 @@ export const migrationApi = {
   loadSummary: (loadId: string, signal?: AbortSignal) => apiParsed(`${root}/loads/${loadId}`, migrationLoadDetail, { signal }),
   deltaFindings: (loadId: string, filters: { kind?: string | undefined; itemCode?: string | undefined; serial?: string | undefined; cursor?: string | undefined } = {}, signal?: AbortSignal) =>
     apiParsed(`${root}/loads/${loadId}/delta${query({ ...filters, take: 100 })}`, migrationDeltaFindingPage, { signal }),
-  deltaExportUrl: (loadId: string, format: "csv" | "xlsx", filters: { kind?: string; itemCode?: string; serial?: string }) =>
+  deltaExportUrl: (loadId: string, format: "csv" | "xlsx", filters: { kind?: string; itemCode?: string; serial?: string; sort?: string; dir?: string }) =>
     deltaExportUrl(loadId, format, filters),
   loadRefusals: (loadId: string, filters: { reason?: string | undefined; itemCode?: string | undefined; serial?: string | undefined; cursor?: string | undefined } = {}, signal?: AbortSignal) =>
     apiParsed(`${root}/loads/${loadId}/refusals${query({ ...filters, take: 50 })}`, migrationApplyRefusalPage, { signal }),
-  loadRefusalsExportUrl: (loadId: string, filters: { reason?: string; itemCode?: string; serial?: string }) =>
+  loadRefusalsExportUrl: (loadId: string, filters: { reason?: string; itemCode?: string; serial?: string; sort?: string; dir?: string }) =>
     `${root}/loads/${loadId}/refusals/export.csv${query(filters)}`,
-  touchedLoadUnits: (loadId: string, cursor?: string, signal?: AbortSignal) =>
-    apiParsed(`${root}/loads/${loadId}/rollback/touched-units${query({ cursor, take: 50 })}`, touchedMigrationLoadUnitPage, { signal }),
+  touchedLoadUnits: (loadId: string, cursor?: string, take = 50, signal?: AbortSignal) =>
+    apiParsed(`${root}/loads/${loadId}/rollback/touched-units${query({ cursor, take })}`, touchedMigrationLoadUnitPage, { signal }),
   rollbackLoad: (loadId: string) => apiParsed(`${root}/loads/${loadId}/rollback`, rollBackMigrationLoadResponse, { method: "POST" }),
   resumeSync: (connectionId: string) => apiParsed(`/api/integration/connections/${connectionId}/resume-sync`, migrationSyncControlResult, { method: "POST", body: { note: "Resumed after the final migration load" } }),
   review: (filters: { batchId: string; kind?: MigrationReviewKind | ""; family?: string; status?: MigrationReviewStatus | ""; find?: string; cursor?: string | undefined; take?: number }, signal?: AbortSignal) =>

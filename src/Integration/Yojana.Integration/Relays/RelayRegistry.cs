@@ -8,6 +8,7 @@ using Yojana.Integration.Security.Audit;
 using Yojana.Integration.Security.Workers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Platform.Contracts.Paging;
 
 namespace Yojana.Integration.Relays;
 
@@ -88,24 +89,24 @@ public sealed class RelayRegistry(IntegrationDbContext db, ITenantContext tenant
         return new(true);
     }
 
-    public async Task<SiteRelayPage> ListAsync(Guid connectionId, string? cursor, int take, CancellationToken ct)
+    public async Task<SiteRelayPage> ListAsync(Guid connectionId, string? sort, string? direction, string? cursor,
+        int? take, CancellationToken ct)
     {
         var (_, profile) = await ProfileAsync(connectionId, ct, requireRelay: false, requireActive: false);
-        take = Math.Clamp(take, 1, 100);
         var query = db.SiteRelays.AsNoTracking().Where(x => x.TenantId == tenant.TenantId && x.ConnectionId == connectionId);
-        if (cursor is not null)
-        {
-            if (!Guid.TryParse(cursor, out var after)) throw new ConnectionRuleException("cursor_invalid", "The relay cursor is invalid.");
-            query = query.Where(x => x.RelayId.CompareTo(after) > 0);
-        }
-        var rows = await query.OrderBy(x => x.RelayId).Take(take + 1).ToListAsync(ct);
+        var paging = RelayEndpoints.Pages.Parse(sort, direction, take, cursor, defaultTake: 50);
+        var rows = await paging.Apply(query).Take(paging.Take + 1).ToListAsync(ct);
+        var pageRows = rows.Take(paging.Take).ToList();
         var cutoff = clock.UtcNow.AddSeconds(-(await profile.OptionsAsync(connectionId, ct)).OfflineAfterSeconds);
         var connected = await db.SiteRelays.CountAsync(x => x.TenantId == tenant.TenantId && x.ConnectionId == connectionId
             && x.Status == "active" && x.LastSeenAt >= cutoff, ct);
-        return new(rows.Take(take).Select(row => new SiteRelayView(row.RelayId, row.DisplayName, row.Status, row.CreatedAt,
+        return new(pageRows.Select(row => new SiteRelayView(row.RelayId, row.DisplayName, row.Status, row.CreatedAt,
             row.LastSeenAt, row.AgentVersion, row.HostName, row.PreviousSecretExpiresAt)).ToList(),
-            rows.Count > take ? rows[take - 1].RelayId.ToString("D") : null, connected);
+            rows.Count > paging.Take ? paging.CursorFor(pageRows[^1]) : null, connected);
     }
+
+    public Task<SiteRelayPage> ListAsync(Guid connectionId, string? cursor, int take, CancellationToken ct) =>
+        ListAsync(connectionId, null, null, cursor, take, ct);
 
     private async Task<SiteRelay> RelayAsync(Guid connectionId, Guid relayId, CancellationToken ct) =>
         await db.SiteRelays.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId && x.ConnectionId == connectionId
