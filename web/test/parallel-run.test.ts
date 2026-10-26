@@ -118,7 +118,7 @@ test("dashboard, conflict and issued-record reads use contracted filters and dow
   } finally { globalThis.fetch = original; }
   assert.deepEqual(calls, [
     "/api/integration/connections/connection-internal/parallel-run/dashboard",
-    "/api/integration/coexistence/conflicts?connectionId=connection-internal&status=unresolved&take=5",
+    "/api/integration/coexistence/conflicts?connectionId=connection-internal&status=unresolved&sort=detected&dir=desc&take=5",
     "/api/integration/go-live/records/record-internal",
   ]);
   assert.equal(parallelRunApi.goLiveCsvUrl("record-internal"), "/api/integration/go-live/records/record-internal/csv");

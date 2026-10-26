@@ -30,7 +30,7 @@ export const parallelRunApi = {
     apiParsed(`${root}/go-live/records/${recordId}`, goLiveRecordView, { signal }),
   goLiveCsvUrl: (recordId: string) => `${root}/go-live/records/${recordId}/csv`,
   conflicts: (connectionId: string, cursor?: string, signal?: AbortSignal) =>
-    apiParsed(`${root}/coexistence/conflicts${query({ connectionId, status: "unresolved", cursor, take: 5 })}`, coexistenceConflictPage, { signal }),
+    apiParsed(`${root}/coexistence/conflicts${query({ connectionId, status: "unresolved", cursor, sort: "detected", dir: "desc", take: 5 })}`, coexistenceConflictPage, { signal }),
   resolveConflict: (conflictId: string, decision: "keep_module" | "accept_remote", note: string) =>
     apiParsed(`${root}/coexistence/conflicts/${conflictId}/resolve`, coexistenceConflictView, { method: "POST", body: { decision, note } }),
   explainReconciliation: (runId: string, note: string) =>

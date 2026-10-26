@@ -1,3 +1,15 @@
 # ADR-0021 rollout baseline. Entries may only be removed; new files must use the shared paging pieces.
 [web]
 [server]
+
+# Existing fixed-size clients outside this bug-fix module. Line movement deliberately forces review.
+[literal-take]
+web/src/mail/api.ts:136
+web/src/mail/api.ts:137
+web/src/p7/api.ts:43
+web/src/p7/api.ts:44
+web/src/p7/api.ts:45
+web/src/questions/api.ts:28
+web/src/questions/api.ts:36
+web/src/questions/api.ts:38
+web/src/refurbishments/api.ts:15

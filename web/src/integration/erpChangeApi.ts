@@ -1,5 +1,6 @@
 import * as z from "zod/mini";
 import { apiParsed } from "../api/client.ts";
+import type { GridSort } from "../components";
 import { connectionAuthorisationView, consentResult, consentStart, cutoverChecklistView, disableResult, erpChangeCleanPeriodView, erpChangeDailyCheckView, erpChangeDivergencePage, erpChangeDivergenceRow, erpChangeMyWorkView, erpChangeNotificationSettingsView, erpChangeRunHistoryPage, erpChangeRunbookView, masterDataExceptionPage, masterDataExceptionRow, parkedOutboundPage, reconcileStockResult, reminderSettingsView, stockDifferencePage, stockDifferenceRow, stockResidualSignoffView, unitHistoryChangePage, type ResolveStockDifferenceRequest, type ErpChangeNotificationSettingsView, type UnitHistoryChangeKind } from "./erpChangeTypes.ts";
 
 const root = "/api/integration/erp-change";
@@ -14,10 +15,11 @@ function query(values: Record<string, string | number | boolean | undefined>) {
 
 export interface ListFilter { kind?: string | undefined; status?: string | undefined; query?: string | undefined }
 export interface StockFilter { reason?: string | undefined; liveCover?: boolean | undefined; status?: string | undefined; query?: string | undefined }
+type GridRequest = { sort: GridSort; pageSize: number };
 
 export const erpChangeApi = {
   active: (signal?: AbortSignal) => apiParsed(`${root}/runs/active`, erpChangeRunbookView, { signal }),
-  history: (cursor?: string, signal?: AbortSignal) => apiParsed(`${root}/runs${query({ cursor, take: 12 })}`, erpChangeRunHistoryPage, { signal }),
+  history: (cursor: string | undefined, signal: AbortSignal | undefined, grid: GridRequest) => apiParsed(`${root}/runs${query({ cursor, sort: grid.sort.key, dir: grid.sort.dir, take: grid.pageSize })}`, erpChangeRunHistoryPage, { signal }),
   detail: (runId: string, signal?: AbortSignal) => apiParsed(run(runId), erpChangeRunbookView, { signal }),
   unitHistoryChanges: (runId: string, kind: UnitHistoryChangeKind, cursor?: string, signal?: AbortSignal) =>
     apiParsed(`${run(runId)}/unit-history-changes${query({ kind, cursor, take: 12 })}`, unitHistoryChangePage, { signal }),
@@ -87,8 +89,8 @@ export const erpChangeApi = {
 const signIn = (connectionId: string) => `/api/integration/connections/${connectionId}/cx04`;
 
 export const signInApi = {
-  read: (connectionId: string, cursor?: string, signal?: AbortSignal) =>
-    apiParsed(`${signIn(connectionId)}/authorisation${query({ cursor, take: 12 })}`, connectionAuthorisationView, { signal }),
+  read: (connectionId: string, cursor: string | undefined, signal: AbortSignal | undefined, grid: GridRequest) =>
+    apiParsed(`${signIn(connectionId)}/authorisation${query({ cursor, sort: grid.sort.key, dir: grid.sort.dir, take: grid.pageSize })}`, connectionAuthorisationView, { signal }),
   begin: (connectionId: string) => apiParsed(`${signIn(connectionId)}/consent`, consentStart, { method: "POST" }),
   complete: (connectionId: string, code: string, state: string) =>
     apiParsed(`${signIn(connectionId)}/callback`, consentResult, { method: "POST", body: { code, state } }),

@@ -53,7 +53,7 @@ export function PagedGrid<T>({ source, columns, rowId, select, selected, empty }
   return <><ErrorNote error={source.error} />{source.error && <button className="btn sm" onClick={source.refresh}>Try again</button>}<DataGrid columns={columns} page={source.grid} rowId={rowId} onPage={source.onPage} loading={source.busy} onRowClick={select} activeRowId={selected} emptyText={empty} viewportHeight={430} {...source.gridOptions} /></>;
 }
 export function ConnectionPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  const fetch = useCallback((cursor?: string, signal?: AbortSignal) => adminApi.connections(cursor, false, signal), []);
+  const fetch = useCallback((cursor?: string, signal?: AbortSignal) => adminApi.connectionChoices(cursor, signal), []);
   const source = useCursorPage(fetch);
   return <div className="toolbar connection-picker"><label className="field"><span className="lbl">Connection</span><select className="select" value={source.result?.items.some(x => x.connectionId === value) ? value : ""} onChange={e => onChange(e.target.value)}><option value="">All connections</option>{source.result?.items.map(x => <option key={x.connectionId} value={x.connectionId}>{x.connectionName}</option>)}</select></label><button className="btn" disabled={source.busy || source.grid.page === 1} onClick={() => { onChange(""); source.onPage(source.grid.page - 1); }}>Previous connections</button><button className="btn" disabled={source.busy || !source.grid.hasMore} onClick={() => { onChange(""); source.onPage(source.grid.page + 1); }}>More connections</button><ErrorNote error={source.error} /></div>;
 }
