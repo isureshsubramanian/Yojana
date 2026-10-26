@@ -78,8 +78,8 @@ export const certificateCorrectionApi = {
   reissue: (id: string, reason: string) => apiParsed(`/api/certificates/${id}/reissue`, reissueCertificateResultSchema,
     { method: "POST", body: checkedBody(reissueCertificateRequestSchema, { commandId: newCommandId(), certificateId: id, reason: reason.trim() }) }),
   /** Downloads the rendered copy. htmlFallback is true when no PDF render worker answered and the copy is HTML. */
-  async printCopy(id: string, reason: string, recipient: string | null, fallbackName: string): Promise<{ fileName: string; htmlFallback: boolean }> {
-    const body = checkedBody(printCertificateCopyRequestSchema, { commandId: newCommandId(), certificateId: id, reason: reason.trim(), recipient: recipient?.trim() || null });
+  async printCopy(id: string, reason: string, fallbackName: string): Promise<{ fileName: string; htmlFallback: boolean }> {
+    const body = checkedBody(printCertificateCopyRequestSchema, { commandId: newCommandId(), certificateId: id, reason: reason.trim() });
     const response = await fetch(`/api/certificates/${id}/copy`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!response.ok) throw await problemError(response);
     const fileName = dispositionFileName(response.headers.get("Content-Disposition"), fallbackName);

@@ -120,4 +120,4 @@ export type CertificateCorrectionPreview = z.infer<typeof certificateCorrectionP
 export const reissueCertificateRequestSchema = z.object({ commandId: text, certificateId: text, reason: text });
 export const reissueCertificateResultSchema = z.object({ commandId: text, replayed: z.boolean(), supersededCertificateId: text, certificateId: text, version: count, trackingNumber: text });
 export type ReissueCertificateResult = z.infer<typeof reissueCertificateResultSchema>;
-export const printCertificateCopyRequestSchema = z.object({ commandId: text, certificateId: text, reason: text, recipient: nullableText });
+export const printCertificateCopyRequestSchema = z.object({ commandId: text, certificateId: text, reason: text });

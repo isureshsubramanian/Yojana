@@ -65,9 +65,8 @@ export function CorrectionPanel({ certificateId, onIssued }: { certificateId: st
 }
 
 export function CopyPanel({ certificateId, fallbackName, onPrinted }: { certificateId: string; fallbackName: string; onPrinted: () => void }) {
-  const reasonId = useId(); const recipientId = useId();
+  const reasonId = useId();
   const [reason, setReason] = useState("");
-  const [recipient, setRecipient] = useState("");
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -78,7 +77,7 @@ export function CopyPanel({ certificateId, fallbackName, onPrinted }: { certific
     setTouched(true);
     if (problem || busy) return;
     setBusy(true); setError(null);
-    try { setDone(await certificateCorrectionApi.printCopy(certificateId, reason, recipient, fallbackName)); onPrinted(); }
+    try { setDone(await certificateCorrectionApi.printCopy(certificateId, reason, fallbackName)); onPrinted(); }
     catch (reason) { setError(reason); }
     finally { setBusy(false); }
   }
@@ -95,8 +94,6 @@ export function CopyPanel({ certificateId, fallbackName, onPrinted }: { certific
         aria-invalid={touched && !!problem} aria-describedby={touched && problem ? `${reasonId}-problem` : undefined}
         onChange={(event) => setReason(event.target.value)} onBlur={() => setTouched(true)} />
       {touched && problem && <span className="help bad" id={`${reasonId}-problem`} role="alert">{problem}</span>}</label>
-    <label className="field" htmlFor={recipientId}><span className="lbl">Recipient · optional</span>
-      <input id={recipientId} className="input" maxLength={200} value={recipient} onChange={(event) => setRecipient(event.target.value)} /></label>
     <ErrorNote error={error} />
     <FormActions>
       <button type="button" className="btn" onClick={closeDrawer}>Cancel</button>

@@ -14,8 +14,8 @@ internal static class CertificateStarterLayouts
         """;
 
     private const string Identity = """
-        <h2>Identity</h2><table><thead><tr><th>Identifier</th><th>Value and lineage</th><th>Issuer / validity</th></tr></thead><tbody>
-        {{#each identifiers}}<tr><td>{{label type}}</td><td class="numeric">{{value}}{{#if replaces}}<div class="fine">Previous: {{replaces}}</div>{{/if}}{{#if replaced_by}}<div class="fine">Replaced by: {{replaced_by}}</div>{{/if}}</td><td>{{#if issuer}}{{issuer}}{{/if}}{{#if valid_from}}<div class="fine">Valid from {{date valid_from}}{{#if valid_to}} to {{date valid_to}}{{/if}}</div>{{/if}}</td></tr>{{else}}<tr><td colspan="3" class="quiet">No identifiers recorded</td></tr>{{/each}}
+        <h2>Identity</h2><table><thead><tr><th>Identifier</th><th>Value and lineage</th><th>Issuer / in use</th></tr></thead><tbody>
+        {{#each identifiers}}<tr><td>{{label type}}</td><td class="numeric">{{value}}{{#if replaces}}<div class="fine">Previous: {{replaces}}</div>{{/if}}{{#if replaced_by}}<div class="fine">Replaced by: {{replaced_by}}</div>{{/if}}</td><td>{{#if issuer}}{{issuer}}{{/if}}{{#if valid_from}}<div class="fine">{{#if valid_to}}In use {{date valid_from}} – {{date valid_to}}{{else}}In use since {{date valid_from}}{{/if}}</div>{{/if}}</td></tr>{{else}}<tr><td colspan="3" class="quiet">No identifiers recorded</td></tr>{{/each}}
         <tr><td class="key">Model</td><td colspan="2">{{#if model.name}}{{model.name}}{{else}}{{model.code}}{{/if}}{{#if model.name}}<span class="fine"> · {{model.code}}</span>{{/if}}{{#if model.revision}} · Revision {{model.revision}}{{/if}}</td></tr>
         {{#if build_date}}<tr><td class="key">Release date</td><td colspan="2">{{date build_date}}{{#if facility}} · {{facility}}{{/if}}{{#if work_reference}} · {{work_reference}}{{/if}}</td></tr>{{/if}}
         {{#if condition}}<tr><td class="key">Condition</td><td colspan="2">{{label condition}}{{#if refurbishment_cycle}} · Refurbishment cycle {{refurbishment_cycle}}{{/if}}{{#if refurbisher}} · {{refurbisher}}{{/if}}</td></tr>{{/if}}</tbody></table>
