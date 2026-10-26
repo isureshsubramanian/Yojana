@@ -533,6 +533,7 @@ public static class SerialisationModule
         }
         builder.Services.AddSingleton(certificateRuns);
         builder.Services.TryAddSingleton<ICertificateRunChunkObserver, NullCertificateRunChunkObserver>();
+        builder.Services.AddScoped<CertificateCopyService>();
         builder.Services.AddScoped<CertificateSelectionService>();
         builder.Services.AddScoped<ReleaseRecordPayloadBuilder>();
         builder.Services.AddScoped<WarrantyCertificatePayloadBuilder>();
@@ -552,6 +553,7 @@ public static class SerialisationModule
             sp.GetRequiredService<ICertificateLayoutLanguageSource>()));
         builder.Services.AddScoped<ReleaseRecordIssuePolicy>();
         builder.Services.AddScoped<CertificateVersioningEngine>();
+        builder.Services.AddScoped<CertificateCorrectionService>();
         builder.Services.AddScoped<CertificateQueries>();
         builder.Services.AddScoped<TenantAssetService>();
         // End P6 certificate block.

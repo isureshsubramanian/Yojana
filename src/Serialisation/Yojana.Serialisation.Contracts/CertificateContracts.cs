@@ -373,7 +373,7 @@ public sealed record IssueCertificateVersion(Guid TriggeringEventId, Guid UnitId
     string? SupersedeReason, DateTime EffectiveAt, string ActorRef, Guid IssuerEntityId,
     string Provenance = CertificateProvenance.SystemGenerated, IReadOnlyList<string>? Unknowns = null,
     IReadOnlyList<string>? Evidence = null, string Language = "en", string? TriggerSchema = null,
-    Guid? MigrationLoadId = null);
+    Guid? MigrationLoadId = null, Guid? ExpectedCurrentCertificateId = null, string? TriggerNote = null);
 
 public sealed record IssueCertificateVersionResult(bool Issued, bool Replayed, Guid? CertificateId, int? Version,
     string? TrackingNumber, string? RefusalRule = null, string? RefusalDetail = null, bool Absorbed = false);
@@ -486,5 +486,4 @@ public sealed record ReissueCertificateResult(Guid CommandId, bool Replayed, Gui
     Guid CertificateId, int Version, string TrackingNumber);
 
 /// <summary>Renders one Copy of a certificate and logs it in the reprint log; no version is created.</summary>
-public sealed record PrintCertificateCopy(Guid CommandId, Guid CertificateId, string Reason, string? Recipient = null,
-    string ActorRef = "");
+public sealed record PrintCertificateCopy(Guid CommandId, Guid CertificateId, string Reason, string ActorRef = "");

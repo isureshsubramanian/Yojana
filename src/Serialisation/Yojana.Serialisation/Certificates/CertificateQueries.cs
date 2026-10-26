@@ -93,7 +93,8 @@ public sealed class CertificateQueries(SerialisationDbContext db, ITenantContext
             DisplayTime(row.Language, row.IssuedAt, payload), row.Status,
             signatures, reprints.Select(item => new CertificateReprintRow(item.ReprintId, item.Version, item.RequestedBy, item.At,
                 DisplayTime(row.Language, item.At, payload),
-                item.RecipientPartyRef is { } recipient && recipients.TryGetValue(recipient, out var name) ? name.Name ?? name.Code : null)).ToList(),
+                (item.RecipientPartyRef is { } recipient && recipients.TryGetValue(recipient, out var name)
+                    ? name.Name ?? name.Code : null))).ToList(),
             redaction is null ? null : new CertificateRedactionView(redaction.RedactedAt,
                 redaction.OriginalPayloadHash,
                 $"Issued and signed on {row.IssuedAt:yyyy-MM-dd}; owner details removed on {redaction.RedactedAt:yyyy-MM-dd} under a personal-data erasure."));

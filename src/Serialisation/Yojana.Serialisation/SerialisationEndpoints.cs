@@ -1475,6 +1475,25 @@ public static class SerialisationEndpoints
         certificates.MapPost("/selection/reprint", (ReprintCertificate command, ClaimsPrincipal user, IMessageBus bus,
             ITenantContext tenant, CancellationToken ct) => Invoke<CertificateRunResult>(bus, tenant,
                 command with { ActorRef = Actor(user) }, ct)).RequireAuthorization(YojanaPolicy.CertificateIssuer);
+        // ADR-0023: the preview builds but never issues; both writes stamp the authenticated actor here.
+        certificates.MapGet("/{certificateId:guid}/correction-preview", (Guid certificateId,
+            CertificateCorrectionService corrections, CancellationToken ct) =>
+            TemplateInvoke(() => corrections.PreviewAsync(certificateId, ct)))
+            .RequireAuthorization(YojanaPolicy.CertificateIssuer);
+        certificates.MapPost("/{certificateId:guid}/reissue", (Guid certificateId, ReissueCertificate command,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            certificateId != command.CertificateId
+                ? Task.FromResult(Refused(new CommandRefusedException("certificate_id_mismatch",
+                    "The route certificate id must match the request certificate id."), StatusCodes.Status409Conflict))
+                : Invoke<ReissueCertificateResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct))
+            .RequireAuthorization(YojanaPolicy.CertificateIssuer);
+        certificates.MapPost("/{certificateId:guid}/copy", (Guid certificateId, PrintCertificateCopy command,
+            ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, HttpContext http, CancellationToken ct) =>
+            certificateId != command.CertificateId
+                ? Task.FromResult(Refused(new CommandRefusedException("certificate_id_mismatch",
+                    "The route certificate id must match the request certificate id."), StatusCodes.Status409Conflict))
+                : CopyInvoke(bus, tenant, command with { ActorRef = Actor(user) }, http, ct))
+            .RequireAuthorization(YojanaPolicy.CertificateIssuer);
         // End P6 certificate read surface.
 
         // P6 tenant-owned certificate layouts. Layout placeholders are validated only against immutable payload fields;
@@ -1941,6 +1960,22 @@ public static class SerialisationEndpoints
             return Results.Problem(title: "document_changed", detail: "The document changed while this edit was being saved.",
                 statusCode: StatusCodes.Status409Conflict, extensions: new Dictionary<string, object?>
                 { ["rule"] = "document_changed", ["unblockingStep"] = DocumentVersionRules.Reload });
+        }
+    }
+
+    private static async Task<IResult> CopyInvoke(IMessageBus bus, ITenantContext tenant,
+        PrintCertificateCopy command, HttpContext http, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var file = await bus.InvokeAsync<CertificateCopyFile>(command,
+                new DeliveryOptions { TenantId = tenant.TenantId.ToString() }, cancellationToken);
+            if (file.HtmlFallback) http.Response.Headers["X-Yojana-Render"] = "html-fallback";
+            return Results.File(file.Bytes, file.MediaType, file.FileName);
+        }
+        catch (CommandRefusedException ex)
+        {
+            return Refused(ex, StatusCodes.Status409Conflict);
         }
     }
 
