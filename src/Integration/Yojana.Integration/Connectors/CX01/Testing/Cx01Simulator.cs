@@ -90,6 +90,7 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     public bool DeliveryCancelled { get; set; }
     public bool ReceiptCancelled { get; set; }
     public bool ProductionReceiptAvailable { get; set; }
+    public bool ProductionIssueAvailable { get; set; }
     public bool NonIsoGoodsReceiptCurrency { get; set; }
     public bool SubscriptionStopped { get; set; }
     public List<string> DeletedSubscriptionPaths { get; } = [];
@@ -483,6 +484,49 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                             },
                         },
                     },
+                });
+                return;
+            }
+            if (path == Cx01Protocol.Root + "InventoryGenExits(4)")
+            {
+                await JsonAsync(response, new
+                {
+                    DocEntry = 4,
+                    DocNum = 900004,
+                    DocDate = "2026-09-01",
+                    UpdateDate = "2026-09-01",
+                    UpdateTime = "213000",
+                    DocObjectCode = "oInventoryGenExit",
+                    DocCurrency = "$",
+                    DocumentLines = new object[]
+                    {
+                        new
+                        {
+                            LineNum = 0, ItemCode = "FIC-CPU-32C", Quantity = 1m, UoMCode = "EA",
+                            WarehouseCode = "WH-A", BaseType = 202, BaseEntry = 161, BaseLine = 1,
+                            SerialNumbers = new[]
+                            {
+                                new { InternalSerialNumber = "FIC-261027-CPU-01", SystemSerialNumber = 9001, Quantity = 1m },
+                            },
+                        },
+                        new
+                        {
+                            LineNum = 1, ItemCode = "FIC-CPU-32C", Quantity = 1m, UoMCode = "EA",
+                            WarehouseCode = "WH-A", BaseType = (int?)null, BaseEntry = (int?)null, BaseLine = (int?)null,
+                            SerialNumbers = new[]
+                            {
+                                new { InternalSerialNumber = "FIC-261027-CPU-09", SystemSerialNumber = 9009, Quantity = 1m },
+                            },
+                        },
+                    },
+                });
+                return;
+            }
+            if (path == Cx01Protocol.Root + "InventoryGenExits" && ProductionIssueAvailable)
+            {
+                await JsonAsync(response, new
+                {
+                    value = new object[] { new { DocEntry = 4, UpdateDate = "2026-09-01", UpdateTime = "213000" } },
                 });
                 return;
             }

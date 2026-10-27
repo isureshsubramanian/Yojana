@@ -206,6 +206,31 @@ public sealed class Cx01AdapterTests
     }
 
     [Fact]
+    public async Task An_issue_for_production_never_reaches_the_adjustment_as_a_scrap_line()
+    {
+        await using var simulator = new Cx01Simulator { ProductionIssueAvailable = true };
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+        var configured = await context.Settings.GetAsync(context.ConnectionId, CancellationToken.None);
+        await context.Settings.SetAsync(context.ConnectionId, configured with
+        {
+            CurrencyMap = new Dictionary<string, string> { ["$"] = "USD" },
+        }, CancellationToken.None);
+
+        var result = await context.Adapter.PollAsync(new(context.TenantId, context.ConnectionId,
+            "inventory_adjustments", null, TimeSpan.FromMinutes(2), 10), CancellationToken.None);
+
+        var accepted = Assert.Single(result.Events);
+        Assert.Equal(nameof(InventoryAdjusted), accepted.MessageType);
+        using var canonical = JsonDocument.Parse(accepted.CanonicalMessage);
+        var payload = canonical.RootElement.GetProperty("payload");
+        Assert.Equal("out", payload.GetProperty("adjustment_kind").GetString());
+        var line = Assert.Single(payload.GetProperty("lines").EnumerateArray());
+        Assert.Equal(1, line.GetProperty("line_no").GetInt32());
+        Assert.Equal("FIC-261027-CPU-09", Assert.Single(line.GetProperty("serials").EnumerateArray())
+            .GetProperty("value").GetString());
+    }
+
+    [Fact]
     public async Task An_unmapped_currency_parks_only_that_document_and_the_poll_advances()
     {
         await using var simulator = new Cx01Simulator
