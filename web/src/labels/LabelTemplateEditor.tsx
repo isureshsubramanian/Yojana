@@ -16,7 +16,7 @@ import {
 import type { LabelBindableField, LabelBinding, LabelPolicy, LabelTemplateDetail, LabelTemplatePreview, LabelTemplateVersion } from "./types";
 import "./labels.css";
 
-const DEFAULT_LAYOUT = "^XA\n^CI28\n^FO20,20^FD{{serial}}^FS\n^FO20,64^FD{{item_name}}^FS\n^XZ";
+const DEFAULT_LAYOUT = "<div style=\"height:100%;padding:4mm;font:11pt sans-serif\"><strong>{{item_name}}</strong><div style=\"margin-top:3mm;font:14pt monospace\">{{serial}}</div></div>";
 
 interface DraftState {
   name: string;
@@ -31,6 +31,9 @@ interface DraftState {
   symbology: "code128" | "datamatrix" | "qr" | "code39";
   previewSampleUnitId: string | null;
   regulated: boolean;
+  widthMm: number | null;
+  heightMm: number | null;
+  dpiHint: number | null;
 }
 
 export function Component() {
@@ -48,7 +51,7 @@ export function Component() {
   const [draftZone, setDraftZone] = useState(tenantTime.zone);
   const [previewSampleUnitId, setPreviewSampleUnitId] = useState<string | null>(null);
   const [fields, setFields] = useState<LabelBindableField[]>([]);
-  const [policy, setPolicy] = useState<LabelPolicy>({ legalReviewPhrases: [], printExpiryDates: false, defaultPrinterRef: "default" });
+  const [policy, setPolicy] = useState<LabelPolicy>({ legalReviewPhrases: [], printExpiryDates: false, defaultPrinterRef: "pdf_download", printerAdapter: "pdf_download", defaultFormat: "sheet", defaultSheet: { profileId: "tenant-default", name: "A4 · 3 × 8 · 70 × 37 mm", pageSize: "A4", columns: 3, rows: 8, labelWidthMm: 70, labelHeightMm: 37, marginTopMm: 0.5, marginRightMm: 0, marginBottomMm: 0.5, marginLeftMm: 0, horizontalGapMm: 0, verticalGapMm: 0, builtIn: false }, extraSheetProfiles: [] });
   const [preview, setPreview] = useState<LabelTemplatePreview | null>(null);
   const [loading, setLoading] = useState(!isNew);
   const [busy, setBusy] = useState(false);
@@ -111,7 +114,7 @@ export function Component() {
         layoutKind: draft.layoutKind, layout: draft.layout,
         staticText: draft.staticText.split("\n").map((value) => value.trim()).filter(Boolean),
         bindings: draft.bindings, symbology: draft.symbology, previewSampleUnitId: draft.previewSampleUnitId,
-        regulated: draft.regulated,
+        regulated: draft.regulated, widthMm: draft.widthMm, heightMm: draft.heightMm, dpiHint: draft.dpiHint,
       };
       const result = await labelsApi.saveDraft(templateId, body);
       const next = await labelsApi.template(templateId);
@@ -158,7 +161,7 @@ export function Component() {
     </div><div className="actions">
       {!isNew && !newVersion && selected?.status !== "draft" && canEdit && <button type="button" className="btn" onClick={startVersion}>New draft</button>}
       {canEdit && <button type="button" className="btn" disabled={!selected || dirty || busy || !previewSampleUnitId} onClick={() => void renderPreview()}>Preview on sample</button>}
-      {editable && <button type="button" className="btn" disabled={busy || !draft.name.trim() || !draft.appliesToValue.trim() || !draft.effectiveFrom || !draft.layout.trim() || missingBindings.length > 0} onClick={() => void save()}>{busy ? "Saving…" : "Save draft"}</button>}
+      {editable && <button type="button" className="btn" disabled={busy || !draft.name.trim() || !draft.appliesToValue.trim() || !draft.effectiveFrom || !draft.layout.trim() || missingBindings.length > 0 || (draft.layoutKind === "html" && (!draft.widthMm || !draft.heightMm))} onClick={() => void save()}>{busy ? "Saving…" : "Save draft"}</button>}
       {canEdit && selected?.status === "draft" && <span className="label-activation"><button type="button" className="btn primary" disabled={busy || activationBlocks.length > 0} title={activationBlocks.join(" ")} onClick={() => void run(() => labelsApi.activate(selected.templateVersionId))}><Icon name="check" />Activate</button>{activationBlocks.length > 0 && <span className="hint" role="status">{activationBlocks.join(" ")}</span>}</span>}
       {canEdit && selected?.status === "active" && <button type="button" className="btn" disabled={busy} onClick={() => void run(() => labelsApi.retire(selected.templateVersionId))}>Retire</button>}
     </div></div>
@@ -175,7 +178,7 @@ export function Component() {
           {draft.appliesTo === "item_family" ? <ItemFamilyField id="label-applies-to-value" label="Value" value={draft.appliesToValue || null} onChange={(value) => change({ appliesToValue: value ?? "" })} /> : <label className="field"><span className="lbl">Value</span><input className="input" value={draft.appliesToValue} onChange={(event) => change({ appliesToValue: event.target.value })} placeholder="internal_serial" /></label>}
         </div></section>}
 
-        <section className="card" aria-labelledby="label-layout"><div className="card-header"><h2 id="label-layout">Layout</h2><div className="segmented plain" role="group" aria-label="Layout kind"><button type="button" aria-pressed={draft.layoutKind === "zpl"} disabled={!editable} onClick={() => change({ layoutKind: "zpl" })}>ZPL</button><button type="button" aria-pressed={draft.layoutKind === "html"} disabled={!editable} onClick={() => change({ layoutKind: "html" })}>HTML</button></div></div><div className="card-body stack label-layout-stack">
+        <section className="card" aria-labelledby="label-layout"><div className="card-header"><h2 id="label-layout">Layout</h2><div className="segmented plain" role="group" aria-label="Layout kind"><button type="button" aria-pressed={draft.layoutKind === "zpl"} disabled={!editable} onClick={() => change({ layoutKind: "zpl" })}>ZPL</button><button type="button" aria-pressed={draft.layoutKind === "html"} disabled={!editable} onClick={() => change({ layoutKind: "html", widthMm: draft.widthMm ?? 70, heightMm: draft.heightMm ?? 37 })}>HTML</button></div></div><div className="card-body stack label-layout-stack">
           <label className="field"><span className="lbl">Editable source</span><textarea className="textarea label-layout-input mono" spellCheck={false} value={draft.layout} disabled={!editable} onChange={(event) => change({ layout: event.target.value })} /></label>
           <div className="field"><span className="label">Read-only mirror · placeholders and legal phrase hits</span><pre className="code label-layout-mirror" aria-label="Highlighted layout mirror">{segments.map((segment, index) => <span key={`${segment.kind}-${index}`} className={segment.kind === "placeholder" ? "ph" : segment.kind === "phrase" ? "hit" : undefined}>{segment.text}</span>)}</pre></div>
           <span className="hint">Placeholders use {"{{name}}"} and bind only to the fixed server catalogue. The mirror highlights configured legal-review phrases without changing the source.</span>
@@ -193,8 +196,8 @@ export function Component() {
 
       <div className="stack">
         <section className="card" aria-labelledby="label-preview"><div className="card-header"><h2 id="label-preview">Preview</h2><span className="meta">{preview ? "saved draft rendered" : "choose a sample unit"}</span></div><div className="card-body label-preview-body">
-          <div className="label-preview-box" role="img" aria-label="Label preview">{preview?.barcode ? <img className="label-barcode" src={preview.barcode.dataUrl} alt={`${humanise(preview.barcode.symbology)} for ${preview.barcode.content}`} /> : <><span className="label-barcode-placeholder" aria-hidden="true">2D</span><span>{preview?.renderedPayload ?? "Save the draft, choose a sample unit, then preview."}</span></>}</div>
-          <span className="hint label-preview-caption">{preview?.barcode ? `${humanise(preview.barcode.symbology)} · ${preview.barcode.content}.` : "Preview a sample unit to draw its barcode."} Printer ZPL remains available in the stored payload; the printer draws its own symbol.</span>
+          <div className={`label-preview-box${draft.layoutKind === "html" ? " true-scale" : ""}`} style={draft.layoutKind === "html" && draft.widthMm && draft.heightMm ? { width: `${draft.widthMm}mm`, height: `${draft.heightMm}mm` } : undefined} role="img" aria-label="Label preview">{draft.layoutKind === "html" && preview?.renderedPayload ? <iframe className="label-html-preview" title="Rendered HTML label" sandbox="" srcDoc={`<!doctype html><html><head><style>html,body{margin:0;width:100%;height:100%}*{box-sizing:border-box}</style></head><body>${preview.renderedPayload}</body></html>`} /> : preview?.barcode ? <img className="label-barcode" src={preview.barcode.dataUrl} alt={`${humanise(preview.barcode.symbology)} for ${preview.barcode.content}`} /> : <><span className="label-barcode-placeholder" aria-hidden="true">2D</span><span>{preview?.renderedPayload ?? "Save the draft, choose a sample unit, then preview."}</span></>}</div>
+          <span className="hint label-preview-caption">{draft.layoutKind === "html" ? `Shown at ${draft.widthMm ?? "—"} × ${draft.heightMm ?? "—"} mm using CSS physical units.` : "ZPL is stored for a future network label printer and cannot be downloaded as PDF."}</span>
           {preview?.rejectionReason && <div className="note bad"><strong>Preview rejected.</strong>&nbsp;{preview.rejectionReason}</div>}
         </div></section>
 
@@ -202,6 +205,8 @@ export function Component() {
           <div className="kv wide"><span className="k">Applies to</span><span className="v">{humanise(draft.appliesTo)} · {draft.appliesToValue ? draft.appliesTo === "item_family" ? itemFamilies.name(draft.appliesToValue) : humanise(draft.appliesToValue) : "not set"}</span></div>
           <UnitField id="label-sample-unit" label="Sample unit" value={previewSampleUnitId} onChange={(value) => { setPreviewSampleUnitId(value); setPreview(null); if (editable) change({ previewSampleUnitId: value }); }} hint={editable ? "Saved with this draft" : "Changes this preview only; the active version remains immutable"} optional />
           <label className="field"><span className="lbl">Symbology</span><select className="select" value={draft.symbology} disabled={!editable} onChange={(event) => change({ symbology: event.target.value as DraftState["symbology"] })}><option value="datamatrix">Data Matrix · recommended</option><option value="code128">Code 128 · recommended</option><option value="qr">QR</option><option value="code39">Code 39</option></select></label>
+          <div className="form-grid"><label className="field"><span className="lbl">Width · mm</span><input className="input" type="number" min={10} max={200} step="0.1" required={draft.layoutKind === "html"} value={draft.widthMm ?? ""} disabled={!editable} onChange={(event) => change({ widthMm: event.target.value ? Number(event.target.value) : null })} /></label><label className="field"><span className="lbl">Height · mm</span><input className="input" type="number" min={10} max={200} step="0.1" required={draft.layoutKind === "html"} value={draft.heightMm ?? ""} disabled={!editable} onChange={(event) => change({ heightMm: event.target.value ? Number(event.target.value) : null })} /></label></div>
+          <label className="field"><span className="lbl">DPI hint <span className="hint">· optional, for a future network printer</span></span><input className="input" type="number" min={50} max={1200} value={draft.dpiHint ?? ""} disabled={!editable} onChange={(event) => change({ dpiHint: event.target.value ? Number(event.target.value) : null })} /></label>
           <label className="check-setting"><input type="checkbox" checked={draft.regulated} disabled={!editable} onChange={(event) => change({ regulated: event.target.checked })} /><span><strong>Regulated label</strong><span className="help">Requires independent legal-review approval before activation.</span></span></label>
           <div className="form-grid"><label className="field"><span className="lbl">Effective from</span><input type="datetime-local" className="input" value={draft.effectiveFrom} disabled={!editable} onChange={(event) => change({ effectiveFrom: event.target.value })} /></label><label className="field"><span className="lbl">Effective to <span className="hint">· optional</span></span><input type="datetime-local" className="input" value={draft.effectiveTo} disabled={!editable} onChange={(event) => change({ effectiveTo: event.target.value })} /></label></div>
         </div></section>
@@ -221,12 +226,12 @@ export function Component() {
 }
 
 function emptyDraft(time: TenantTimeFormatter): DraftState {
-  return { name: "", appliesTo: "item_family", appliesToValue: "", effectiveFrom: time.localInput(new Date().toISOString()), effectiveTo: "", layoutKind: "zpl", layout: DEFAULT_LAYOUT, staticText: "", bindings: [{ placeholder: "serial", fieldPath: "identifier.internal_serial", required: true }, { placeholder: "item_name", fieldPath: "item.name", required: true }], symbology: "datamatrix", previewSampleUnitId: null, regulated: false };
+  return { name: "", appliesTo: "item_family", appliesToValue: "", effectiveFrom: time.localInput(new Date().toISOString()), effectiveTo: "", layoutKind: "html", layout: DEFAULT_LAYOUT, staticText: "", bindings: [{ placeholder: "serial", fieldPath: "identifier.internal_serial", required: true }, { placeholder: "item_name", fieldPath: "item.name", required: true }], symbology: "datamatrix", previewSampleUnitId: null, regulated: false, widthMm: 70, heightMm: 37, dpiHint: null };
 }
 
 function fromVersion(detail: LabelTemplateDetail | null, version: LabelTemplateVersion | null, time: TenantTimeFormatter): DraftState {
   if (!detail && !version) return emptyDraft(time);
-  return { name: detail?.name ?? "", appliesTo: detail?.appliesTo ?? "item_family", appliesToValue: detail?.appliesToValue ?? "", effectiveFrom: time.localInput(version?.effectiveFrom ?? new Date().toISOString()), effectiveTo: version?.effectiveTo ? time.localInput(version.effectiveTo) : "", layoutKind: version?.layoutKind ?? "zpl", layout: version?.layout ?? DEFAULT_LAYOUT, staticText: version?.staticText.join("\n") ?? "", bindings: version?.bindings.map((binding) => ({ ...binding })) ?? [], symbology: version?.symbology ?? "datamatrix", previewSampleUnitId: version?.previewSampleUnitId ?? null, regulated: version?.regulated ?? false };
+  return { name: detail?.name ?? "", appliesTo: detail?.appliesTo ?? "item_family", appliesToValue: detail?.appliesToValue ?? "", effectiveFrom: time.localInput(version?.effectiveFrom ?? new Date().toISOString()), effectiveTo: version?.effectiveTo ? time.localInput(version.effectiveTo) : "", layoutKind: version?.layoutKind ?? "html", layout: version?.layout ?? DEFAULT_LAYOUT, staticText: version?.staticText.join("\n") ?? "", bindings: version?.bindings.map((binding) => ({ ...binding })) ?? [], symbology: version?.symbology ?? "datamatrix", previewSampleUnitId: version?.previewSampleUnitId ?? null, regulated: version?.regulated ?? false, widthMm: version?.widthMm ?? 70, heightMm: version?.heightMm ?? 37, dpiHint: version?.dpiHint ?? null };
 }
 
 function updateBinding(bindings: readonly LabelBinding[], index: number, patch: Partial<LabelBinding>): LabelBinding[] {

@@ -4786,6 +4786,10 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnName("content_hash")
                         .IsFixedLength();
 
+                    b.Property<int?>("DpiHint")
+                        .HasColumnType("int")
+                        .HasColumnName("dpi_hint");
+
                     b.Property<DateTime>("EffectiveFrom")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("effective_from");
@@ -4793,6 +4797,11 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.Property<DateTime?>("EffectiveTo")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("effective_to");
+
+                    b.Property<decimal?>("HeightMm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)")
+                        .HasColumnName("height_mm");
 
                     b.Property<string>("Layout")
                         .IsRequired()
@@ -4909,6 +4918,11 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("int")
                         .HasColumnName("version");
 
+                    b.Property<decimal?>("WidthMm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)")
+                        .HasColumnName("width_mm");
+
                     b.HasKey("TenantId", "TemplateVersionId")
                         .HasName("pk_label_template_version");
 
@@ -4928,9 +4942,13 @@ namespace Yojana.Serialisation.Data.Migrations
 
                             t.HasCheckConstraint("ck_label_template_version_command_ids_json", "ISJSON(command_ids) = 1");
 
+                            t.HasCheckConstraint("ck_label_template_version_dpi_hint", "dpi_hint IS NULL OR dpi_hint BETWEEN 50 AND 1200");
+
                             t.HasCheckConstraint("ck_label_template_version_effective", "effective_to IS NULL OR effective_to > effective_from");
 
                             t.HasCheckConstraint("ck_label_template_version_layout_kind", "layout_kind IN ('zpl', 'html')");
+
+                            t.HasCheckConstraint("ck_label_template_version_size", "(layout_kind = 'html' AND width_mm BETWEEN 10 AND 200 AND height_mm BETWEEN 10 AND 200) OR (layout_kind = 'zpl' AND ((width_mm IS NULL AND height_mm IS NULL) OR (width_mm BETWEEN 10 AND 200 AND height_mm BETWEEN 10 AND 200)))");
 
                             t.HasCheckConstraint("ck_label_template_version_static_text_json", "ISJSON(static_text) = 1");
 
@@ -5956,6 +5974,16 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("confirmed_at");
 
+                    b.Property<int>("Copies")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(1)
+                        .HasColumnName("copies");
+
+                    b.Property<DateTime?>("DownloadedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("downloaded_at");
+
                     b.Property<string>("EmptyRequiredField")
                         .HasMaxLength(100)
                         .IsUnicode(false)
@@ -5980,6 +6008,12 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.Property<Guid?>("OriginalJobId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("original_job_id");
+
+                    b.Property<string>("OutputFormat")
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("output_format");
 
                     b.Property<string>("PayloadHash")
                         .HasMaxLength(64)
@@ -6012,6 +6046,11 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("rendered_payload");
 
+                    b.Property<string>("ReprintReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("reprint_reason");
+
                     b.Property<DateTime>("RequestedAt")
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("requested_at");
@@ -6031,9 +6070,23 @@ namespace Yojana.Serialisation.Data.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasColumnName("sent_at");
 
+                    b.Property<string>("SheetProfileId")
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("sheet_profile_id");
+
                     b.Property<Guid?>("SourceEventId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("source_event_id");
+
+                    b.Property<int?>("StartColumn")
+                        .HasColumnType("int")
+                        .HasColumnName("start_column");
+
+                    b.Property<int?>("StartRow")
+                        .HasColumnType("int")
+                        .HasColumnName("start_row");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -6099,7 +6152,11 @@ namespace Yojana.Serialisation.Data.Migrations
 
                     b.ToTable("print_job", "serialisation", t =>
                         {
-                            t.HasCheckConstraint("ck_print_job_status", "status IN ('rendered', 'sent', 'confirmed', 'rejected')");
+                            t.HasCheckConstraint("ck_print_job_copies", "copies BETWEEN 1 AND 100");
+
+                            t.HasCheckConstraint("ck_print_job_output_format", "output_format IS NULL OR output_format IN ('sheet', 'one_per_page')");
+
+                            t.HasCheckConstraint("ck_print_job_status", "status IN ('rendered', 'sent', 'confirmed', 'downloaded', 'rejected')");
                         });
                 });
 

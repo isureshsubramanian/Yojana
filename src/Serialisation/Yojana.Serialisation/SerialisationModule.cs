@@ -180,7 +180,11 @@ public static class SerialisationModule
         builder.Services.AddScoped<LabelRenderer>();
         builder.Services.AddScoped<LabelPrintService>();
         builder.Services.AddScoped<LabelQueries>();
-        builder.Services.TryAddSingleton<ILabelPrinterPort, UnavailableLabelPrinterPort>();
+        builder.Services.AddSingleton<UnavailableLabelPrinterPort>();
+        builder.Services.AddScoped<PdfDownloadLabelPrinterPort>();
+        builder.Services.AddScoped<TenantConfiguredLabelPrinterPort>();
+        builder.Services.TryAddScoped<ILabelPrinterPort>(services =>
+            services.GetRequiredService<TenantConfiguredLabelPrinterPort>());
         builder.Services.TryAddSingleton<IBarcodeEncoder, ZxingBarcodeEncoder>();
         builder.Services.TryAddSingleton<Yojana.Platform.Contracts.Security.IQrCodeRenderer, QrCodeRenderer>();
         builder.Services.TryAddSingleton<ILabelLookupUrlBuilder>(new LabelLookupUrlBuilder(

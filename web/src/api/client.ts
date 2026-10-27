@@ -66,6 +66,30 @@ export async function api<T>(path: string, init?: {
   return (await response.json()) as T;
 }
 
+export interface ApiFile { blob: Blob; fileName: string; htmlFallback: boolean }
+
+/** Same checked error path as JSON calls, but preserves a server-generated download without base64 wrapping. */
+export async function apiFile(path: string, body: unknown): Promise<ApiFile> {
+  const response = await fetch(path, {
+    method: "POST", credentials: "same-origin",
+    headers: { accept: "application/pdf,text/html", "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const problem = await describe(response);
+    throw new ApiError(response.status, problem.message, problem.title, problem.detail, problem.rule,
+      problem.unblockingStep, problem.changedBy, problem.changedAt, problem.reasons, problem.openRules, problem.blockers);
+  }
+  const disposition = response.headers.get("content-disposition") ?? "";
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  const plain = disposition.match(/filename="?([^";]+)"?/i)?.[1];
+  return {
+    blob: await response.blob(),
+    fileName: encoded ? decodeURIComponent(encoded) : plain ?? "labels.pdf",
+    htmlFallback: response.headers.get("X-Yojana-Render") === "html-fallback",
+  };
+}
+
 /** Rule carried by the ApiError thrown when a 2xx response does not match its schema (ADR-0019 Q3). */
 export const unexpectedResponseRule = "unexpected_response";
 

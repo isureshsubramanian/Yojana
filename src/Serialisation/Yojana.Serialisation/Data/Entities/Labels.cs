@@ -32,6 +32,9 @@ public sealed class LabelTemplateVersion : ITenantScoped
     public string StaticText { get; set; } = "[]";
     public string Bindings { get; set; } = "[]";
     public required string Symbology { get; set; }
+    public decimal? WidthMm { get; set; }
+    public decimal? HeightMm { get; set; }
+    public int? DpiHint { get; set; }
     public Guid? PreviewSampleUnitId { get; set; }
     public DateTime? PreviewedAt { get; set; }
     public string? PreviewedBy { get; set; }
@@ -85,5 +88,12 @@ public sealed class PrintJob : ITenantScoped
     public DateTime? RenderedAt { get; set; }
     public DateTime? SentAt { get; set; }
     public DateTime? ConfirmedAt { get; set; }
+    public DateTime? DownloadedAt { get; set; }
+    public string? OutputFormat { get; set; }
+    public string? SheetProfileId { get; set; }
+    public int? StartRow { get; set; }
+    public int? StartColumn { get; set; }
+    public int Copies { get; set; } = 1;
+    public string? ReprintReason { get; set; }
     public Guid? LedgerEventId { get; set; }
 }

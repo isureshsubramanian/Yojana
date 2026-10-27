@@ -16,4 +16,10 @@ public sealed class InMemoryLabelPrinterPort : ILabelPrinterPort
         sent.TryAdd(request.JobId, request);
         return Task.FromResult(new LabelPrinterReceipt(true, $"memory:{request.JobId:N}"));
     }
+
+    public Task<LabelPrinterReceipt> SendBatchAsync(LabelPrinterBatchRequest request, CancellationToken cancellationToken)
+    {
+        foreach (var label in request.Labels) sent.TryAdd(label.JobId, label);
+        return Task.FromResult(new LabelPrinterReceipt(true, $"memory:batch:{request.Labels.Count}"));
+    }
 }

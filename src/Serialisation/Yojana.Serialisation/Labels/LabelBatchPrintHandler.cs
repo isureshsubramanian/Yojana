@@ -64,7 +64,8 @@ public static class LabelBatchPrintHandler
                      select new { current.UnitId, @event.LegalEntityId })
                 .ToDictionaryAsync(row => row.UnitId, row => row.LegalEntityId, cancellationToken);
 
-        var outcomes = new List<LabelBatchPrintOutcome>(serials.Count);
+        var jobs = new List<PrintJob>(serials.Count);
+        var prepared = new List<PreparedLabelPrint>(serials.Count);
         for (var sequence = 0; sequence < serials.Count; sequence++)
         {
             var serial = serials[sequence];
@@ -79,23 +80,25 @@ public static class LabelBatchPrintHandler
                 var jobNumber = await numbers.NextAsync(DocumentNumbers.PrintJob, command.PrintAt, cancellationToken);
                 var rejected = Rejected(command, tenantId, sequence, serial, jobNumber, rule, reason);
                 db.PrintJobs.Add(rejected);
-                outcomes.Add(Outcome(rejected));
+                jobs.Add(rejected);
                 continue;
             }
 
             var match = matches.First(row => row.UnitId == unitIds[0]);
             if (!legalEntities.TryGetValue(match.UnitId, out var legalEntityId))
                 throw new CommandRefusedException("label_batch_unit_has_no_ledger", $"Serial '{serial}' resolves to a unit with no ledger history.");
-            var result = await prints.PrintAsync(new PrintLabel(ChildCommandId(command.CommandId, sequence),
+            var print = await prints.PrepareAsync(new PrintLabel(ChildCommandId(command.CommandId, sequence),
                 match.UnitId, null, match.IdentifierId, command.PrinterRef, command.PrintAt, legalEntityId,
                 command.ActorRef, TemplateVersionId: command.TemplateVersionId, BatchCommandId: command.CommandId,
-                BatchSequence: sequence, RequestedSerial: serial), cancellationToken);
-            outcomes.Add(new(serial, match.UnitId, result.JobId, result.Status, result.RejectionRule,
-                result.RejectionReason, result.EmptyRequiredField));
+                BatchSequence: sequence, RequestedSerial: serial, PrintLayout: command.PrintLayout), cancellationToken);
+            prepared.Add(print);
+            jobs.Add(print.Job);
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        return new(command.CommandId, outcomes, false);
+        var receipt = await prints.SendBatchAsync(prepared, cancellationToken);
+        return new(command.CommandId, jobs.OrderBy(row => row.BatchSequence).Select(Outcome).ToList(), false,
+            receipt?.Download);
     }
 
     private static PrintJob Rejected(BatchPrintLabels command, TenantId tenantId, int sequence, string serial,

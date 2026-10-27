@@ -1,13 +1,29 @@
 namespace Yojana.Serialisation.Contracts;
 
-public sealed record LabelPrinterRequest(Guid JobId, string PrinterRef, string LayoutKind, string Payload, string PayloadHash);
+public sealed record LabelPrinterRequest(
+    Guid JobId,
+    string PrinterRef,
+    string LayoutKind,
+    string Payload,
+    string PayloadHash,
+    decimal? WidthMm = null,
+    decimal? HeightMm = null,
+    LabelPrintLayout? PrintLayout = null,
+    LabelSheetProfile? SheetProfile = null);
 
-public sealed record LabelPrinterReceipt(bool Confirmed, string? Reference = null, string? RejectionReason = null);
+public sealed record LabelPrinterBatchRequest(IReadOnlyList<LabelPrinterRequest> Labels);
+
+public sealed record LabelPrinterReceipt(
+    bool Confirmed,
+    string? Reference = null,
+    string? RejectionReason = null,
+    LabelDownload? Download = null);
 
 /// <summary>Printer integration boundary. Implementations must de-duplicate by <see cref="LabelPrinterRequest.JobId"/>.</summary>
 public interface ILabelPrinterPort
 {
     Task<LabelPrinterReceipt> SendAsync(LabelPrinterRequest request, CancellationToken cancellationToken);
+    Task<LabelPrinterReceipt> SendBatchAsync(LabelPrinterBatchRequest request, CancellationToken cancellationToken);
 }
 
 public sealed record BarcodeEncoding(

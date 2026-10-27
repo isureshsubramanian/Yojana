@@ -85,6 +85,9 @@ public static class LabelTemplateHandler
         version.StaticText = JsonSerializer.Serialize(staticText, LedgerJson.Options);
         version.Bindings = JsonSerializer.Serialize(command.Bindings, LedgerJson.Options);
         version.Symbology = command.Symbology;
+        version.WidthMm = command.WidthMm;
+        version.HeightMm = command.HeightMm;
+        version.DpiHint = command.DpiHint;
         version.PreviewSampleUnitId = command.PreviewSampleUnitId;
         version.LegalReview = legalReview;
         version.Regulated = command.Regulated;

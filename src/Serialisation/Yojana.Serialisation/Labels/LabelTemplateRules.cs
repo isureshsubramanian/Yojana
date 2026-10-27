@@ -19,6 +19,15 @@ internal static partial class LabelTemplateRules
     {
         var errors = new List<string>();
         if (!LabelLayoutKind.All.Contains(command.LayoutKind)) errors.Add($"layout kind '{command.LayoutKind}' is unknown");
+        if (command.LayoutKind == LabelLayoutKind.Html
+            && (command.WidthMm is < 10 or > 200 || command.HeightMm is < 10 or > 200))
+            errors.Add("HTML label width and height are required and must each be between 10 and 200 mm");
+        if (command.LayoutKind == LabelLayoutKind.Zpl
+            && (command.WidthMm is not null || command.HeightMm is not null)
+            && (command.WidthMm is < 10 or > 200 || command.HeightMm is < 10 or > 200))
+            errors.Add("when supplied, label width and height must both be between 10 and 200 mm");
+        if (command.DpiHint is < 50 or > 1200)
+            errors.Add("DPI hint must be between 50 and 1200");
         if (!LabelSymbology.All.Contains(command.Symbology)) errors.Add($"symbology '{command.Symbology}' is unknown");
         if (string.IsNullOrWhiteSpace(command.Layout)) errors.Add("layout is required");
         if (command.Layout.Length > 100_000) errors.Add("layout cannot exceed 100000 characters");
@@ -62,6 +71,9 @@ internal static partial class LabelTemplateRules
         command.StaticText,
         command.Bindings,
         command.Symbology,
+        command.WidthMm,
+        command.HeightMm,
+        command.DpiHint,
         command.PreviewSampleUnitId,
         command.Regulated,
     }, LedgerJson.Options));

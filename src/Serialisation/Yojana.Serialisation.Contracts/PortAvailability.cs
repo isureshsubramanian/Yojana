@@ -36,6 +36,7 @@ public static class SerialisationUnavailableCodes
     public const string StockReclassificationUnavailable = "stock_reclassification_unavailable";
     public const string StockUnitEventUnavailable = "stock_unit_event_unavailable";
     public const string LabelPrinterNotConfigured = "label_printer_not_configured";
+    public const string LabelLayoutNeedsNetworkPrinter = "label_layout_needs_network_printer";
     public const string SerialSchemeNotConfigured = "serial_scheme_not_configured";
     public const string ItemFamilyUnavailable = "item_family_unavailable";
     public const string PartyContactUnavailable = "party_contact_unavailable";

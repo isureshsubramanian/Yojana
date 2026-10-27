@@ -16,21 +16,20 @@ namespace Yojana.Integration.DatabaseTests;
 public sealed class SerialisationPortStartupTests(IntegrationHostFixture fixture)
 {
     [DatabaseFact]
-    public async Task Production_host_starts_without_a_connection_and_refuses_label_printing()
+    public async Task Production_host_lists_the_pdf_label_printer_as_real()
     {
         var logs = new CapturingLoggerProvider();
         using var host = BuildProductionHost(logs);
 
         await host.StartAsync();
 
-        Assert.Contains("Port check: 27 ports. Real 11, Unavailable 16, development-only 0.", logs.Messages);
+        Assert.Contains("Port check: 27 ports. Real 12, Unavailable 15, development-only 0.", logs.Messages);
         using var scope = host.Services.CreateScope();
-        var refusal = await Assert.ThrowsAsync<CommandRefusedException>(() =>
-            scope.ServiceProvider.GetRequiredService<ILabelPrinterPort>().SendAsync(
-                new LabelPrinterRequest(Guid.CreateVersion7(), "site-printer", "zpl", "payload", "hash"),
-                CancellationToken.None));
-        Assert.Equal(SerialisationUnavailableCodes.LabelPrinterNotConfigured, refusal.Rule);
-        Assert.Equal("Label printing is not set up for this site", refusal.Message);
+        var row = Assert.Single(PortInventory.Inspect(scope.ServiceProvider).Rows,
+            candidate => candidate.PortType == typeof(ILabelPrinterPort));
+        Assert.Equal(typeof(Yojana.Serialisation.Labels.TenantConfiguredLabelPrinterPort), row.ImplementationType);
+        Assert.Null(row.UnavailableCode);
+        Assert.False(row.DevelopmentOnly);
 
         await host.StopAsync();
     }

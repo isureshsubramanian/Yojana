@@ -9,10 +9,13 @@ using Xunit;
 using Yojana.Platform.Contracts.Security;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
+using Yojana.Serialisation.Claims;
 using Yojana.Serialisation.Data;
 using Yojana.Serialisation.Data.Migrations;
 using Yojana.Serialisation.Entitlements;
+using Yojana.Serialisation.Identity;
 using Yojana.Serialisation.Labels;
+using Yojana.Serialisation.Ledger;
 using Yojana.Serialisation.Ports;
 
 namespace Yojana.Serialisation.DatabaseTests;
@@ -69,13 +72,15 @@ public sealed class LabelTests(SerialisationHostFixture fixture)
 
     private async Task<(Guid TemplateId, Guid VersionId)> ActiveTemplateAsync(TenantId tenant, Guid sampleUnit,
         string name, string appliesTo, string appliesToValue, string layout, IReadOnlyList<LabelBinding> bindings,
-        string symbology = LabelSymbology.Code128, IReadOnlyList<string>? staticText = null, bool regulated = false)
+        string symbology = LabelSymbology.Code128, IReadOnlyList<string>? staticText = null, bool regulated = false,
+        string layoutKind = LabelLayoutKind.Zpl)
     {
         var template = await InvokeAsync<LabelTemplateCreated>(tenant, new CreateLabelTemplate(Guid.NewGuid(), name,
             appliesTo, appliesToValue, "label.admin"));
         var saved = await InvokeAsync<LabelTemplateVersionSaved>(tenant, new SaveLabelTemplateDraft(Guid.NewGuid(),
-            template.TemplateId, null, At, null, LabelLayoutKind.Zpl, layout, staticText ?? [], bindings, symbology,
-            sampleUnit, regulated, "label.admin"));
+            template.TemplateId, null, At, null, layoutKind, layout, staticText ?? [], bindings, symbology,
+            sampleUnit, regulated, "label.admin", layoutKind == LabelLayoutKind.Html ? 70 : null,
+            layoutKind == LabelLayoutKind.Html ? 37 : null));
         var preview = await InvokeAsync<LabelTemplatePreview>(tenant, new PreviewLabelTemplate(saved.TemplateVersionId,
             sampleUnit, "label.admin"));
         Assert.Null(preview.RejectionReason);
@@ -111,7 +116,7 @@ public sealed class LabelTests(SerialisationHostFixture fixture)
         var printed = await InvokeAsync<LabelPrintResult>(tenant, new PrintLabel(Guid.NewGuid(), unit.UnitId,
             template.TemplateId, null, "service-bench-1", At.AddMinutes(2), Entity, "technician.one"));
         var reprinted = await InvokeAsync<LabelPrintResult>(tenant, new ReprintLabel(Guid.NewGuid(), printed.JobId,
-            "service-bench-1", At.AddMinutes(3), Entity, "technician.one"));
+            "service-bench-1", At.AddMinutes(3), Entity, "technician.one", "replacement label requested"));
 
         Assert.Equal(LabelPrintStatus.Confirmed, printed.Status);
         Assert.Equal(LabelPrintStatus.Confirmed, reprinted.Status);
@@ -148,7 +153,7 @@ public sealed class LabelTests(SerialisationHostFixture fixture)
 
         ports.RegisterZone(issuer, "Europe/London");
         var reprinted = await InvokeAsync<LabelPrintResult>(tenant, new ReprintLabel(Guid.NewGuid(), printed.JobId,
-            "line-1", At.AddMinutes(3), issuer, "label.printer"));
+            "line-1", At.AddMinutes(3), issuer, "label.printer", "time-zone regression proof"));
         var copy = await queries.JobAsync(reprinted.JobId, CancellationToken.None);
         Assert.Equal(original.RenderedPayload, copy!.RenderedPayload);
         Assert.Equal(original.PayloadHash, copy.PayloadHash);
@@ -299,7 +304,7 @@ public sealed class LabelTests(SerialisationHostFixture fixture)
             "Tamper label", LabelTemplateAppliesTo.IdentifierType, IdentifierType.ManufacturerSerial, "label.admin"));
         var saved = await InvokeAsync<LabelTemplateVersionSaved>(tenant, new SaveLabelTemplateDraft(Guid.NewGuid(),
             created.TemplateId, null, At, null, LabelLayoutKind.Html, "<p>{{serial}} Seal Broken</p>", ["Seal Broken"],
-            [new("serial", LabelBindableField.ManufacturerSerial, true)], LabelSymbology.DataMatrix, unit.UnitId, false, "label.admin"));
+            [new("serial", LabelBindableField.ManufacturerSerial, true)], LabelSymbology.DataMatrix, unit.UnitId, false, "label.admin", 70, 37));
         Assert.False(saved.LegalReview);
         Assert.Null((await InvokeAsync<LabelTemplatePreview>(tenant, new PreviewLabelTemplate(saved.TemplateVersionId,
             unit.UnitId, "label.admin"))).RejectionReason);
@@ -327,10 +332,10 @@ public sealed class LabelTests(SerialisationHostFixture fixture)
 
         var avoid = await InvokeAsync<LabelTemplateVersionSaved>(tenant, new SaveLabelTemplateDraft(Guid.NewGuid(),
             created.TemplateId, null, At, null, LabelLayoutKind.Html, "<p>{{serial}} avoid devoid</p>", ["avoid devoid"],
-            [new("serial", LabelBindableField.ManufacturerSerial, true)], LabelSymbology.DataMatrix, unit.UnitId, false, "label.admin"));
+            [new("serial", LabelBindableField.ManufacturerSerial, true)], LabelSymbology.DataMatrix, unit.UnitId, false, "label.admin", 70, 37));
         var hit = await InvokeAsync<LabelTemplateVersionSaved>(tenant, new SaveLabelTemplateDraft(Guid.NewGuid(),
             created.TemplateId, null, At, null, LabelLayoutKind.Html, "<p>{{serial}} warranty void.</p>", ["warranty void."],
-            [new("serial", LabelBindableField.ManufacturerSerial, true)], LabelSymbology.DataMatrix, unit.UnitId, false, "label.admin"));
+            [new("serial", LabelBindableField.ManufacturerSerial, true)], LabelSymbology.DataMatrix, unit.UnitId, false, "label.admin", 70, 37));
 
         Assert.False(avoid.LegalReview);
         Assert.True(hit.LegalReview);
@@ -397,7 +402,7 @@ public sealed class LabelTests(SerialisationHostFixture fixture)
         await InvokeAsync<LabelPrintResult>(tenant, new PrintLabel(Guid.NewGuid(), incomplete.UnitId,
             template.TemplateId, null, "pack-2", At.AddMinutes(3), Entity, "label.printer"));
         await InvokeAsync<LabelPrintResult>(tenant, new ReprintLabel(Guid.NewGuid(), first.JobId,
-            "pack-2", At.AddMinutes(4), Entity, "label.printer"));
+            "pack-2", At.AddMinutes(4), Entity, "label.printer", "damaged sticker"));
         await InvokeAsync<LabelPrintResult>(tenant, new PrintLabel(Guid.NewGuid(), complete.UnitId,
             template.TemplateId, null, "pack-1", At.AddMinutes(5), Entity, "system", Guid.NewGuid()));
 
@@ -512,7 +517,7 @@ public sealed class LabelTests(SerialisationHostFixture fixture)
             newDraft.TemplateVersionId, At.AddDays(3), "label.admin"));
 
         var reprinted = await InvokeAsync<LabelPrintResult>(setup.Tenant, new ReprintLabel(Guid.NewGuid(), printed.JobId,
-            "line-3", At.AddDays(4), Entity, "label.admin"));
+            "line-3", At.AddDays(4), Entity, "label.admin", "replacement copy"));
         Assert.Equal(LabelPrintStatus.Confirmed, reprinted.Status);
         var resent = Assert.Single(printer.Sent, request => request.JobId == reprinted.JobId);
         Assert.Equal(sent.Payload, resent.Payload);
@@ -592,6 +597,64 @@ public sealed class LabelTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Pdf_download_marks_jobs_downloaded_requires_a_reprint_reason_and_batches_in_serial_order()
+    {
+        var tenant = await fixture.NewTenantAsync("labels-pdf");
+        var first = await UnitAsync(tenant, "PDF-A", "PDF-MFG-A");
+        var second = await UnitAsync(tenant, "PDF-B", "PDF-MFG-B", first.ItemId);
+        var template = await ActiveTemplateAsync(tenant, first.UnitId, "70 × 37 mm server label",
+            LabelTemplateAppliesTo.ItemFamily, "systems", "<strong>{{serial}}</strong>",
+            [new("serial", LabelBindableField.InternalSerial, true)], layoutKind: LabelLayoutKind.Html);
+        using var scope = fixture.ScopeFor(tenant);
+        var fake = new RecordingPdfRenderer();
+        await using var renderServices = new ServiceCollection().AddSingleton<IPdfRenderer>(fake).BuildServiceProvider();
+        var settings = scope.ServiceProvider.GetRequiredService<LabelSettings>();
+        var port = new TenantConfiguredLabelPrinterPort(settings, new PdfDownloadLabelPrinterPort(renderServices),
+            new UnavailableLabelPrinterPort());
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var service = new LabelPrintService(db, scope.ServiceProvider.GetRequiredService<ITenantContext>(),
+            scope.ServiceProvider.GetRequiredService<LabelRenderer>(), port,
+            scope.ServiceProvider.GetRequiredService<IUnitEventWriter>(),
+            scope.ServiceProvider.GetRequiredService<IItemQueryPort>(),
+            scope.ServiceProvider.GetRequiredService<DocumentNumbers>(), settings);
+        var onePerPage = new LabelPrintLayout(LabelOutputFormat.OnePerPage, Copies: 1);
+
+        var downloaded = await service.PrintAsync(new PrintLabel(Guid.NewGuid(), first.UnitId, template.TemplateId,
+            null, LabelPrinterAdapter.PdfDownload, At.AddMinutes(2), Entity, "label.printer",
+            PrintLayout: onePerPage), CancellationToken.None);
+
+        Assert.Equal(LabelPrintStatus.Downloaded, downloaded.Status);
+        Assert.StartsWith("%PDF-", System.Text.Encoding.ASCII.GetString(downloaded.Download!.Bytes), StringComparison.Ordinal);
+        var stored = await db.PrintJobs.SingleAsync(row => row.JobId == downloaded.JobId);
+        Assert.NotNull(stored.DownloadedAt);
+        Assert.Null(stored.ConfirmedAt);
+        var missingReason = await Assert.ThrowsAsync<CommandRefusedException>(() => service.ReprintAsync(
+            new ReprintLabel(Guid.NewGuid(), downloaded.JobId, null, At.AddMinutes(3), Entity, "label.printer"),
+            CancellationToken.None));
+        Assert.Equal("label_reprint_reason_required", missingReason.Rule);
+        var reprint = await service.ReprintAsync(new ReprintLabel(Guid.NewGuid(), downloaded.JobId, null,
+            At.AddMinutes(3), Entity, "label.printer", "damaged during application"), CancellationToken.None);
+        Assert.Equal(LabelPrintStatus.Downloaded, reprint.Status);
+        Assert.Equal("damaged during application", (await db.PrintJobs.SingleAsync(row => row.JobId == reprint.JobId)).ReprintReason);
+
+        var beforeBatchCalls = fake.Requests.Count;
+        var batch = await LabelBatchPrintHandler.Handle(new BatchPrintLabels(Guid.NewGuid(), template.VersionId,
+                LabelPrinterAdapter.PdfDownload, ["PDF-A-INT", "PDF-B-INT"], At.AddMinutes(4), "label.printer",
+                new LabelPrintLayout(LabelOutputFormat.Sheet, "a4-3x8-70x37", 1, 1, 1)), db, service,
+            scope.ServiceProvider.GetRequiredService<IIdentifierPolicySource>(),
+            scope.ServiceProvider.GetRequiredService<ITenantContext>(),
+            scope.ServiceProvider.GetRequiredService<DocumentNumbers>(), CancellationToken.None);
+
+        Assert.Equal(2, batch.Outcomes.Count);
+        Assert.All(batch.Outcomes, outcome => Assert.Equal(LabelPrintStatus.Downloaded, outcome.Status));
+        Assert.NotNull(batch.Download);
+        Assert.Equal(beforeBatchCalls + 1, fake.Requests.Count);
+        var batchHtml = fake.Requests[^1].Html;
+        Assert.True(batchHtml.IndexOf("PDF-A-INT", StringComparison.Ordinal)
+            < batchHtml.IndexOf("PDF-B-INT", StringComparison.Ordinal));
+    }
+
+    [DatabaseFact]
     public void Print_job_migration_backfills_in_tenant_year_order_with_the_security_policy_bounded()
     {
         var migration = new TestableP6Polish();
@@ -655,6 +718,17 @@ public sealed class LabelTests(SerialisationHostFixture fixture)
     private sealed record UnitConsistency(Guid? OwnerEpisodeId, Guid CustodyEpisodeId, string? CustodyLocationKind,
         IReadOnlyList<Yojana.Serialisation.Data.Entities.Entitlement> Entitlements, IReadOnlyList<Guid> IdentifierIds,
         IReadOnlyList<string> LabelEvents);
+
+    private sealed class RecordingPdfRenderer : IPdfRenderer
+    {
+        public List<PdfRenderRequest> Requests { get; } = [];
+
+        public Task<byte[]> RenderAsync(PdfRenderRequest request, CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            return Task.FromResult(System.Text.Encoding.ASCII.GetBytes("%PDF-1.7 test label document"));
+        }
+    }
 
     private sealed class TestableP6Polish : P6Polish
     {

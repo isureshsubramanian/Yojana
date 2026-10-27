@@ -14,6 +14,8 @@
 .label-empty-row { height: 72px !important; text-align: center !important; }
 .label-preview-body { display: grid; justify-items: stretch; gap: 12px; }
 .label-preview-box { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 16px; align-items: center; min-height: 180px; padding: 16px; border: 1px dashed var(--border-strong); border-radius: var(--radius-s); background: var(--surface-1); color: var(--text-1); }
+.label-preview-box.true-scale { min-height: 0; max-width: 100%; padding: 3mm; overflow: hidden; }
+.label-html-preview { width: 100%; height: 100%; border: 0; background: #fff; }
 .label-preview-box pre { margin: 0; min-width: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; font-family: var(--font-mono); font-size: 12px; }
 .label-barcode { width: 72px; height: 72px; image-rendering: pixelated; background: #fff; }
 .label-barcode-placeholder { width: 72px; height: 72px; display: grid; place-items: center; border: 2px solid var(--border-strong); background: var(--surface-2); color: var(--text-3); font-family: var(--font-mono); font-weight: 700; letter-spacing: .08em; }
@@ -31,9 +33,20 @@
 .label-hash { white-space: normal; overflow-wrap: anywhere; }
 .label-phrase-list { display: grid; gap: 12px; }
 .label-phrase-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+.label-sheet-settings { display: grid; gap: 18px; }
+.label-sheet-editor { display: grid; grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); gap: 24px; align-items: start; }
+.label-sheet-editor.compact { padding: 16px; }
+.label-sheet-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.label-sheet-preview { position: relative; width: min(100%, 280px); margin: 0 auto 12px; overflow: hidden; border: 1px solid var(--border-strong); background: var(--surface-2); box-shadow: var(--shadow-sm); }
+.label-sheet-preview span { position: absolute; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.label-profile-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.label-profile-summary { display: grid; gap: 4px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-s); }
+.label-extra-profile { border: 1px solid var(--border); border-radius: var(--radius-s); }
 
 @media (max-width: 960px) {
   .label-job-filters { align-items: stretch; flex-direction: column; }
   .label-printer-filter { min-width: 0; }
   .label-preview-box { grid-template-columns: 1fr; }
+  .label-sheet-editor { grid-template-columns: 1fr; }
+  .label-sheet-fields, .label-profile-list { grid-template-columns: 1fr; }
 }

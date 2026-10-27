@@ -46,7 +46,8 @@ public sealed class LabelQueries(SerialisationDbContext db, ITenantContext tenan
                 own.Count, active?.Version, active?.TemplateVersionId,
                 row.CreatedAt, row.CreatedBy, latest?.Version, latest?.Status, latest?.EffectiveFrom, latest?.EffectiveTo,
                 latest?.LegalReview ?? false, latest?.LegalReviewedBy, latest?.ApprovedAt,
-                own.Sum(version => printedByVersion.GetValueOrDefault(version.TemplateVersionId)));
+                own.Sum(version => printedByVersion.GetValueOrDefault(version.TemplateVersionId)),
+                active?.WidthMm, active?.HeightMm);
         }).ToList();
     }
 
@@ -66,7 +67,7 @@ public sealed class LabelQueries(SerialisationDbContext db, ITenantContext tenan
                 row.PreviewedContentHash == row.ContentHash,
                 !row.LegalReview || row.LegalReviewContentHash == row.ContentHash,
                 !row.Regulated || row.ApprovalContentHash == row.ContentHash,
-                row.Status, row.RecordedAt, row.ActorRef)).ToList());
+                row.Status, row.RecordedAt, row.ActorRef, row.WidthMm, row.HeightMm, row.DpiHint)).ToList());
     }
 
     public async Task<LabelPrintJobPage> JobsAsync(string? status, Guid? templateId, string? find,
@@ -134,12 +135,13 @@ public sealed class LabelQueries(SerialisationDbContext db, ITenantContext tenan
             {
                 Printed = group.Count(row => row.Status != LabelPrintStatus.Rejected),
                 Confirmed = group.Count(row => row.Status == LabelPrintStatus.Confirmed),
+                Downloaded = group.Count(row => row.Status == LabelPrintStatus.Downloaded),
                 Waiting = group.Count(row => row.Status == LabelPrintStatus.Rendered || row.Status == LabelPrintStatus.Sent),
                 Rejected = group.Count(row => row.Status == LabelPrintStatus.Rejected),
                 Reprints = group.Count(row => row.OriginalJobId != null),
                 FromEvents = group.Count(row => row.SourceEventId != null),
             }).SingleOrDefaultAsync(cancellationToken);
-        return new(aggregate?.Printed ?? 0, aggregate?.Confirmed ?? 0, aggregate?.Waiting ?? 0,
+        return new(aggregate?.Printed ?? 0, aggregate?.Confirmed ?? 0, aggregate?.Downloaded ?? 0, aggregate?.Waiting ?? 0,
             aggregate?.Rejected ?? 0, aggregate?.Reprints ?? 0, aggregate?.FromEvents ?? 0, from, to);
     }
 
@@ -183,7 +185,8 @@ public sealed class LabelQueries(SerialisationDbContext db, ITenantContext tenan
             return new LabelPrintJobRow(job.JobId, job.JobNumber, job.TemplateVersionId, job.UnitId, job.IdentifierId, job.OriginalJobId,
                 version?.Name, version?.Version, serialValue, job.RenderedPayload, job.PayloadHash, job.PrinterRef,
                 job.RequestedBy, job.RequestedAt, job.Status, job.RejectionRule, job.RejectionReason,
-                job.EmptyRequiredField, job.SentAt, job.ConfirmedAt, job.SourceEventId);
+                job.EmptyRequiredField, job.SentAt, job.ConfirmedAt, job.SourceEventId, job.DownloadedAt,
+                job.OutputFormat, job.SheetProfileId, job.StartRow, job.StartColumn, job.Copies, job.ReprintReason);
         }).ToList();
     }
 }

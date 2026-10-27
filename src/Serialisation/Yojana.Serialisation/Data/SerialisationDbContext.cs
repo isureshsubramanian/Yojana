@@ -1929,10 +1929,14 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
                 t.HasCheckConstraint("ck_label_template_version_static_text_json", "ISJSON(static_text) = 1");
                 t.HasCheckConstraint("ck_label_template_version_bindings_json", "ISJSON(bindings) = 1");
                 t.HasCheckConstraint("ck_label_template_version_command_ids_json", "ISJSON(command_ids) = 1");
+                t.HasCheckConstraint("ck_label_template_version_size", "(layout_kind = 'html' AND width_mm BETWEEN 10 AND 200 AND height_mm BETWEEN 10 AND 200) OR (layout_kind = 'zpl' AND ((width_mm IS NULL AND height_mm IS NULL) OR (width_mm BETWEEN 10 AND 200 AND height_mm BETWEEN 10 AND 200)))");
+                t.HasCheckConstraint("ck_label_template_version_dpi_hint", "dpi_hint IS NULL OR dpi_hint BETWEEN 50 AND 1200");
             });
             b.HasKey(row => new { row.TenantId, row.TemplateVersionId });
             b.Property(row => row.LayoutKind).HasMaxLength(10).IsUnicode(false);
             b.Property(row => row.Symbology).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.WidthMm).HasPrecision(6, 2);
+            b.Property(row => row.HeightMm).HasPrecision(6, 2);
             b.Property(row => row.Status).HasMaxLength(20).IsUnicode(false);
             b.Property(row => row.ContentHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
             b.Property(row => row.LegalReviewContentHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
@@ -2030,7 +2034,11 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
         modelBuilder.Entity<PrintJob>(b =>
         {
             b.ToTable("print_job", t =>
-                t.HasCheckConstraint("ck_print_job_status", "status IN ('rendered', 'sent', 'confirmed', 'rejected')"));
+            {
+                t.HasCheckConstraint("ck_print_job_status", "status IN ('rendered', 'sent', 'confirmed', 'downloaded', 'rejected')");
+                t.HasCheckConstraint("ck_print_job_output_format", "output_format IS NULL OR output_format IN ('sheet', 'one_per_page')");
+                t.HasCheckConstraint("ck_print_job_copies", "copies BETWEEN 1 AND 100");
+            });
             b.HasKey(row => new { row.TenantId, row.JobId });
             b.Property(row => row.JobNumber).HasMaxLength(32).IsUnicode(false);
             b.Property(row => row.PayloadHash).HasMaxLength(64).IsUnicode(false).IsFixedLength();
@@ -2040,6 +2048,10 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(row => row.Status).HasMaxLength(20).IsUnicode(false);
             b.Property(row => row.RejectionRule).HasMaxLength(100).IsUnicode(false);
             b.Property(row => row.RejectionReason).HasMaxLength(500);
+            b.Property(row => row.OutputFormat).HasMaxLength(20).IsUnicode(false);
+            b.Property(row => row.SheetProfileId).HasMaxLength(100).IsUnicode(false);
+            b.Property(row => row.ReprintReason).HasMaxLength(500);
+            b.Property(row => row.Copies).HasDefaultValue(1);
             b.Property(row => row.EmptyRequiredField).HasMaxLength(100).IsUnicode(false);
             b.HasOne<LabelTemplateVersion>().WithMany().HasForeignKey(row => new { row.TenantId, row.TemplateVersionId }).OnDelete(DeleteBehavior.Restrict);
             b.HasOne<PrintJob>().WithMany().HasForeignKey(row => new { row.TenantId, row.OriginalJobId }).OnDelete(DeleteBehavior.Restrict);
