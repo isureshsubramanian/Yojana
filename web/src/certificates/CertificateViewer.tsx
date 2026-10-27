@@ -13,7 +13,7 @@ import { QuestionsPanel } from "../questions/QuestionsPanel";
 import { RecordQuestionsTabs, useQuestionsTab } from "../questions/RecordQuestionsTabs";
 import { certificateApi } from "./api";
 import { CopyPanel, CorrectionPanel } from "./CertificateCorrection";
-import { correctState, printCopyState, type ActionState } from "./correction";
+import { correctState, currentVersion, printCopyState, type ActionState } from "./correction";
 import { Icon, type IconName } from "../shell/Icons";
 import { useSession } from "../session/session";
 import { certificateEventLabel, formLabel, humanise, shortHash, statusTone } from "./format";
@@ -56,8 +56,9 @@ export function Component() {
   const copyState = printCopyState(roles);
   const correction = correctState(certificate, ownChain, roles);
   const copyName = `${certificate.primarySerial}-${certificate.trackingNumber}-v${certificate.version}-copy.pdf`;
+  const supersededBy = certificate.status === "superseded" ? currentVersion(ownChain, certificate.certificateId) : null;
   const openCopy = () => openDrawer({ eyebrow: "Print copy", title: certificate.trackingNumber, mono: true },
-    <CopyPanel certificateId={certificate.certificateId} fallbackName={copyName} onPrinted={reload} />);
+    <CopyPanel certificateId={certificate.certificateId} fallbackName={copyName} onPrinted={reload} supersededBy={supersededBy} />);
   const openCorrection = () => openDrawer({ eyebrow: `Correct release record · v${certificate.version}`, title: certificate.trackingNumber, mono: true },
     <CorrectionPanel certificateId={certificate.certificateId} onIssued={reload} />);
   const openVersion = (row: CertificateListRow) => openDrawer({ eyebrow: `${humanise(row.documentKind)} · version ${row.version}`, title: row.trackingNumber, mono: true }, <>

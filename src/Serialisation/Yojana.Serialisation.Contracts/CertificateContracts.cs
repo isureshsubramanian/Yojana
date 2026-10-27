@@ -357,8 +357,12 @@ public sealed record CertificateVersionChain(IReadOnlyList<CertificateListRow> R
     IReadOnlyList<CertificateListRow> WarrantyCertificates);
 
 public sealed record CertificateRenderSignature(string PrintedName, string Meaning, DateTime SignedAt, string Method);
+/// <param name="SupersededByTrackingNumber">Set only when a Copy of a superseded version is rendered: the tracking number
+/// of the version that is current now, printed as a stamp so the Copy is not mistaken for the current record
+/// (ADR-0023 addendum, OD-103).</param>
 public sealed record CertificateRenderMetadata(string TrackingNumber, int Version, DateTime IssuedAt,
-    string? SupersedesTrackingNumber, string? SupersedeReason, string PayloadHash, string VerifyReference);
+    string? SupersedesTrackingNumber, string? SupersedeReason, string PayloadHash, string VerifyReference,
+    string? SupersededByTrackingNumber = null);
 public sealed record CertificateRenderRequest(string Payload, Guid TemplateVersionId, bool Copy = false,
     CertificateRenderSignature? Signature = null, CertificateRenderMetadata? Metadata = null,
     string? DocumentKind = null);

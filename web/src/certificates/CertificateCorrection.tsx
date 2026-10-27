@@ -64,7 +64,7 @@ export function CorrectionPanel({ certificateId, onIssued }: { certificateId: st
   </>;
 }
 
-export function CopyPanel({ certificateId, fallbackName, onPrinted }: { certificateId: string; fallbackName: string; onPrinted: () => void }) {
+export function CopyPanel({ certificateId, fallbackName, onPrinted, supersededBy }: { certificateId: string; fallbackName: string; onPrinted: () => void; supersededBy?: string | null }) {
   const reasonId = useId();
   const [reason, setReason] = useState("");
   const [touched, setTouched] = useState(false);
@@ -83,12 +83,13 @@ export function CopyPanel({ certificateId, fallbackName, onPrinted }: { certific
   }
 
   if (done) return <>
-    <div className="note ok" role="status">Downloaded {done.fileName}. It is marked COPY and logged in the reprint log.</div>
+    <div className="note ok" role="status">Downloaded {done.fileName}. It is marked COPY{supersededBy ? ` and SUPERSEDED (current version is ${supersededBy})` : ""} and logged in the reprint log.</div>
     {done.htmlFallback && <div className="note warn" role="status">The PDF service did not answer, so this copy is an HTML page. Open it and print it from the browser.</div>}
     <FormActions><button type="button" className="btn" onClick={closeDrawer}>Close</button></FormActions>
   </>;
   return <>
     <p className="muted">A copy never creates a version. Each one is marked COPY and listed in the reprint log with your reason.</p>
+    {supersededBy && <div className="note warn" role="status">This version is superseded. The copy will be stamped “SUPERSEDED — current version is <span className="mono">{supersededBy}</span>”.</div>}
     <label className="field" htmlFor={reasonId}><span className="lbl">Reason (required)</span>
       <textarea id={reasonId} className="textarea" rows={2} maxLength={REASON_MAXIMUM} value={reason} placeholder="Customer asked for the release record"
         aria-invalid={touched && !!problem} aria-describedby={touched && problem ? `${reasonId}-problem` : undefined}

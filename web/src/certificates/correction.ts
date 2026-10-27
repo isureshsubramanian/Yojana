@@ -37,6 +37,14 @@ export function correctState(certificate: Pick<CertificateDetail, "certificateId
   return { enabled: true, tip: "Preview what changes, then issue a corrected version" };
 }
 
+/** The tracking number a Copy of a superseded version is stamped with: the latest issued version in its own chain
+ * (ADR-0023 addendum, OD-103). Mirrors the server, which follows the supersede chain forward. */
+export function currentVersion(chain: readonly CertificateListRow[] | undefined, certificateId: string): string | null {
+  const current = chain?.filter((row) => row.status === "issued" && row.certificateId !== certificateId)
+    .reduce<CertificateListRow | null>((latest, row) => !latest || row.version > latest.version ? row : latest, null);
+  return current?.trackingNumber ?? null;
+}
+
 export function changeLabel(change: CertificateCorrectionChange): string {
   return change.rows > 1 ? `${change.label}, ${change.rows} rows` : change.label;
 }

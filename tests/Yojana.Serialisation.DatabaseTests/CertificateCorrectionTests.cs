@@ -231,6 +231,34 @@ public sealed class CertificateCorrectionTests(SerialisationHostFixture fixture)
                 && row.DocumentKind == CertificateDocumentKind.ReleaseRecord));
     }
 
+    [DatabaseFact]
+    public async Task Copy_of_a_superseded_version_is_stamped_with_the_current_tracking_number()
+    {
+        var setup = await ReleasedAsync("correction-stamp");
+        fixture.Services.GetRequiredService<InMemoryItemNamePort>().Register(
+            new(setup.ItemId, "YD-STORAGE-2U", "Kestrel 2U storage server"));
+        var reissued = await InvokeAsync<ReissueCertificateResult>(setup.Tenant, new ReissueCertificate(
+            Guid.NewGuid(), setup.CertificateId, "Corrected part names from the source record.", "quality.user"));
+        string currentTracking;
+        using (var scope = fixture.ScopeFor(setup.Tenant))
+            currentTracking = await scope.ServiceProvider.GetRequiredService<SerialisationDbContext>()
+                .CertificateInstances.AsNoTracking().Where(row => row.CertificateId == reissued.CertificateId)
+                .Select(row => row.TrackingNumber).SingleAsync();
+
+        using var quality = await fixture.AuthenticatedClientAsync(setup.Tenant, YojanaRole.Quality, Guid.NewGuid());
+        using var oldCopy = await quality.PostAsJsonAsync($"/api/certificates/{setup.CertificateId:D}/copy",
+            new PrintCertificateCopy(Guid.NewGuid(), setup.CertificateId, "Auditor asked for the first version.", ""));
+        using var currentCopy = await quality.PostAsJsonAsync($"/api/certificates/{reissued.CertificateId:D}/copy",
+            new PrintCertificateCopy(Guid.NewGuid(), reissued.CertificateId, "Customer asked for the record.", ""));
+
+        Assert.Equal(HttpStatusCode.OK, oldCopy.StatusCode);
+        var oldHtml = await oldCopy.Content.ReadAsStringAsync();
+        Assert.Contains("COPY", oldHtml, StringComparison.Ordinal);
+        Assert.Contains($"SUPERSEDED — current version is {currentTracking}", oldHtml, StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.OK, currentCopy.StatusCode);
+        Assert.DoesNotContain("SUPERSEDED", await currentCopy.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
     private async Task<Setup> ReleasedAsync(string prefix, int componentCount = 0)
     {
         var tenant = await fixture.NewTenantAsync(prefix);

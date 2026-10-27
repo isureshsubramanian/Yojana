@@ -18,6 +18,8 @@ public sealed record CertificateHtmlDocument(string BodyHtml, PdfPageSpec Page)
         "table{width:100%;border-collapse:collapse}thead{display:table-header-group}tr{break-inside:avoid}" +
         ".certificate-copy{position:fixed;right:4mm;top:2mm;z-index:2;border:2px solid #991b1b;color:#991b1b;" +
         "padding:2mm 4mm;font-weight:700;font-size:var(--certificate-size-title);letter-spacing:.12em;transform:rotate(-4deg)}" +
+        ".certificate-superseded{border:2px solid #991b1b;color:#991b1b;padding:2mm 4mm;margin:0 0 4mm;font-weight:700;" +
+        "letter-spacing:.04em;break-inside:avoid}" +
         ".certificate-signature{break-inside:avoid}.certificate-logo{position:absolute;left:" +
         (pageChrome ? Mm(Page.MarginLeftMm) : "0") + ";top:" + (pageChrome ? Mm(Page.MarginTopMm) : "0") + "}" +
         ".certificate-logo img{max-width:48mm;max-height:20mm}</style></head><body>" +
@@ -43,6 +45,8 @@ public sealed class CertificateHtmlComposer(SerialisationDbContext db, ITenantCo
         var footer = engine.Render(template.FooterBody, root, request, template.Language);
         var logo = await LogoAsync(root, cancellationToken);
         var copy = request.Copy ? "<div class=\"certificate-copy\" role=\"note\">COPY</div>" : "";
+        if (request.Copy && request.Metadata?.SupersededByTrackingNumber is { Length: > 0 } current)
+            copy += $"<div class=\"certificate-superseded\" role=\"note\">SUPERSEDED — current version is {Encode(current)}</div>";
         var signatureHeading = request.DocumentKind == CertificateDocumentKind.ReleaseRecord
             ? "Released by"
             : "Issued by";

@@ -72,7 +72,10 @@ public sealed class CertificateCopyService(
     public async Task<CertificateCopyFile> RenderAsync(CertificateInstance certificate, string serial,
         CertificateRenderRequest request, CancellationToken cancellationToken)
     {
-        var rendered = await renderer.RenderAsync(request with { Copy = true }, cancellationToken);
+        var current = await CurrentTrackingNumberAsync(certificate, cancellationToken);
+        var metadata = current is null || request.Metadata is null ? request.Metadata
+            : request.Metadata with { SupersededByTrackingNumber = current };
+        var rendered = await renderer.RenderAsync(request with { Copy = true, Metadata = metadata }, cancellationToken);
         var extension = rendered.MediaType.StartsWith("application/pdf", StringComparison.OrdinalIgnoreCase)
             ? "pdf" : "html";
         return new(rendered.Bytes, rendered.MediaType,
@@ -105,6 +108,26 @@ public sealed class CertificateCopyService(
         var serial = serials.GetValueOrDefault(certificate.UnitId) ?? "unlabelled-unit";
         return await RenderAsync(certificate, serial,
             CertificateQueries.RenderRequest(certificate, signature, supersedes), cancellationToken);
+    }
+
+    /// <summary>For a superseded version, the tracking number of the version that is current now (following the
+    /// supersede chain forward); null for a version that is itself current.</summary>
+    private async Task<string?> CurrentTrackingNumberAsync(CertificateInstance certificate,
+        CancellationToken cancellationToken)
+    {
+        if (certificate.Status != CertificateStatus.Superseded) return null;
+        var currentId = certificate.CertificateId;
+        string? tracking = null;
+        var seen = new HashSet<Guid> { currentId };
+        while (await db.CertificateInstances.AsNoTracking().Where(row => row.TenantId == tenant.TenantId
+                       && row.SupersedesCertificateId == currentId)
+                   .Select(row => new { row.CertificateId, row.TrackingNumber })
+                   .FirstOrDefaultAsync(cancellationToken) is { } next && seen.Add(next.CertificateId))
+        {
+            currentId = next.CertificateId;
+            tracking = next.TrackingNumber;
+        }
+        return tracking;
     }
 
     public static Guid Deterministic(Guid commandId, Guid unitId) =>
