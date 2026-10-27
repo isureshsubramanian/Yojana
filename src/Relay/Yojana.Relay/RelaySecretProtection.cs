@@ -74,10 +74,15 @@ public sealed class DpapiRelaySecretProtection : IRelaySecretProtection
     private static extern IntPtr LocalFree(IntPtr memory);
 }
 
+/// <summary>Provisioning never overwrites a secret file; rotation removes the old file first (see README).</summary>
+public sealed class RelaySecretFileExistsException(string path) : IOException(
+    $"{path} already exists. Stop the relay, remove that file, then provision the secrets again.");
+
 public sealed class RelaySecretFile(IRelaySecretProtection protection)
 {
     public void Write(string path, RelaySecrets secrets)
     {
+        if (File.Exists(path)) throw new RelaySecretFileExistsException(path);
         var plaintext = JsonSerializer.SerializeToUtf8Bytes(secrets);
         try
         {

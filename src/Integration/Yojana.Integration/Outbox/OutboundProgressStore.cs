@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
+using Yojana.Integration.DeadLetters;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Integration.Contracts;
@@ -15,7 +16,8 @@ public interface IOutboundProgressStore
     Task<OutboundDocument?> ReadAsync(Guid connectionId, string externalId, CancellationToken ct);
 }
 
-internal sealed class OutboundProgressStore(IntegrationDbContext db, ITenantContext tenant, IClock clock) : IOutboundProgressStore
+internal sealed class OutboundProgressStore(IntegrationDbContext db, ITenantContext tenant, IClock clock,
+    RetriedDeadLetterSettler retried) : IOutboundProgressStore
 {
     public async Task RecordAsync(Guid connectionId, Guid outboundCommandId, OutboundDocument document, CancellationToken ct, bool mapDocument = true)
     {
@@ -39,7 +41,8 @@ internal sealed class OutboundProgressStore(IntegrationDbContext db, ITenantCont
         command.NextAttemptAt = null;
         command.LockedUntil = null;
         command.CompletedAt = clock.UtcNow;
-        // The final reply, per-document receipts and identity maps share one SQL commit.
+        await retried.ResolveOutboundAsync(outboundCommandId, ct);
+        // The final reply, per-document receipts, identity maps and a retried dead letter share one SQL commit.
         await db.SaveChangesAsync(ct);
     }
 
