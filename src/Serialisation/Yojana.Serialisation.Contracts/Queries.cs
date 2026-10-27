@@ -45,11 +45,29 @@ public sealed record IdentifierRow(Guid IdentifierId, string Type, string Scheme
 
 public sealed record EpisodeRow(Guid EpisodeId, string Kind, Guid? PartyRef, string? PartyType, Guid? LocationId, string? LocationKind, string? Reason, string? Source, string? Confidence, DateTime ValidFrom, DateTime? ValidTo, DocumentRef? OpeningDocument, DocumentRef? ClosingDocument, string? CustomerPoRef, string? CustomerItemRef, DateOnly? DueBack);
 
-public sealed record AsBuiltRow(Guid LinkId, string? Slot, string Relation, Guid? ChildUnitId, string? ChildSerial, Guid? ChildItemId, Guid? ChildLotId, decimal? Quantity, string? ReleaseStatus, Guid? ThroughPhantomItemId, DateTime InstalledAt, DateTime? RemovedAt);
+public sealed record AsBuiltRow(Guid LinkId, string? Slot, string Relation, Guid? ChildUnitId, string? ChildSerial, Guid? ChildItemId, Guid? ChildLotId, decimal? Quantity, string? ReleaseStatus, Guid? ThroughPhantomItemId, DateTime InstalledAt, DateTime? RemovedAt,
+    DocumentRef? ProductionOrder = null, DocumentRef? Receipt = null, DocumentRef? Issue = null);
+
+public sealed record InProductionOrderRow(DocumentRef ProductionOrder, Guid? ProducedItemId, int HeldCount,
+    DateTime OldestIssuedAt, int ParentsReceived, decimal? PlannedQuantity, string Status,
+    string? Continuation = null);
+public sealed record InProductionOrderPage(IReadOnlyList<InProductionOrderRow> Items, string? NextCursor);
+public sealed record InProductionComponentRow(Guid HoldId, Guid UnitId, Guid ItemId, string Serial,
+    DateTime IssuedAt, DocumentRef Issue, int IssueLine);
+public sealed record InProductionParentRow(Guid UnitId, Guid ItemId, string Serial, DocumentRef Receipt);
+public sealed record InProductionOrderDetail(DocumentRef ProductionOrder, Guid? ProducedItemId,
+    decimal? PlannedQuantity, IReadOnlyList<InProductionComponentRow> Components,
+    IReadOnlyList<InProductionParentRow> Parents, string Status);
+public sealed record AssignProductionComponents(Guid CommandId, DocumentRef ProductionOrder, string ParentSerial,
+    IReadOnlyList<string> ComponentSerials, Guid LegalEntityId, string ActorRef = "");
+public sealed record AssignProductionComponentsResult(Guid ParentUnitId, IReadOnlyList<Guid> ComponentUnitIds,
+    IReadOnlyList<Guid> AssemblyLinkIds, bool Duplicate);
 
 public sealed record HistoryRow(Guid EventId, long Seq, string EventType, DateTime EventTime, DateTime RecordedTime, string? BizStep, string? Disposition, Guid? LocationId, string ActorRef, DocumentRef? Document, string? Attributes);
 
 public sealed record BuildRecordRow(Guid BuildRecordId, int Version, DateTime ReleasedAt, string PayloadHash, string? ReleaseSignatureRef);
+public sealed record ProductionSourceRow(DocumentRef ProductionOrder, DocumentRef Issue, DocumentRef? Receipt,
+    Guid? ParentUnitId, string? ParentSerial);
 
 /// <summary>Everything the Unit detail screen shows above the fold; the history is paged separately.</summary>
 public sealed record UnitDetail(
@@ -82,7 +100,8 @@ public sealed record UnitDetail(
     IReadOnlyList<BuildRecordRow> BuildRecords,
     Guid? ParentUnitId,
     int EventCount,
-    bool OwnerAndHolderDiffer = false);
+    bool OwnerAndHolderDiffer = false,
+    ProductionSourceRow? ProductionSource = null);
 
 public sealed record SerialRangeRow(Guid RangeId, string Scheme, string? StartValue, string? EndValue, int Count, int CommissionedCount, string Status, bool Randomised, string? AllocatedToDocumentType, Guid? AllocatedToDocumentId, Guid? ItemId, DateTime ReservedAt, string ReservedBy, string? Note);
 

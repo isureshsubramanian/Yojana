@@ -285,6 +285,20 @@ public static class SerialisationEndpoints
         units.MapPost("/disassemble", (RecordDisassembly command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<RecordDisassemblyResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/flag", (SetUnitFlag command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<UnitFlagResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
         units.MapPost("/unflag", (ClearUnitFlag command, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<UnitFlagResult>(bus, tenant, command with { ActorRef = Actor(user) }, ct));
+
+        var productionHolds = app.MapGroup("/api/production-holds")
+            .RequireAuthorization(YojanaPolicy.ForRole(YojanaRole.InventoryController));
+        productionHolds.MapGet("", async (string? cursor, int? take,
+            Manufacturing.ProductionHoldQueries queries, CancellationToken ct) =>
+            Results.Ok(await queries.PageAsync(cursor, take ?? 25, ct)));
+        productionHolds.MapGet("/{orderType}/{orderId:guid}", async (string orderType, Guid orderId,
+            Manufacturing.ProductionHoldQueries queries, CancellationToken ct) =>
+            await queries.DetailAsync(new DocumentRef(orderType, orderId), ct) is { } detail
+                ? Results.Ok(detail) : Results.NotFound());
+        productionHolds.MapPost("/assign", (AssignProductionComponents command, ClaimsPrincipal user,
+            IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
+            Invoke<AssignProductionComponentsResult>(bus, tenant,
+                command with { ActorRef = Actor(user) }, ct));
         units.MapGet("/{unitId:guid}/condition", async (Guid unitId, ConditionQueries queries, CancellationToken ct) => Results.Ok(await queries.ConditionAsync(unitId, ct)));
         units.MapPost("/{unitId:guid}/condition", (Guid unitId, GradeUnitRequest request, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
             Invoke<GradeUnitResult>(bus, tenant, new GradeUnit(request.CommandId, unitId, request.Grade, request.ValuationRule, request.EventTime,

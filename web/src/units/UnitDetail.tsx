@@ -77,7 +77,7 @@ export function Component() {
     parties: [detail?.ownerPartyRef, ...(detail?.identifiers.map((i) => i.issuerPartyRef) ?? []), ...(detail?.episodes.map((e) => e.partyRef) ?? [])],
     locations: [detail?.locationId, ...(detail?.episodes.map((e) => e.locationId) ?? [])],
     items: [detail?.itemId, ...(detail?.asBuilt.flatMap((row) => [row.childItemId, row.throughPhantomItemId]) ?? [])],
-    documents: [lotDocument(detail?.lotId), ...(history?.items.map((e) => e.document) ?? []), ...(detail?.episodes.flatMap((e) => [e.openingDocument, e.closingDocument]) ?? []), ...(detail?.asBuilt.map((row) => lotDocument(row.childLotId)) ?? [])],
+    documents: [lotDocument(detail?.lotId), ...(history?.items.map((e) => e.document) ?? []), ...(detail?.episodes.flatMap((e) => [e.openingDocument, e.closingDocument]) ?? []), ...(detail?.asBuilt.flatMap((row) => [lotDocument(row.childLotId), row.productionOrder, row.receipt, row.issue]) ?? []), detail?.productionSource?.productionOrder, detail?.productionSource?.receipt, detail?.productionSource?.issue],
   });
   const primary = detail?.identifiers.find((i) => i.validTo === null && i.type === "internal_serial") ?? detail?.identifiers.find((i) => i.validTo === null);
   const canPrintLabel = session.roles.some((role) => ["label_administrator", "technician", "inventory_controller", "service_desk", "service_supervisor", "service_manager", "production_supervisor", "warehouse_lead", "shipping_supervisor"].includes(role));
@@ -100,9 +100,12 @@ export function Component() {
       if (label !== lastEpisode) { out.push({ kind: "episode", label }); lastEpisode = label; }
       const key = e.eventType === "unit.released" || e.eventType === "ownership.opened" || e.eventType === "ownership.transferred" || e.eventType === "unit.commissioned";
       const bad = e.eventType === "ownership.closed" || e.eventType === "unit.scrapped" || e.eventType === "unit.flag_set";
+      const production = detail.productionSource;
+      const issued = production && e.eventType === "custody.changed" && e.document?.id === production.issue.id;
+      const installed = production && e.eventType === "unit.installed" && e.document?.id === production.productionOrder.id;
       out.push({
-        kind: "event", title: eventTitle(e.eventType), code: e.eventType,
-        meta: [fmtDateTime(e.eventTime), e.bizStep ? humanise(e.bizStep) : null, e.disposition ? humanise(e.disposition) : null, e.document ? referenceNames.document(e.document) : null, person(e.actorRef)].filter(Boolean).join(" · "),
+        kind: "event", title: issued ? `In production · order ${referenceNames.document(production.productionOrder)}` : installed ? `Part of ${production.parentSerial ?? "parent unit"}` : eventTitle(e.eventType), code: e.eventType,
+        meta: [fmtDateTime(e.eventTime), issued ? `issue ${referenceNames.document(production.issue)}` : installed && production.receipt ? `receipt ${referenceNames.document(production.receipt)}` : null, e.bizStep ? humanise(e.bizStep) : null, e.disposition ? humanise(e.disposition) : null, !issued && !installed && e.document ? referenceNames.document(e.document) : null, person(e.actorRef)].filter(Boolean).join(" · "),
         recordedAt: e.recordedTime !== e.eventTime ? fmtDateTime(e.recordedTime) : null,
         emphasis: key ? "key" : bad ? "bad" : null,
       });
@@ -239,6 +242,7 @@ export function Component() {
                 {detail && <StatusBadge tone={detail.asBuilt.some((a) => a.removedAt === null) ? "ok" : "neutral"}>{detail.asBuilt.filter((a) => a.removedAt === null).length} installed</StatusBadge>}
               </div>
               <div className="card-body" style={{ paddingTop: 8, paddingBottom: 8 }}>
+                {detail?.asBuilt.some((row) => row.productionOrder) && <p className="muted">Source: {(() => { const source = detail.asBuilt.find((row) => row.productionOrder); return source?.productionOrder ? `${referenceNames.document(source.productionOrder)}${source.receipt ? ` (receipt ${referenceNames.document(source.receipt)}` : ""}${source.issue ? `, issue ${referenceNames.document(source.issue)}` : ""}${source.receipt ? ")" : ""}` : ""; })()}</p>}
                 <ul className="tree">
                   <li><span className="node"><span className="item">{detail ? referenceNames.item(detail.itemId) : "…"}</span><span className="serial">{title}</span><span className="hint">· this unit</span></span><StatusBadge tone="neutral">Parent</StatusBadge></li>
                   {detail?.asBuilt.map((a) => (

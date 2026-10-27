@@ -48,7 +48,9 @@ public sealed record ReceiptDocument(DocumentRef Document, Guid VendorPartyRef, 
 public sealed record VendorShipment(DocumentRef Document, Guid VendorPartyRef, Guid CustomerPartyRef, Guid? ShipToLocationId, DateTime ShippedAt, IReadOnlyList<DocumentLine> Lines, string? CarrierRef = null, DateTime? DeliveredAt = null);
 
 /// <summary>A produced parent with the component lines consumed into it (serials where known).</summary>
-public sealed record ProductionReceipt(DocumentRef Document, DocumentRef ProductionOrder, DateTime PostedAt, IReadOnlyList<DocumentLine> Produced, IReadOnlyList<ComponentIssue> Components, Guid? FacilityId = null);
+public sealed record ProductionReceipt(DocumentRef Document, DocumentRef ProductionOrder, DateTime PostedAt, IReadOnlyList<DocumentLine> Produced, IReadOnlyList<ComponentIssue> Components, Guid? FacilityId = null,
+    IReadOnlyList<DocumentLine>? ReturnedComponents = null, Guid? ProducedItemId = null,
+    decimal? PlannedQuantity = null);
 
 /// <summary>The allocation facts Serialisation needs to decide whether reservations may move to a production order.</summary>
 public sealed record ProductionOrderAllocation(DocumentRef ProductionOrder, Guid ItemId, string SerialScheme, int Quantity);
@@ -56,7 +58,8 @@ public sealed record ProductionOrderAllocation(DocumentRef ProductionOrder, Guid
 /// <summary>A component line issued into a parent serial (or into the order when the parent is not serialised yet).</summary>
 public sealed record ComponentIssue(int LineNo, Guid ComponentItemId, decimal Quantity, IReadOnlyList<DocumentSerial> Serials, string? ParentSerial = null, string? Slot = null, Guid? LotId = null, Guid? ThroughPhantomItemId = null);
 
-public sealed record ComponentIssueDocument(DocumentRef Document, DocumentRef ProductionOrder, DateTime PostedAt, IReadOnlyList<ComponentIssue> Components);
+public sealed record ComponentIssueDocument(DocumentRef Document, DocumentRef ProductionOrder, DateTime PostedAt,
+    IReadOnlyList<ComponentIssue> Components, Guid? ProducedItemId = null, decimal? PlannedQuantity = null);
 
 public sealed record TransferDocument(DocumentRef Document, DateTime PostedAt, Guid FromLocationId, string FromLocationKind, Guid ToLocationId, string ToLocationKind, IReadOnlyList<DocumentLine> Lines, bool TwoStep = false, bool IsInvoiced = false);
 

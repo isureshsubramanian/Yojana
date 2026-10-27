@@ -22,6 +22,7 @@ public sealed class ManufacturingContractService(
     SerialisationDbContext db,
     IUnitEventWriter writer,
     EpisodeService episodes,
+    UnitResolver resolver,
     CorrectionLedger corrections,
     CorrectionApprovalSettings approvals,
     SerialReuseSettings reuseSettings,
@@ -54,9 +55,9 @@ public sealed class ManufacturingContractService(
         {
             refusals.Add(Refusal(null, null, "warehouse_required", "A returned component needs its warehouse location.", "supply the warehouse location id from Manufacturing"));
         }
-        else if (message.Components.Count == 0)
+        else if (message.Components.Count == 0 && (message.HeldComponents is null or { Count: 0 }))
         {
-            refusals.Add(Refusal(null, null, "components_required", "ComponentReturned names no assembly links.", "supply every physically returned component link"));
+            refusals.Add(Refusal(null, null, "components_required", "ComponentReturned names no assembly links or held serials.", "supply every physically returned component"));
         }
         else
         {
@@ -138,6 +139,68 @@ public sealed class ManufacturingContractService(
                         Document: message.ProductionOrder), db, writer, episodes, tenant, cancellationToken);
                     returned.Add(childUnitId);
                 }
+            }
+
+            var repeatedHeld = (message.HeldComponents ?? []).GroupBy(component => component.Serial,
+                StringComparer.OrdinalIgnoreCase).Where(group => group.Count() > 1).Select(group => group.Key)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var serial in repeatedHeld)
+                refusals.Add(Refusal(null, null, "component_repeated", $"Held component serial '{serial}' appears more than once.",
+                    "send each returned serial once"));
+            foreach (var component in (message.HeldComponents ?? []).Where(component =>
+                         !repeatedHeld.Contains(component.Serial)))
+            {
+                var unit = await resolver.ResolveAsync(new DocumentSerial(component.Serial), component.ItemId,
+                    cancellationToken);
+                if (unit is null)
+                {
+                    refusals.Add(Refusal(null, null, "component_unknown",
+                        $"Returned component serial '{component.Serial}' is unknown; no unit was commissioned.",
+                        "receive the existing component before returning it"));
+                    continue;
+                }
+                var hold = await db.ProductionComponentHolds.SingleOrDefaultAsync(row =>
+                    row.TenantId == tenant.TenantId && row.UnitId == unit.UnitId
+                    && row.ProductionOrderType == message.ProductionOrder.Type
+                    && row.ProductionOrderId == message.ProductionOrder.Id && row.ReturnedAt == null,
+                    cancellationToken);
+                if (hold is null)
+                {
+                    refusals.Add(Refusal(unit.UnitId, null, "component_not_held_for_order",
+                        $"Component serial '{component.Serial}' is not held against this production order.",
+                        "send the order that holds the component"));
+                    continue;
+                }
+                if (hold.AssemblyLinkId is { } heldLink && hold.ParentUnitId is { } heldParent)
+                {
+                    var disassembly = await RecordDisassemblyHandler.Handle(new RecordDisassembly(
+                        DeterministicId(message.Envelope.MessageId, $"held-disassembly:{heldLink:N}"), heldParent,
+                        [heldLink], message.Envelope.OccurredAt, message.Envelope.Source,
+                        message.Envelope.LegalEntityId, AssemblyRemovalReason.ReverseIssue,
+                        message.ProductionOrder), db, writer, tenant, cancellationToken);
+                    closed.AddRange(disassembly.ClosedLinkIds);
+                    await db.SaveChangesAsync(cancellationToken);
+                }
+                var returnDocument = message.Receipt ?? message.ProductionOrder;
+                var move = await episodes.PrepareCustodyMoveAsync(unit.UnitId,
+                    new CustodyTarget(LocationKind.Warehouse, message.WarehouseLocationId,
+                        Reason: EpisodeReason.Return, Source: EpisodeSource.Manufacturing),
+                    UnitEventType.CustodyChanged,
+                    IdempotencyKey.For(message.Envelope.Source, returnDocument.Type, returnDocument.Id,
+                        component.LineNo, unit.UnitId, UnitEventType.CustodyChanged,
+                        message.Envelope.OccurredAt), message.Envelope.OccurredAt,
+                    message.Envelope.Source, message.Envelope.LegalEntityId,
+                    returnDocument with { Line = component.LineNo },
+                    new Dictionary<string, object?>
+                    {
+                        ["message_id"] = message.Envelope.MessageId,
+                        ["production_order_type"] = message.ProductionOrder.Type,
+                        ["production_order_id"] = message.ProductionOrder.Id,
+                        ["component_return"] = true,
+                    }, null, false, cancellationToken);
+                await writer.AppendAsync([move.Draft], cancellationToken);
+                hold.ReturnedAt = message.Envelope.OccurredAt;
+                returned.Add(unit.UnitId);
             }
         }
 

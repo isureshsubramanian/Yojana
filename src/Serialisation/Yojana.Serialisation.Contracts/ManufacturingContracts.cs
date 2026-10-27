@@ -23,6 +23,9 @@ public sealed record ManufacturingProductionOrderQuantityChangeRequested(
 /// <summary>One open assembly link that Manufacturing has physically reverse-issued.</summary>
 public sealed record ManufacturingReturnedComponent(Guid ParentUnitId, Guid AssemblyLinkId);
 
+/// <summary>A returned serial that is still held against its production order and has no assigned parent link.</summary>
+public sealed record ManufacturingReturnedHeldComponent(string Serial, Guid ItemId, int LineNo);
+
 /// <summary>
 /// Manufacturing publishes this fact after components have physically returned to the named warehouse. The tenant is
 /// taken from the transport envelope. Serialisation closes each named open assembly link with reason
@@ -34,7 +37,9 @@ public sealed record ManufacturingComponentReturned(
     ThinEnvelope Envelope,
     DocumentRef ProductionOrder,
     Guid WarehouseLocationId,
-    IReadOnlyList<ManufacturingReturnedComponent> Components)
+    IReadOnlyList<ManufacturingReturnedComponent> Components,
+    IReadOnlyList<ManufacturingReturnedHeldComponent>? HeldComponents = null,
+    DocumentRef? Receipt = null)
 {
     public const string Schema = "Manufacturing.ComponentReturned";
     public const string Version = "1.0";

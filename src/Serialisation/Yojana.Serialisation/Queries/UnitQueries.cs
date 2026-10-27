@@ -188,16 +188,43 @@ public sealed class UnitQueries(SerialisationDbContext db, IIdentifierPolicySour
         var links = await db.AssemblyLinks.AsNoTracking().Where(l => l.TenantId == tenantId && l.ParentUnitId == unitId).OrderBy(l => l.RemovedAt == null ? 0 : 1).ThenBy(l => l.Slot).ToListAsync(cancellationToken);
         var childIds = links.Where(l => l.ChildUnitId != null).Select(l => l.ChildUnitId!.Value).ToList();
         var childSerials = childIds.Count == 0 ? new Dictionary<Guid, string>() : await db.Identifiers.AsNoTracking().Where(i => i.TenantId == tenantId && childIds.Contains(i.UnitId) && i.ValidTo == null && i.Type == IdentifierType.InternalSerial).ToDictionaryAsync(i => i.UnitId, i => i.NormalisedValue, cancellationToken);
-        var asBuilt = links.Select(l => new AsBuiltRow(l.LinkId, l.Slot, l.Relation, l.ChildUnitId, l.ChildUnitId is { } c && childSerials.TryGetValue(c, out var s) ? s : null, l.ChildItemId, l.ChildLotId, l.Quantity, l.ReleaseStatus, l.ThroughPhantomItemId, l.InstalledAt, l.RemovedAt)).ToList();
+        var holdSources = await db.ProductionComponentHolds.AsNoTracking().Where(row => row.TenantId == tenantId
+            && row.AssemblyLinkId != null && links.Select(link => link.LinkId).Contains(row.AssemblyLinkId.Value))
+            .ToDictionaryAsync(row => row.AssemblyLinkId!.Value, cancellationToken);
+        var asBuilt = links.Select(l =>
+        {
+            holdSources.TryGetValue(l.LinkId, out var source);
+            return new AsBuiltRow(l.LinkId, l.Slot, l.Relation, l.ChildUnitId,
+                l.ChildUnitId is { } c && childSerials.TryGetValue(c, out var s) ? s : null,
+                l.ChildItemId, l.ChildLotId, l.Quantity, l.ReleaseStatus, l.ThroughPhantomItemId,
+                l.InstalledAt, l.RemovedAt,
+                source is null ? null : new(source.ProductionOrderType, source.ProductionOrderId),
+                source?.ReceiptDocumentId is { } receiptId && source.ReceiptDocumentType is { } receiptType
+                    ? new(receiptType, receiptId) : null,
+                source is null ? null : new(source.IssueDocumentType, source.IssueDocumentId, source.IssueLine));
+        }).ToList();
         var records = await db.BuildRecords.AsNoTracking().Where(b => b.TenantId == tenantId && b.UnitId == unitId).OrderByDescending(b => b.Version).Select(b => new BuildRecordRow(b.BuildRecordId, b.Version, b.ReleasedAt, b.PayloadHash, b.ReleaseSignatureRef)).ToListAsync(cancellationToken);
         var parent = await db.AssemblyLinks.AsNoTracking().Where(l => l.TenantId == tenantId && l.ChildUnitId == unitId && l.RemovedAt == null).Select(l => (Guid?)l.ParentUnitId).FirstOrDefaultAsync(cancellationToken);
         var eventCount = await db.Events.AsNoTracking().CountAsync(e => e.TenantId == tenantId && e.UnitId == unitId, cancellationToken) + await db.ArchivedEvents.AsNoTracking().CountAsync(e => e.TenantId == tenantId && e.UnitId == unitId, cancellationToken);
         var itemId = current?.ItemId ?? await db.ItemAssignments.AsNoTracking().Where(a => a.TenantId == tenantId && a.UnitId == unitId && a.ValidTo == null).Select(a => a.ItemId).FirstOrDefaultAsync(cancellationToken);
+        var productionHold = await db.ProductionComponentHolds.AsNoTracking().Where(row => row.TenantId == tenantId
+                && row.UnitId == unitId).OrderByDescending(row => row.IssuedAt).FirstOrDefaultAsync(cancellationToken);
+        string? productionParentSerial = null;
+        if (productionHold?.ParentUnitId is { } productionParent)
+            productionParentSerial = await db.Identifiers.AsNoTracking().Where(row => row.TenantId == tenantId
+                && row.UnitId == productionParent && row.ValidTo == null && row.Type == IdentifierType.InternalSerial)
+                .Select(row => row.RawValue).SingleOrDefaultAsync(cancellationToken);
+        var productionSource = productionHold is null ? null : new ProductionSourceRow(
+            new(productionHold.ProductionOrderType, productionHold.ProductionOrderId),
+            new(productionHold.IssueDocumentType, productionHold.IssueDocumentId, productionHold.IssueLine),
+            productionHold.ReceiptDocumentId is { } sourceReceiptId && productionHold.ReceiptDocumentType is { } sourceReceiptType
+                ? new(sourceReceiptType, sourceReceiptId) : null,
+            productionHold.ParentUnitId, productionParentSerial);
         return new UnitDetail(unit.UnitId, unit.LifecycleStatus, unit.Origin, unit.SerialisationPoint, unit.RetentionClass, unit.HistoryDepth, unit.LotId, unit.ExpiryDate, unit.DerivedFromUnitId, unit.MergedIntoUnitId,
             itemId, current?.ModelVersionId, current?.Disposition ?? UnitLifecycle.DispositionFor(unit.LifecycleStatus), current?.ConditionGrade, current?.LocationId, current?.LocationKind, current?.CustodyPartyRef, current?.OwnerPartyRef, current?.OpenOwnershipEpisodeId, current?.OpenCustodyEpisodeId,
             current?.OverlayFlags ?? unit.OverlayFlags, current?.LastEventSeq ?? 0, current?.LastEventTime ?? unit.CreatedAt, identifiers, episodes, asBuilt, records, parent, eventCount,
             CustomerAssertionCustodyRule.OwnerAndHolderDiffer(current?.OwnerPartyRef, current?.CustodyPartyRef,
-                current?.LocationKind));
+                current?.LocationKind), productionSource);
     }
 
     /// <summary>History page in the ADR order (business time, recorded time, seq), newest first for the screen; live and archive together.</summary>

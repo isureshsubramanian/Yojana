@@ -90,6 +90,12 @@
         "produced_item_external_id": {
           "type": "string"
         },
+        "planned_quantity": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
         "lines": {
           "type": "array",
           "items": {
@@ -187,6 +193,13 @@
         },
         "components": {
           "type": "array",
+          "items": {}
+        },
+        "returned_components": {
+          "type": [
+            "array",
+            "null"
+          ],
           "items": {}
         }
       },

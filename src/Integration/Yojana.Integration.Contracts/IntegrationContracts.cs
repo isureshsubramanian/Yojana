@@ -143,7 +143,11 @@ public sealed record PartyUpserted(string PartyExternalId, OpenEnum PartyKind, s
 public sealed record GoodsReceiptPosted(ExternalDocumentRef DocumentRef, string VendorPartyExternalId,
     IReadOnlyList<CanonicalLine> Lines, ExternalDocumentRef? BaseOrderRef = null, bool IsAsn = false);
 public sealed record ProductionCompleted(ExternalDocumentRef DocumentRef, ExternalDocumentRef ProductionOrderRef,
-    string ProducedItemExternalId, IReadOnlyList<CanonicalLine> Lines, IReadOnlyList<CanonicalLine> Components);
+    string ProducedItemExternalId, IReadOnlyList<CanonicalLine> Lines, IReadOnlyList<CanonicalLine> Components,
+    IReadOnlyList<CanonicalLine>? ReturnedComponents = null, decimal? PlannedQuantity = null);
+/// <summary>Serialised components issued to one production order. One source document may produce one message per order.</summary>
+public sealed record ComponentsIssued(ExternalDocumentRef DocumentRef, ExternalDocumentRef ProductionOrderRef,
+    IReadOnlyList<CanonicalLine> Lines, string? ProducedItemExternalId = null, decimal? PlannedQuantity = null);
 public sealed record DeliveryPosted(ExternalDocumentRef DocumentRef, string CustomerPartyExternalId, string ShipToRef,
     IReadOnlyList<CanonicalLine> Lines, ExternalDocumentRef? BaseOrderRef = null, bool IsDropShip = false);
 public sealed record InvoicePosted(ExternalDocumentRef DocumentRef, string CustomerPartyExternalId,

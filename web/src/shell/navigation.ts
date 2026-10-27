@@ -30,6 +30,7 @@ export const navigation: NavGroup[] = [
     { path: "/units/receive", label: "Receive and commission", icon: "import" },
     { path: "/units/ranges", label: "Serial ranges", icon: "range" },
     { path: "/units/completeness", label: "As-built completeness", icon: "tree" },
+    { path: "/units/in-production", label: "In production", icon: "tree" },
     { path: "/lookup", label: "Lookup", icon: "lookup" },
   ] },
   { key: "warranty", label: "Warranty", icon: "ent", items: [

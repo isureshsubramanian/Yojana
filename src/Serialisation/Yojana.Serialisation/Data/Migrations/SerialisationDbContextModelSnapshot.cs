@@ -6160,6 +6160,290 @@ namespace Yojana.Serialisation.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ProductionComponentAssignment", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("AssignmentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("assignment_id");
+
+                    b.Property<string>("ActorRef")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("actor_ref");
+
+                    b.Property<DateTime>("AssignedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("assigned_at");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("command_id");
+
+                    b.Property<Guid>("ComponentUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("component_unit_id");
+
+                    b.Property<Guid>("HoldId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("hold_id");
+
+                    b.Property<Guid>("ParentUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("parent_unit_id");
+
+                    b.HasKey("TenantId", "AssignmentId")
+                        .HasName("pk_production_component_assignment");
+
+                    b.HasIndex("TenantId", "HoldId")
+                        .HasDatabaseName("ix_production_component_assignment_tenant_id_hold_id");
+
+                    b.HasIndex("TenantId", "CommandId", "ComponentUnitId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_production_component_assignment_tenant_id_command_id_component_unit_id");
+
+                    b.ToTable("production_component_assignment", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ProductionComponentHold", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("HoldId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("hold_id");
+
+                    b.Property<Guid?>("AssemblyLinkId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("assembly_link_id");
+
+                    b.Property<string>("AssignedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("assigned_by");
+
+                    b.Property<Guid>("IssueDocumentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("issue_document_id");
+
+                    b.Property<string>("IssueDocumentType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("issue_document_type");
+
+                    b.Property<int>("IssueLine")
+                        .HasColumnType("int")
+                        .HasColumnName("issue_line");
+
+                    b.Property<DateTime>("IssuedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("issued_at");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("item_id");
+
+                    b.Property<DateTime?>("LinkedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("linked_at");
+
+                    b.Property<Guid?>("ParentUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("parent_unit_id");
+
+                    b.Property<Guid>("ProductionOrderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("production_order_id");
+
+                    b.Property<string>("ProductionOrderType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("production_order_type");
+
+                    b.Property<Guid?>("ReceiptDocumentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("receipt_document_id");
+
+                    b.Property<string>("ReceiptDocumentType")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("receipt_document_type");
+
+                    b.Property<DateTime?>("ReturnedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("returned_at");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("unit_id");
+
+                    b.HasKey("TenantId", "HoldId")
+                        .HasName("pk_production_component_hold");
+
+                    b.HasIndex("TenantId", "AssemblyLinkId")
+                        .HasDatabaseName("ix_production_component_hold_tenant_id_assembly_link_id");
+
+                    b.HasIndex("TenantId", "IssueDocumentId", "IssueLine", "UnitId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_production_component_hold_tenant_id_issue_document_id_issue_line_unit_id");
+
+                    b.HasIndex("TenantId", "UnitId", "LinkedAt", "ReturnedAt")
+                        .HasDatabaseName("ix_production_component_hold_tenant_id_unit_id_linked_at_returned_at");
+
+                    b.HasIndex("TenantId", "ProductionOrderType", "ProductionOrderId", "LinkedAt", "ReturnedAt")
+                        .HasDatabaseName("ix_production_component_hold_tenant_id_production_order_type_production_order_id_linked_at_returned_at");
+
+                    b.ToTable("production_component_hold", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ProductionHoldTask", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("TaskId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("task_id");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("completed_at");
+
+                    b.Property<string>("CompletedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("completed_by");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid>("ProductionOrderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("production_order_id");
+
+                    b.Property<string>("ProductionOrderType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("production_order_type");
+
+                    b.Property<DateTime>("RaisedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("raised_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.HasKey("TenantId", "TaskId")
+                        .HasName("pk_production_hold_task");
+
+                    b.HasIndex("TenantId", "Status", "RaisedAt", "TaskId")
+                        .HasDatabaseName("ix_production_hold_task_tenant_id_status_raised_at_task_id");
+
+                    b.HasIndex("TenantId", "ProductionOrderType", "ProductionOrderId", "Kind", "Status")
+                        .HasDatabaseName("ix_production_hold_task_tenant_id_production_order_type_production_order_id_kind_status");
+
+                    b.ToTable("production_hold_task", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ProductionOrderBuild", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("ProductionOrderType")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("production_order_type");
+
+                    b.Property<Guid>("ProductionOrderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("production_order_id");
+
+                    b.Property<DateTime>("FirstSeenAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("first_seen_at");
+
+                    b.Property<decimal?>("PlannedQuantity")
+                        .HasPrecision(19, 6)
+                        .HasColumnType("decimal(19,6)")
+                        .HasColumnName("planned_quantity");
+
+                    b.Property<Guid?>("ProducedItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("produced_item_id");
+
+                    b.HasKey("TenantId", "ProductionOrderType", "ProductionOrderId")
+                        .HasName("pk_production_order_build");
+
+                    b.HasIndex("TenantId", "ProducedItemId", "FirstSeenAt")
+                        .HasDatabaseName("ix_production_order_build_tenant_id_produced_item_id_first_seen_at");
+
+                    b.ToTable("production_order_build", "serialisation");
+                });
+
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ProductionOrderReceipt", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ParentUnitId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("parent_unit_id");
+
+                    b.Property<Guid>("ProductionOrderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("production_order_id");
+
+                    b.Property<string>("ProductionOrderType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("production_order_type");
+
+                    b.Property<Guid>("ReceiptDocumentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("receipt_document_id");
+
+                    b.Property<string>("ReceiptDocumentType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("receipt_document_type");
+
+                    b.Property<DateTime>("ReceivedAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("received_at");
+
+                    b.HasKey("TenantId", "ParentUnitId")
+                        .HasName("pk_production_order_receipt");
+
+                    b.HasIndex("TenantId", "ReceiptDocumentId")
+                        .HasDatabaseName("ix_production_order_receipt_tenant_id_receipt_document_id");
+
+                    b.HasIndex("TenantId", "ProductionOrderType", "ProductionOrderId", "ReceivedAt")
+                        .HasDatabaseName("ix_production_order_receipt_tenant_id_production_order_type_production_order_id_received_at");
+
+                    b.ToTable("production_order_receipt", "serialisation");
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.RecoveryClaim", b =>
                 {
                     b.Property<Guid>("TenantId")

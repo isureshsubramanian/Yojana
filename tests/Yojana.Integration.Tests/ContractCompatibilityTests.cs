@@ -11,6 +11,7 @@ public sealed class ContractCompatibilityTests
         ["ItemUpserted"] = typeof(ItemUpserted), ["BomUpserted"] = typeof(BomUpserted),
         ["PartyUpserted"] = typeof(PartyUpserted),
         ["GoodsReceiptPosted"] = typeof(GoodsReceiptPosted), ["ProductionCompleted"] = typeof(ProductionCompleted),
+        ["ComponentsIssued"] = typeof(ComponentsIssued),
         ["DeliveryPosted"] = typeof(DeliveryPosted), ["InvoicePosted"] = typeof(InvoicePosted),
         ["ReturnReceived"] = typeof(ReturnReceived), ["TransferPosted"] = typeof(TransferPosted),
         ["InventoryAdjusted"] = typeof(InventoryAdjusted), ["WarrantyLineSold"] = typeof(WarrantyLineSold),
@@ -26,7 +27,7 @@ public sealed class ContractCompatibilityTests
     {
         var examples = IntegrationSchemaCatalog.Resources.Where(name => name.Contains(".examples.", StringComparison.Ordinal)
             && name.EndsWith(".json", StringComparison.Ordinal)).ToList();
-        Assert.Equal(19, examples.Count);
+        Assert.Equal(20, examples.Count);
         foreach (var resource in examples)
         {
             var slug = resource[(resource.LastIndexOf(".examples.", StringComparison.Ordinal) + 10)..^5];
@@ -87,11 +88,36 @@ public sealed class ContractCompatibilityTests
 
     [Theory]
     [InlineData("1.0", true)]
+    [InlineData("1.1", true)]
     [InlineData("0.9", true)]
     [InlineData("2.0", false)]
     [InlineData("not-a-version", false)]
     public void Current_and_previous_major_are_accepted(string version, bool expected) =>
         Assert.Equal(expected, IntegrationContracts.Accepts(version));
+
+    [Fact]
+    public void Stored_1_0_manufacturing_messages_without_new_optional_fields_still_translate()
+    {
+        var completed = System.Text.Json.Nodes.JsonNode.Parse(
+            IntegrationSchemaCatalog.Read("examples/production-completed.json"))!.AsObject();
+        completed["envelope"]!["contract_version"] = "1.0";
+        completed["payload"]!.AsObject().Remove("planned_quantity");
+        completed["payload"]!.AsObject().Remove("returned_components");
+        var parsedCompleted = JsonSerializer.Deserialize<CanonicalMessage<ProductionCompleted>>(
+            completed.ToJsonString(), IntegrationContracts.Json)!;
+        Assert.Null(parsedCompleted.Payload.PlannedQuantity);
+        Assert.Null(parsedCompleted.Payload.ReturnedComponents);
+
+        var issued = System.Text.Json.Nodes.JsonNode.Parse(
+            IntegrationSchemaCatalog.Read("examples/components-issued.json"))!.AsObject();
+        issued["envelope"]!["contract_version"] = "1.0";
+        issued["payload"]!.AsObject().Remove("produced_item_external_id");
+        issued["payload"]!.AsObject().Remove("planned_quantity");
+        var parsedIssued = JsonSerializer.Deserialize<CanonicalMessage<ComponentsIssued>>(
+            issued.ToJsonString(), IntegrationContracts.Json)!;
+        Assert.Null(parsedIssued.Payload.ProducedItemExternalId);
+        Assert.Null(parsedIssued.Payload.PlannedQuantity);
+    }
 }
 
 internal static class StructuralSchemaValidator

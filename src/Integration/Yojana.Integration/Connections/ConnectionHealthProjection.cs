@@ -21,7 +21,7 @@ public sealed class ConnectionHealthProjection(IntegrationDbContext db, ITenantC
 {
     private static readonly HashSet<string> InboundTypes =
     [
-        nameof(ItemUpserted), nameof(BomUpserted), nameof(PartyUpserted), nameof(GoodsReceiptPosted), nameof(ProductionCompleted),
+        nameof(ItemUpserted), nameof(BomUpserted), nameof(PartyUpserted), nameof(GoodsReceiptPosted), nameof(ProductionCompleted), nameof(ComponentsIssued),
         nameof(DeliveryPosted), nameof(InvoicePosted), nameof(ReturnReceived), nameof(TransferPosted),
         nameof(InventoryAdjusted), nameof(WarrantyLineSold), nameof(DocumentCancelled),
     ];

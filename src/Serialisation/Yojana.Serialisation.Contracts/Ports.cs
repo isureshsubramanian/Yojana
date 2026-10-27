@@ -83,7 +83,7 @@ public static class SerialisedOnHandCustodyPolicy
 
     public static readonly IReadOnlyList<string> ExcludedLocationKinds =
         [LocationKind.CustomerSite, LocationKind.Vendor, LocationKind.AtSubcontractor, LocationKind.InTransit,
-            LocationKind.Returning, LocationKind.Scrapped];
+            LocationKind.Returning, LocationKind.InProduction, LocationKind.Scrapped];
 
     public static readonly IReadOnlyList<string> ExcludedLifecycleStatuses =
         [LifecycleStatus.Void, LifecycleStatus.Reversed, LifecycleStatus.ScrappedPreRelease, LifecycleStatus.Scrapped,

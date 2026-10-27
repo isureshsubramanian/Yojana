@@ -202,6 +202,41 @@ public sealed class BomProjectionDatabaseTests(IntegrationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Backfill_gives_an_older_cx01_connection_the_component_issue_capability_and_requeues_skipped_messages()
+    {
+        var tenant = await fixture.NewTenantAsync("adr25cap");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.CreateVersion7());
+        var other = await fixture.AddConnectionAsync(tenant, Guid.CreateVersion7(), Cx02Capabilities.ConnectorCode);
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        await db.ConnectionCapabilities.Where(row => row.ConnectionId == connection
+            && row.CanonicalMessage == nameof(ComponentsIssued)).ExecuteDeleteAsync();
+        await db.ConnectionCapabilities.Where(row => row.ConnectionId == other
+            && row.CanonicalMessage == nameof(ComponentsIssued)).ExecuteDeleteAsync();
+        var issue = SkippedAsUnsupported(tenant, connection, "InventoryGenExits", "4:161",
+            nameof(ComponentsIssued));
+        var item = SkippedAsUnsupported(tenant, connection, "Items", "FIC-NIC-25G", nameof(ItemUpserted));
+        db.InboundMessages.AddRange(issue.Message, item.Message);
+        db.ExceptionTasks.AddRange(issue.Task, item.Task);
+        await db.SaveChangesAsync();
+
+        await db.Database.ExecuteSqlRawAsync(Migrations.Adr25ComponentsIssuedCapability.BackfillSql);
+        await db.Database.ExecuteSqlRawAsync(Migrations.Adr25ComponentsIssuedCapability.BackfillSql);
+
+        var capabilities = await db.ConnectionCapabilities.AsNoTracking()
+            .Where(row => row.CanonicalMessage == nameof(ComponentsIssued))
+            .ToDictionaryAsync(row => row.ConnectionId, row => row.SupportLevel);
+        Assert.Equal(CapabilitySupport.Native, capabilities[connection]);
+        Assert.False(capabilities.ContainsKey(other));
+        var messages = await db.InboundMessages.AsNoTracking().ToDictionaryAsync(row => row.InboundMessageId);
+        Assert.Equal(InboundTranslationStatus.Pending, messages[issue.Message.InboundMessageId].TranslationStatus);
+        Assert.Null(messages[issue.Message.InboundMessageId].TranslatedAt);
+        Assert.Equal(InboundTranslationStatus.Completed, messages[item.Message.InboundMessageId].TranslationStatus);
+        Assert.Equal([item.Message.InboundMessageId],
+            await db.ExceptionTasks.AsNoTracking().Select(row => row.InboundMessageId).ToListAsync());
+    }
+
+    [DatabaseFact]
     public async Task Item_names_come_from_the_erp_projection_and_fall_back_to_the_catalogue()
     {
         // Found 2026-10-26: release records printed "ITEM-97156C8D" for ERP parts because the name port was still

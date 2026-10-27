@@ -24,6 +24,7 @@ public static class Cx01Capabilities
             ["PartyUpserted"] = CapabilitySupport.Native,
             ["GoodsReceiptPosted"] = CapabilitySupport.Native,
             ["ProductionCompleted"] = CapabilitySupport.Native,
+            ["ComponentsIssued"] = CapabilitySupport.Native,
             ["DeliveryPosted"] = CapabilitySupport.Native,
             ["InvoicePosted"] = CapabilitySupport.Native,
             ["ReturnReceived"] = CapabilitySupport.Native,
