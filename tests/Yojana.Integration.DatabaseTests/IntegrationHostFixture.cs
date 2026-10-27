@@ -40,13 +40,21 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
     public async Task InitializeAsync()
     {
         if (ConnectionString is null) return;
-        var builder = Microsoft.Extensions.Hosting.Host.CreateApplicationBuilder();
+        var builder = Microsoft.Extensions.Hosting.Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
+        {
+            EnvironmentName = Environments.Development,
+        });
         builder.Configuration["Platform:ConnectionString"] = ConnectionString;
         builder.Configuration[$"{Yojana.Serialisation.Imports.ImportFileStorageOptions.SectionName}:DatabaseConnectionString"] = ImportFilesConnectionString;
         builder.Configuration[$"{Yojana.Serialisation.Imports.ImportFileStorageOptions.SectionName}:FileRoot"] = Path.Combine(Path.GetTempPath(), "yojana-integration-imports");
         builder.Configuration[$"{Yojana.Serialisation.Imports.ImportFileStorageOptions.SectionName}:ArchiveStores:0:Name"] = "folder-archive";
         builder.Configuration[$"{Yojana.Serialisation.Imports.ImportFileStorageOptions.SectionName}:ArchiveStores:0:Kind"] = "folder";
         builder.Configuration[$"{Yojana.Serialisation.Imports.ImportFileStorageOptions.SectionName}:ArchiveStores:0:Path"] = Path.Combine(Path.GetTempPath(), "yojana-integration-imports-archive");
+        // Development configuration has a second database archive. Keep this fixture entirely on its own folder stores
+        // so it never reads a developer secret or database outside YOJANA_TEST_SQL.
+        builder.Configuration[$"{Yojana.Serialisation.Imports.ImportFileStorageOptions.SectionName}:ArchiveStores:1:Name"] = "folder-archive-two";
+        builder.Configuration[$"{Yojana.Serialisation.Imports.ImportFileStorageOptions.SectionName}:ArchiveStores:1:Kind"] = "folder";
+        builder.Configuration[$"{Yojana.Serialisation.Imports.ImportFileStorageOptions.SectionName}:ArchiveStores:1:Path"] = Path.Combine(Path.GetTempPath(), "yojana-integration-imports-archive-two");
         builder.Configuration["Platform:MigrateOnStartup"] = "true";
         builder.Configuration["Platform:AutoBuildMessageStorage"] = "true";
         builder.Configuration["Platform:StartScheduler"] = "false";
@@ -57,8 +65,10 @@ public sealed class IntegrationHostFixture : IAsyncLifetime
         ConfigureLocalKey(builder.Configuration);
         PlatformSetup.IncludeHandlers(typeof(SerialisationModule).Assembly);
         PlatformSetup.IncludeHandlers(typeof(IntegrationModule).Assembly);
+        builder.Services.AddRouting();
         builder.AddYojanaPlatform();
         builder.AddSerialisationModule();
+        builder.AddSerialisationDevelopmentPorts();
         builder.AddIntegrationModule();
         builder.Services.Replace(ServiceDescriptor.Scoped<Yojana.Integration.Connectors.CX01.ICx01OutboundFacts>(sp => new Yojana.Integration.Connectors.CX01.Testing.Cx01FixtureFacts(sp.GetRequiredService<IntegrationDbContext>(), sp.GetRequiredService<ITenantContext>())));
         builder.Services.Replace(ServiceDescriptor.Singleton<Yojana.Integration.Connectors.CX01.ICx01AttachmentContent>(new Yojana.Integration.Connectors.CX01.Testing.Cx01FixtureContent()));

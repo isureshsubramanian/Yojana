@@ -1,7 +1,7 @@
 namespace Yojana.Serialisation.Contracts;
 
 /// <summary>An item label supplied by the item-owning module or a connector.</summary>
-public sealed record ItemLabel(Guid ItemId, string Code, string? Name);
+public sealed record ItemLabel(Guid ItemId, string Code, string? Name, string? AvailabilityCode = null);
 
 /// <summary>
 /// Serialisation's read contract for item names. The item-owning module or a connector implements it; Serialisation
@@ -21,10 +21,14 @@ public interface IItemNamePort
 public static class SerialisationPortKeys
 {
     public const string ItemNameCatalogue = "serialisation:item-name-catalogue";
+    public const string PartyNameSource = "serialisation:party-name-source";
+    public const string LocationNameRecordedSource = "serialisation:location-name-recorded-source";
+    public const string DocumentNumberRecordedSource = "serialisation:document-number-recorded-source";
+    public const string WarrantyClaimsRecordedSource = "serialisation:warranty-claims-recorded-source";
 }
 
 /// <summary>An item-family label supplied by the item-owning module or a connector.</summary>
-public sealed record ItemFamilyLabel(string Code, string Name);
+public sealed record ItemFamilyLabel(string Code, string Name, string? AvailabilityCode = null);
 
 /// <summary>
 /// Serialisation's read contract for item-family names. Item-family codes remain the stable values stored on
@@ -44,7 +48,8 @@ public interface IClaimCauseNamePort
 }
 
 /// <summary>A business-partner label supplied by the party-owning module or a connector.</summary>
-public sealed record PartyLabel(Guid PartyRef, string Code, string? Name, string? PartyType);
+public sealed record PartyLabel(
+    Guid PartyRef, string Code, string? Name, string? PartyType, string? AvailabilityCode = null);
 
 /// <summary>
 /// Serialisation's read contract for business-partner names. The party-owning module or a connector implements it;
@@ -58,7 +63,13 @@ public interface IPartyNamePort
 }
 
 /// <summary>A business partner's contact person with an e-mail address, supplied by the party-owning module or a connector.</summary>
-public sealed record PartyContactLabel(Guid PartyRef, string Name, string Email, string? Role = null, string? Language = null);
+public sealed record PartyContactLabel(
+    Guid PartyRef,
+    string Name,
+    string Email,
+    string? Role = null,
+    string? Language = null,
+    string? AvailabilityCode = null);
 
 /// <summary>
 /// Serialisation's read contract for the people at a business partner that customer e-mail may go to (P9-T20). The party

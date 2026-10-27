@@ -13,6 +13,7 @@ namespace Yojana.Serialisation.Ports;
 /// Claims (P4) default to none open, which is true while no claim can exist.
 /// </para>
 /// </summary>
+[DevelopmentOnly]
 public sealed class InMemoryWarrantyPorts : IItemPolicyPort, ICustomerContractPort, IVendorWarrantyTermsPort,
     ITimeZonePort, ITimeZoneSourcePort, IWarrantyClaimsPort, IWarrantyCertificatePort
 {

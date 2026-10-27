@@ -218,8 +218,10 @@ public sealed class IntegrationItemQueryPort(IntegrationDbContext db, ITenantCon
 /// names the part; ids the projection does not hold go to the Serialisation catalogue port.
 /// </summary>
 public sealed class IntegrationItemNamePort(IntegrationDbContext db, ITenantContext tenant, IItemNamePort catalogue)
-    : IItemNamePort
+    : IItemNamePort, ISerialisationPortComposition
 {
+    public IReadOnlyCollection<object> Sources => [catalogue];
+
     public async Task<IReadOnlyDictionary<Guid, ItemLabel>> NamesAsync(IReadOnlyCollection<Guid> itemIds,
         CancellationToken cancellationToken)
     {

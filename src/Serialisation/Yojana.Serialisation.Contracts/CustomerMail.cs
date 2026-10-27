@@ -123,7 +123,7 @@ public sealed record MailQueuedView(IReadOnlyList<Guid> MessageIds);
 
 // Compose (from a unit's What's covered page).
 
-public sealed record CustomerContact(string Name, string Address, string? Role);
+public sealed record CustomerContact(string Name, string Address, string? Role, string? AvailabilityCode = null);
 
 public sealed record ComposeTemplateChoice(Guid TemplateId, Guid VersionId, string Name, int Version, DateTime PublishedAt,
     IReadOnlyList<string> Languages, IReadOnlyList<string> DefaultFor, bool AskForNote, bool AttachPdf);

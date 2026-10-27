@@ -48,6 +48,10 @@ PlatformSetup.IncludeHandlers(typeof(KnowledgeModule).Assembly);
 PlatformSetup.IncludeHandlers(typeof(DeveloperModule).Assembly);
 builder.AddYojanaPlatform();
 builder.AddSerialisationModule();
+// HIDDEN COUPLING (registration order): development facts replace Serialisation's Unavailable adapters, then the
+// Integration module's later real item, BOM and document adapters replace development facts. Reordering these calls
+// makes the catalogue override a connected projection. Keep this with both registration extensions.
+if (builder.Environment.IsDevelopment()) builder.AddSerialisationDevelopmentPorts();
 builder.AddIntegrationModule();
 builder.AddKnowledgeModule();
 builder.AddDeveloperModule();
@@ -97,21 +101,20 @@ if (args.Contains("--migrate") || args.Contains("--seed"))
     return;
 }
 
-// Development composition only: real item, party and document modules replace the same narrow name ports.
-// Production never opens or registers this catalogue, even if the file is accidentally present beside the host.
-var referenceCounts = DevReferenceCatalogue.Load(
-    app.Environment,
-    Path.Combine(AppContext.BaseDirectory, "DevData", "reference-labels.json"),
-    app.Services.GetRequiredService<InMemoryItemPorts>(),
-    app.Services.GetRequiredService<InMemoryItemNamePort>(),
-    app.Services.GetRequiredService<InMemoryItemFamilyNamePort>(),
-    app.Services.GetRequiredService<InMemoryWarrantyPorts>(),
-    app.Services.GetRequiredService<InMemoryPartyNamePort>(),
-    app.Services.GetRequiredService<InMemoryPartyContactPort>(),
-    app.Services.GetRequiredService<InMemoryDocumentNumberRegistry>(),
-    app.Services.GetRequiredService<InMemoryLocationNameRegistry>());
 if (app.Environment.IsDevelopment())
 {
+    // Production never resolves these services or opens the catalogue, even if the file is present beside the host.
+    var referenceCounts = DevReferenceCatalogue.Load(
+        app.Environment,
+        Path.Combine(AppContext.BaseDirectory, "DevData", "reference-labels.json"),
+        app.Services.GetRequiredService<InMemoryItemPorts>(),
+        app.Services.GetRequiredService<InMemoryItemNamePort>(),
+        app.Services.GetRequiredService<InMemoryItemFamilyNamePort>(),
+        app.Services.GetRequiredService<InMemoryWarrantyPorts>(),
+        app.Services.GetRequiredService<InMemoryPartyNamePort>(),
+        app.Services.GetRequiredService<InMemoryPartyContactPort>(),
+        app.Services.GetRequiredService<InMemoryDocumentNumberRegistry>(),
+        app.Services.GetRequiredService<InMemoryLocationNameRegistry>());
     app.Logger.LogInformation("Loaded development reference catalogue: {Items} items, {Parties} parties, {Documents} documents, {Locations} locations",
         referenceCounts.Items, referenceCounts.Parties, referenceCounts.Documents, referenceCounts.Locations);
 }

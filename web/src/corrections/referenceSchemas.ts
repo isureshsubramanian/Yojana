@@ -7,8 +7,8 @@ export const documentValue = z.object({ type: text, id: text });
 export type DocumentValue = z.infer<typeof documentValue>;
 const documentValueRequest = z.object({ type: text, id: text });
 
-const itemReferenceLabel = z.object({ code: text, name: nullableText });
-const partyReferenceLabel = z.object({ code: text, name: nullableText, partyType: nullableText });
+const itemReferenceLabel = z.object({ code: text, name: nullableText, availabilityCode: z.optional(nullableText) });
+const partyReferenceLabel = z.object({ code: text, name: nullableText, partyType: nullableText, availabilityCode: z.optional(nullableText) });
 const documentReferenceLabel = z.object({ number: text, status: nullableText, itemId: nullableText });
 const locationReferenceLabel = z.object({ code: text, name: nullableText, kind: nullableText });
 
@@ -26,7 +26,7 @@ export const referenceNamesResponse = z.object({
 });
 export type ReferenceNamesResponse = z.infer<typeof referenceNamesResponse>;
 
-export const itemFamilyOption = z.object({ code: text, name: text });
+export const itemFamilyOption = z.object({ code: text, name: text, availabilityCode: z.optional(nullableText) });
 export const itemFamilyOptions = z.array(itemFamilyOption);
 export type ItemFamilyOption = z.infer<typeof itemFamilyOption>;
 

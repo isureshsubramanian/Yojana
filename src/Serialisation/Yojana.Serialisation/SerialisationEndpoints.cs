@@ -445,8 +445,10 @@ public static class SerialisationEndpoints
             var documentLabels = await documents.NumbersAsync(request.Documents
                 .DistinctBy(document => new DocumentKey(document.Type, document.Id)).ToList(), ct);
             return Results.Ok(new ReferenceNamesResponse(
-                itemLabels.ToDictionary(row => row.Key, row => new ItemReferenceView(row.Value.Code, row.Value.Name)),
-                partyLabels.ToDictionary(row => row.Key, row => new PartyReferenceView(row.Value.Code, row.Value.Name, row.Value.PartyType)),
+                itemLabels.ToDictionary(row => row.Key, row => new ItemReferenceView(
+                    row.Value.Code, row.Value.Name, row.Value.AvailabilityCode)),
+                partyLabels.ToDictionary(row => row.Key, row => new PartyReferenceView(
+                    row.Value.Code, row.Value.Name, row.Value.PartyType, row.Value.AvailabilityCode)),
                 documentLabels.ToDictionary(row => $"{row.Key.Type}:{row.Key.Id:D}",
                     row => new DocumentReferenceView(row.Value.Number, row.Value.Status, row.Value.ItemId)),
                 locationLabels.ToDictionary(row => row.Key,
@@ -2386,9 +2388,10 @@ public static class SerialisationEndpoints
         IReadOnlyList<DocumentRef> Documents,
         IReadOnlyList<Guid>? Locations = null);
 
-    public sealed record ItemReferenceView(string Code, string? Name);
+    public sealed record ItemReferenceView(string Code, string? Name, string? AvailabilityCode = null);
 
-    public sealed record PartyReferenceView(string Code, string? Name, string? PartyType);
+    public sealed record PartyReferenceView(
+        string Code, string? Name, string? PartyType, string? AvailabilityCode = null);
 
     public sealed record DocumentReferenceView(string Number, string? Status, Guid? ItemId);
 

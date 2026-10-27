@@ -59,7 +59,7 @@ public sealed class CoverageMailCompose(SerialisationDbContext db, ITenantContex
         var sheet = record.Facts;
         return new CoverageMailComposeView(unitId, sheet["unit"]!["serial"]!.GetValue<string>(),
             sheet["item"]!["model_name"]!.GetValue<string>(), record.CustomerName,
-            people.Select(x => new CustomerContact(x.Name, x.Email, x.Role)).ToList(), templates,
+            people.Select(x => new CustomerContact(x.Name, x.Email, x.Role, x.AvailabilityCode)).ToList(), templates,
             people.Select(x => x.Language).FirstOrDefault(x => x is not null),
             string.IsNullOrWhiteSpace(identity.SenderName) ? mail.FromName : identity.SenderName,
             string.IsNullOrWhiteSpace(identity.ReplyTo) ? null : identity.ReplyTo, mail.FromAddress, actor.Name,

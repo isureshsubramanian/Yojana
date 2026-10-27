@@ -9,6 +9,7 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <ProjectReference Include="../../src/Platform/Yojana.Platform/Yojana.Platform.csproj" />
     <ProjectReference Include="../../src/Serialisation/Yojana.Serialisation/Yojana.Serialisation.csproj" />
+    <ProjectReference Include="../../src/Serialisation/Yojana.Serialisation.DevelopmentPorts/Yojana.Serialisation.DevelopmentPorts.csproj" />
     <ProjectReference Include="../../src/Integration/Yojana.Integration/Yojana.Integration.csproj" />
     <ProjectReference Include="../../src/Knowledge/Yojana.Knowledge/Yojana.Knowledge.csproj" />
     <ProjectReference Include="../../src/Web/Yojana.Web/Yojana.Web.csproj" />

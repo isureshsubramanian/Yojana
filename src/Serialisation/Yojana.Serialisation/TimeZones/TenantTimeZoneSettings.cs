@@ -149,7 +149,11 @@ public sealed class TenantTimeZonePort(TenantTimeZoneSettings settings, ITimeZon
     public async Task<string?> ForLocationAsync(Guid locationId, string purpose,
         CancellationToken cancellationToken)
     {
-        var direct = await KnownAsync(source.ForLocationAsync(locationId, cancellationToken));
+        // ADR-0022 keeps the existing tenant/UTC presentation fallback when the optional owner source is
+        // unavailable. Other purposes still require the source and therefore retain its coded refusal.
+        var direct = source is IUnavailablePort && purpose == TimeZonePurpose.DocumentPresentation
+            ? null
+            : await KnownAsync(source.ForLocationAsync(locationId, cancellationToken));
         if (direct is not null) return direct;
         if (purpose != TimeZonePurpose.DocumentPresentation) return null;
         var policy = await PolicyAsync(cancellationToken);
@@ -164,7 +168,9 @@ public sealed class TenantTimeZonePort(TenantTimeZoneSettings settings, ITimeZon
         var policy = await PolicyAsync(cancellationToken);
         var configured = policy?.LegalEntityOverrides.FirstOrDefault(row => row.LegalEntityId == legalEntityId)?.TimeZone;
         var entityZone = Known(configured)
-            ?? await KnownAsync(source.ForLegalEntityAsync(legalEntityId, cancellationToken));
+            ?? (source is IUnavailablePort
+                ? null
+                : await KnownAsync(source.ForLegalEntityAsync(legalEntityId, cancellationToken)));
         if (entityZone is not null) return entityZone;
         return Known(policy?.TenantTimeZone) ?? "UTC";
     }

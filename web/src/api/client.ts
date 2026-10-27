@@ -69,6 +69,27 @@ export async function api<T>(path: string, init?: {
 /** Rule carried by the ApiError thrown when a 2xx response does not match its schema (ADR-0019 Q3). */
 export const unexpectedResponseRule = "unexpected_response";
 
+const unavailableProblemText: Readonly<Record<string, string>> = {
+  party_name_unavailable: "Not available with this connection",
+  item_name_unavailable: "Not available with this connection",
+  item_policy_unavailable: "Not available with this connection",
+  customer_contract_unavailable: "Not available with this connection",
+  vendor_warranty_terms_unavailable: "Not available with this connection",
+  warranty_certificate_unavailable: "Not available with this connection",
+  time_zone_unavailable: "Not available with this connection",
+  stock_quantity_unavailable: "Not available with this connection",
+  stock_reclassification_unavailable: "Not available with this connection",
+  stock_unit_event_unavailable: "Not available with this connection",
+  serial_scheme_not_configured: "Not available with this connection",
+  item_family_unavailable: "Not available with this connection",
+  party_contact_unavailable: "Not available with this connection",
+  production_order_unavailable: "Not available with this connection",
+  ownership_source_unavailable: "Not available with this connection",
+  service_document_unavailable: "Not available with this connection",
+  internal_sale_document_unavailable: "Not available with this connection",
+  label_printer_not_configured: "Label printing is not set up for this site",
+};
+
 type ApiInit = Parameters<typeof api>[1];
 
 /**
@@ -113,7 +134,8 @@ async function describe(response: Response): Promise<{ message: string; title: s
       const reasons = Array.isArray(problem.reasons) ? problem.reasons.filter((reason): reason is { code: string; message: string } => typeof reason === "object" && reason !== null && typeof (reason as { code?: unknown }).code === "string" && typeof (reason as { message?: unknown }).message === "string") : [];
       const openRules = Array.isArray(problem.openRules) ? problem.openRules.filter((value): value is string => typeof value === "string") : [];
       const blockers = Array.isArray(problem.blockers) ? problem.blockers.filter((value): value is { kind: string; recordId: string | null; reference: string; status: string; detail: string } => typeof value === "object" && value !== null && typeof (value as { kind?: unknown }).kind === "string" && (typeof (value as { recordId?: unknown }).recordId === "string" || (value as { recordId?: unknown }).recordId === null) && typeof (value as { reference?: unknown }).reference === "string" && typeof (value as { status?: unknown }).status === "string" && typeof (value as { detail?: unknown }).detail === "string") : [];
-      return { message: detail ?? title ?? rule ?? fallback, title, detail, rule, unblockingStep: problem.unblock ?? problem.unblockingStep ?? null, changedBy: problem.changedBy ?? null, changedAt: problem.changedAt ?? null, reasons, openRules, blockers };
+      const mapped = rule ? unavailableProblemText[rule] ?? null : null;
+      return { message: mapped ?? detail ?? title ?? rule ?? fallback, title, detail: mapped ?? detail, rule, unblockingStep: problem.unblock ?? problem.unblockingStep ?? null, changedBy: problem.changedBy ?? null, changedAt: problem.changedAt ?? null, reasons, openRules, blockers };
     } catch {
       return { message: fallback, title: null, detail: null, rule: null, unblockingStep: null, changedBy: null, changedAt: null, reasons: [], openRules: [], blockers: [] };
     }

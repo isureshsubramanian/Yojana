@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Yojana.Serialisation.Contracts/Yojana.Serialisation.Contracts.csproj" />
+    <ProjectReference Include="../Yojana.Serialisation/Yojana.Serialisation.csproj" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>

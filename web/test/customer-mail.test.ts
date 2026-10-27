@@ -109,6 +109,7 @@ test("screens follow the approved decisions: no logo, sandboxed previews, admin 
   assert.match(compose, /Always attached/);
   assert.doesNotMatch(compose, /attachPdf: false|removeAttachment/);
   assert.match(compose, /I have checked it is the right address/);
+  assert.match(compose, /contact\.availabilityCode/);
   const routes = source("routes.tsx");
   for (const path of ["mail/templates", "mail/templates/:id", "mail/sent", "units/:unitId/email"]) assert.ok(routes.includes(`"${path}"`), path);
   assert.match(source("units/UnitDetail.tsx"), /to=\{`\/units\/\$\{unitId\}\/email`\}>E-mail to customer…/);

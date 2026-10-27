@@ -2,6 +2,7 @@ using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Entitlements;
+using Yojana.Serialisation.Ports;
 using Yojana.Serialisation.TimeZones;
 using Xunit;
 
@@ -109,6 +110,21 @@ public sealed class TimeZoneSettingsTests
             new UpdateTenantTimeZoneSettings("Moon/Tranquillity", [], ITenantSettings.MissingVersion),
             "administrator", default));
         Assert.Equal("time_zone_unknown", unknownZone.Rule);
+    }
+
+    [Fact]
+    public async Task Unavailable_optional_source_keeps_presentation_fallback_but_refuses_direct_lookup()
+    {
+        var settings = new TenantTimeZoneSettings(new MemorySettings(), new PartyPort(), new Clock());
+        var port = new TenantTimeZonePort(settings, new UnavailableTimeZoneSourcePort());
+
+        Assert.Equal("UTC", await port.ForLegalEntityAsync(IndiaEntity,
+            TimeZonePurpose.DocumentPresentation, default));
+        Assert.Equal("UTC", await port.ForLocationAsync(Guid.NewGuid(),
+            TimeZonePurpose.DocumentPresentation, default));
+        var refusal = await Assert.ThrowsAsync<CommandRefusedException>(() => port.ForLocationAsync(Guid.NewGuid(),
+            TimeZonePurpose.EntitlementCalendar, default));
+        Assert.Equal(SerialisationUnavailableCodes.TimeZoneUnavailable, refusal.Rule);
     }
 
     private sealed class Clock : IClock

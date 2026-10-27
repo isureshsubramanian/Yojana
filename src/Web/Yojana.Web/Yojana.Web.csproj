@@ -17,6 +17,7 @@
     <!-- Composition root: the only project allowed to reference every module implementation. -->
     <ProjectReference Include="../../Platform/Yojana.Platform/Yojana.Platform.csproj" />
     <ProjectReference Include="../../Serialisation/Yojana.Serialisation/Yojana.Serialisation.csproj" />
+    <ProjectReference Include="../../Serialisation/Yojana.Serialisation.DevelopmentPorts/Yojana.Serialisation.DevelopmentPorts.csproj" />
     <ProjectReference Include="../../Integration/Yojana.Integration/Yojana.Integration.csproj" />
     <ProjectReference Include="../../Knowledge/Yojana.Knowledge/Yojana.Knowledge.csproj" />
     <ProjectReference Include="../../Developer/Yojana.Developer/Yojana.Developer.csproj" />

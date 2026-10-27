@@ -112,7 +112,10 @@ if (options.Command == "seed-users")
     return;
 }
 
-var builder = Host.CreateApplicationBuilder();
+// The harness posts shipment documents through the development document ports (ADR-0022), so it composes as
+// Development; scope validation stays off so measured timings match a shipped host's container.
+var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { EnvironmentName = Environments.Development });
+builder.ConfigureContainer(new DefaultServiceProviderFactory(new ServiceProviderOptions { ValidateScopes = false, ValidateOnBuild = false }));
 builder.Configuration["Platform:ConnectionString"] = options.ConnectionString;
 builder.Configuration["Platform:MigrateOnStartup"] = "true";
 builder.Configuration["Platform:AutoBuildMessageStorage"] = "true";
@@ -133,6 +136,7 @@ builder.Logging.AddFilter("Yojana", LogLevel.Information);
 PlatformSetup.IncludeHandlers(typeof(SerialisationModule).Assembly);
 builder.AddYojanaPlatform();
 builder.AddSerialisationModule();
+builder.AddSerialisationDevelopmentPorts();
 using var host = builder.Build();
 await host.StartAsync();
 
