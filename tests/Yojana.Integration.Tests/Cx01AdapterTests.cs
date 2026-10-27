@@ -194,6 +194,7 @@ public sealed class Cx01AdapterTests
             "production_receipts", null, TimeSpan.FromMinutes(2), 10), CancellationToken.None);
 
         var accepted = Assert.Single(result.Events);
+        Assert.Equal(nameof(ProductionCompleted), accepted.MessageType);
         using var canonical = JsonDocument.Parse(accepted.CanonicalMessage);
         var payload = canonical.RootElement.GetProperty("payload");
         Assert.Equal("161", payload.GetProperty("production_order_ref").GetProperty("external_id").GetString());
@@ -219,8 +220,8 @@ public sealed class Cx01AdapterTests
         var result = await context.Adapter.PollAsync(new(context.TenantId, context.ConnectionId,
             "inventory_adjustments", null, TimeSpan.FromMinutes(2), 10), CancellationToken.None);
 
-        var accepted = Assert.Single(result.Events);
-        Assert.Equal(nameof(InventoryAdjusted), accepted.MessageType);
+        Assert.Equal(2, result.Events.Count);
+        var accepted = Assert.Single(result.Events, item => item.MessageType == nameof(InventoryAdjusted));
         using var canonical = JsonDocument.Parse(accepted.CanonicalMessage);
         var payload = canonical.RootElement.GetProperty("payload");
         Assert.Equal("out", payload.GetProperty("adjustment_kind").GetString());
@@ -228,6 +229,63 @@ public sealed class Cx01AdapterTests
         Assert.Equal(1, line.GetProperty("line_no").GetInt32());
         Assert.Equal("FIC-261027-CPU-09", Assert.Single(line.GetProperty("serials").EnumerateArray())
             .GetProperty("value").GetString());
+        var issue = Assert.Single(result.Events, item => item.MessageType == nameof(ComponentsIssued));
+        using var issuedCanonical = JsonDocument.Parse(issue.CanonicalMessage);
+        var issuedPayload = issuedCanonical.RootElement.GetProperty("payload");
+        Assert.Equal("161", issuedPayload.GetProperty("production_order_ref").GetProperty("external_id").GetString());
+        var issuedLine = Assert.Single(issuedPayload.GetProperty("lines").EnumerateArray());
+        Assert.Equal(0, issuedLine.GetProperty("line_no").GetInt32());
+        Assert.Equal("FIC-261027-CPU-01", Assert.Single(issuedLine.GetProperty("serials").EnumerateArray())
+            .GetProperty("value").GetString());
+    }
+
+    [Fact]
+    public async Task A_pure_production_issue_emits_no_empty_inventory_adjustment()
+    {
+        await using var simulator = new Cx01Simulator
+        {
+            ProductionIssueAvailable = true,
+            ProductionIssueContainsOnlyBasedLines = true,
+        };
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+        var configured = await context.Settings.GetAsync(context.ConnectionId, CancellationToken.None);
+        await context.Settings.SetAsync(context.ConnectionId, configured with
+        {
+            CurrencyMap = new Dictionary<string, string> { ["$"] = "USD" },
+        }, CancellationToken.None);
+
+        var result = await context.Adapter.PollAsync(new(context.TenantId, context.ConnectionId,
+            "inventory_adjustments", null, TimeSpan.FromMinutes(2), 10), CancellationToken.None);
+
+        var accepted = Assert.Single(result.Events);
+        Assert.Equal(nameof(ComponentsIssued), accepted.MessageType);
+    }
+
+    [Fact]
+    public async Task A_based_receipt_line_for_a_different_item_is_a_component_return()
+    {
+        await using var simulator = new Cx01Simulator
+        {
+            ProductionReceiptAvailable = true,
+            ProductionReceiptIncludesComponentReturn = true,
+        };
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+        var configured = await context.Settings.GetAsync(context.ConnectionId, CancellationToken.None);
+        await context.Settings.SetAsync(context.ConnectionId, configured with
+        {
+            CurrencyMap = new Dictionary<string, string> { ["$"] = "USD" },
+        }, CancellationToken.None);
+
+        var result = await context.Adapter.PollAsync(new(context.TenantId, context.ConnectionId,
+            "production_receipts", null, TimeSpan.FromMinutes(2), 10), CancellationToken.None);
+
+        var accepted = Assert.Single(result.Events);
+        Assert.Equal(nameof(ProductionCompleted), accepted.MessageType);
+        using var canonical = JsonDocument.Parse(accepted.CanonicalMessage);
+        var payload = canonical.RootElement.GetProperty("payload");
+        Assert.Single(payload.GetProperty("lines").EnumerateArray());
+        var returned = Assert.Single(payload.GetProperty("returned_components").EnumerateArray());
+        Assert.Equal("FIC-CPU-32C", returned.GetProperty("item_external_id").GetString());
     }
 
     [Fact]

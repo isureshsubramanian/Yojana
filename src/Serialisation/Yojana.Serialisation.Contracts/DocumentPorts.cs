@@ -48,7 +48,8 @@ public sealed record ReceiptDocument(DocumentRef Document, Guid VendorPartyRef, 
 public sealed record VendorShipment(DocumentRef Document, Guid VendorPartyRef, Guid CustomerPartyRef, Guid? ShipToLocationId, DateTime ShippedAt, IReadOnlyList<DocumentLine> Lines, string? CarrierRef = null, DateTime? DeliveredAt = null);
 
 /// <summary>A produced parent with the component lines consumed into it (serials where known).</summary>
-public sealed record ProductionReceipt(DocumentRef Document, DocumentRef ProductionOrder, DateTime PostedAt, IReadOnlyList<DocumentLine> Produced, IReadOnlyList<ComponentIssue> Components, Guid? FacilityId = null);
+public sealed record ProductionReceipt(DocumentRef Document, DocumentRef ProductionOrder, DateTime PostedAt, IReadOnlyList<DocumentLine> Produced, IReadOnlyList<ComponentIssue> Components, Guid? FacilityId = null,
+    IReadOnlyList<DocumentLine>? ReturnedComponents = null);
 
 /// <summary>The allocation facts Serialisation needs to decide whether reservations may move to a production order.</summary>
 public sealed record ProductionOrderAllocation(DocumentRef ProductionOrder, Guid ItemId, string SerialScheme, int Quantity);

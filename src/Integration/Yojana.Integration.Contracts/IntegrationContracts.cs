@@ -6,7 +6,7 @@ namespace Yojana.Integration.Contracts;
 public static class IntegrationContracts
 {
     public const string ModuleName = "Integration";
-    public const string CurrentVersion = "1.0";
+    public const string CurrentVersion = "1.1";
     public const int CurrentMajor = 1;
 
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
@@ -143,7 +143,11 @@ public sealed record PartyUpserted(string PartyExternalId, OpenEnum PartyKind, s
 public sealed record GoodsReceiptPosted(ExternalDocumentRef DocumentRef, string VendorPartyExternalId,
     IReadOnlyList<CanonicalLine> Lines, ExternalDocumentRef? BaseOrderRef = null, bool IsAsn = false);
 public sealed record ProductionCompleted(ExternalDocumentRef DocumentRef, ExternalDocumentRef ProductionOrderRef,
-    string ProducedItemExternalId, IReadOnlyList<CanonicalLine> Lines, IReadOnlyList<CanonicalLine> Components);
+    string ProducedItemExternalId, IReadOnlyList<CanonicalLine> Lines, IReadOnlyList<CanonicalLine> Components,
+    IReadOnlyList<CanonicalLine>? ReturnedComponents = null);
+/// <summary>Serialised components issued to one production order. One source document may produce one message per order.</summary>
+public sealed record ComponentsIssued(ExternalDocumentRef DocumentRef, ExternalDocumentRef ProductionOrderRef,
+    IReadOnlyList<CanonicalLine> Lines);
 public sealed record DeliveryPosted(ExternalDocumentRef DocumentRef, string CustomerPartyExternalId, string ShipToRef,
     IReadOnlyList<CanonicalLine> Lines, ExternalDocumentRef? BaseOrderRef = null, bool IsDropShip = false);
 public sealed record InvoicePosted(ExternalDocumentRef DocumentRef, string CustomerPartyExternalId,

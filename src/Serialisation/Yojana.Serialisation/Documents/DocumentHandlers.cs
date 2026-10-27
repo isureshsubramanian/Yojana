@@ -5,6 +5,7 @@ using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data.Entities;
 using Yojana.Serialisation.Identity;
 using Yojana.Serialisation.Ledger;
+using Yojana.Serialisation.Manufacturing;
 using Wolverine;
 
 namespace Yojana.Serialisation.Documents;
@@ -348,7 +349,8 @@ public static class PurchasingVendorShipConfirmedHandler
 
 public static class ManufacturingProductionReceiptPostedHandler
 {
-    public static Task<ConsumedEventResult> Handle(ManufacturingProductionReceiptPosted message, DocumentContext ctx, CancellationToken ct) => ctx.InTransactionAsync(async () =>
+    public static Task<ConsumedEventResult> Handle(ManufacturingProductionReceiptPosted message, DocumentContext ctx,
+        ManufacturingContractService returnService, CancellationToken ct) => ctx.InTransactionAsync(async () =>
     {
         var doc = await ctx.Manufacturing.GetProductionReceiptAsync(message.Document, ct) ?? throw new CommandRefusedException("document_unavailable", $"Production receipt {message.Document.Id:N} could not be read through the manufacturing port.");
         var exceptions = new List<string>();
@@ -364,7 +366,28 @@ public static class ManufacturingProductionReceiptPostedHandler
         }
 
         await ctx.Db.SaveChangesAsync(ct);
+        await Components.RecordParentsAsync(ctx, doc, ct);
         exceptions.AddRange(await Components.AssembleAsync(ctx, message.Envelope, doc.Document, doc.ProductionOrder, doc.Components, doc.PostedAt, ct));
+        foreach (var group in (doc.ReturnedComponents ?? []).Where(line => line.Serials.Count > 0)
+                     .GroupBy(line => line.LocationId ?? doc.FacilityId))
+        {
+            if (group.Key is null)
+            {
+                exceptions.Add($"{doc.Document.Type} {doc.Document.Id:N}: warehouse_required: returned components need their receiving warehouse");
+                continue;
+            }
+            var first = group.First();
+            var returned = await returnService.ComponentReturnedAsync(new ManufacturingComponentReturned(
+                message.Envelope with
+                {
+                    MessageId = Documents.DeterministicCommandId(message.Envelope, doc.Document, first.LineNo),
+                }, doc.ProductionOrder, group.Key.Value, [], group.SelectMany(line => line.Serials.Select(serial =>
+                    new ManufacturingReturnedHeldComponent(serial.Value, line.ItemId, line.LineNo))).ToList(),
+                doc.Document), ct);
+            exceptions.AddRange(returned.Refusals.Select(refusal =>
+                $"{doc.Document.Type} {doc.Document.Id:N}: {refusal.Rule}: {refusal.Message}"));
+        }
+        exceptions.AddRange(await Components.LinkHeldAsync(ctx, message.Envelope, doc.ProductionOrder, ct));
         return new ConsumedEventResult("Manufacturing.ProductionReceiptPosted", doc.Document, affected, 0, exceptions, affected == 0 && exceptions.Count == 0);
     }, ct);
 }
@@ -375,7 +398,10 @@ public static class ManufacturingComponentIssuedHandler
     {
         var doc = await ctx.Manufacturing.GetComponentIssueAsync(message.Document, ct) ?? throw new CommandRefusedException("document_unavailable", $"Component issue {message.Document.Id:N} could not be read through the manufacturing port.");
         var exceptions = await Components.AssembleAsync(ctx, message.Envelope, doc.Document, doc.ProductionOrder, doc.Components, doc.PostedAt, ct);
-        return new ConsumedEventResult("Manufacturing.ComponentIssued", doc.Document, doc.Components.Count(c => c.ParentSerial is not null), 0, exceptions);
+        var held = await Components.HoldAsync(ctx, message.Envelope, doc, exceptions, ct);
+        exceptions.AddRange(await Components.LinkHeldAsync(ctx, message.Envelope, doc.ProductionOrder, ct));
+        return new ConsumedEventResult("Manufacturing.ComponentIssued", doc.Document,
+            doc.Components.Count(c => c.ParentSerial is not null) + held, 0, exceptions);
     }, ct);
 }
 
@@ -428,13 +454,216 @@ internal static class Components
             }
         }
 
-        foreach (var loose in components.Where(c => c.ParentSerial is null && c.Serials.Count > 0))
-        {
-            exceptions.Add($"{doc.Type} {doc.Id:N} line {loose.LineNo}: {loose.Serials.Count} component serial(s) issued without a parent serial; not linked");
-        }
-
         return exceptions;
     }
+
+    public static async Task<int> HoldAsync(DocumentContext ctx, ThinEnvelope env, ComponentIssueDocument doc,
+        List<string> exceptions, CancellationToken ct)
+    {
+        var loose = doc.Components.Where(component => component.ParentSerial is null && component.Serials.Count > 0)
+            .ToList();
+        var affected = 0;
+        foreach (var component in loose)
+        {
+            var resolved = await ctx.Resolver.ResolveManyAsync(component.Serials, component.ComponentItemId, ct);
+            foreach (var serial in component.Serials)
+            {
+                if (resolved[serial] is not { } unit)
+                {
+                    exceptions.Add($"{doc.Document.Type} {doc.Document.Id:N} line {component.LineNo}: component serial '{serial.Value}' is unknown");
+                    continue;
+                }
+                var exists = await ctx.Db.ProductionComponentHolds.AnyAsync(row => row.TenantId == ctx.Tenant.TenantId
+                    && row.IssueDocumentId == doc.Document.Id && row.IssueLine == component.LineNo
+                    && row.UnitId == unit.UnitId, ct);
+                if (exists) continue;
+                if (UnitLifecycle.IsTerminal(unit.LifecycleStatus))
+                {
+                    exceptions.Add($"{doc.Document.Type} {doc.Document.Id:N} line {component.LineNo}: serial '{serial.Value}' belongs to a {unit.LifecycleStatus} unit");
+                    continue;
+                }
+
+                var key = Documents.Key(env, doc.Document, component.LineNo, unit.UnitId,
+                    UnitEventType.CustodyChanged, doc.PostedAt);
+                var move = await ctx.Episodes.PrepareCustodyMoveAsync(unit.UnitId,
+                    new CustodyTarget(LocationKind.InProduction, Reason: EpisodeReason.Production,
+                        Source: EpisodeSource.Manufacturing), UnitEventType.CustodyChanged, key, doc.PostedAt,
+                    env.Source, env.LegalEntityId, Documents.Line(doc.Document, component.LineNo),
+                    new Dictionary<string, object?>
+                    {
+                        ["message_id"] = env.MessageId,
+                        ["production_order_type"] = doc.ProductionOrder.Type,
+                        ["production_order_id"] = doc.ProductionOrder.Id,
+                        ["issue_document_type"] = doc.Document.Type,
+                        ["issue_document_id"] = doc.Document.Id,
+                    }, null, false, ct);
+                await ctx.Writer.AppendAsync([move.Draft], ct);
+                ctx.Db.ProductionComponentHolds.Add(new ProductionComponentHold
+                {
+                    TenantId = ctx.Tenant.TenantId,
+                    HoldId = TimeOrderedId.New(doc.PostedAt),
+                    UnitId = unit.UnitId,
+                    ItemId = component.ComponentItemId,
+                    ProductionOrderType = doc.ProductionOrder.Type,
+                    ProductionOrderId = doc.ProductionOrder.Id,
+                    IssueDocumentType = doc.Document.Type,
+                    IssueDocumentId = doc.Document.Id,
+                    IssueLine = component.LineNo,
+                    IssuedAt = doc.PostedAt,
+                });
+                affected++;
+            }
+        }
+        await ctx.Db.SaveChangesAsync(ct);
+        return affected;
+    }
+
+    public static async Task RecordParentsAsync(DocumentContext ctx, ProductionReceipt receipt,
+        CancellationToken ct)
+    {
+        var parents = await ParentsAsync(ctx, receipt.ProductionOrder, ct);
+        foreach (var parent in parents)
+        {
+            var existing = await ctx.Db.ProductionOrderReceipts.FindAsync(
+                [ctx.Tenant.TenantId, parent.UnitId], ct);
+            if (existing is not null) continue;
+            ctx.Db.ProductionOrderReceipts.Add(new ProductionOrderReceipt
+            {
+                TenantId = ctx.Tenant.TenantId,
+                ParentUnitId = parent.UnitId,
+                ProductionOrderType = receipt.ProductionOrder.Type,
+                ProductionOrderId = receipt.ProductionOrder.Id,
+                ReceiptDocumentType = receipt.Document.Type,
+                ReceiptDocumentId = receipt.Document.Id,
+                ReceivedAt = receipt.PostedAt,
+            });
+        }
+        await ctx.Db.SaveChangesAsync(ct);
+    }
+
+    public static async Task<List<string>> LinkHeldAsync(DocumentContext ctx, ThinEnvelope env, DocumentRef order,
+        CancellationToken ct)
+    {
+        var exceptions = new List<string>();
+        var holds = await ctx.Db.ProductionComponentHolds.Where(row => row.TenantId == ctx.Tenant.TenantId
+            && row.ProductionOrderType == order.Type && row.ProductionOrderId == order.Id
+            && row.LinkedAt == null && row.ReturnedAt == null).OrderBy(row => row.IssuedAt)
+            .ThenBy(row => row.IssueLine).ThenBy(row => row.HoldId).ToListAsync(ct);
+        if (holds.Count == 0) return exceptions;
+        var parents = await ParentsAsync(ctx, order, ct);
+        if (parents.Count == 0) return exceptions;
+        if (parents.Count > 1)
+        {
+            await RaiseTaskAsync(ctx, order, "assignment", ct);
+            return exceptions;
+        }
+        try
+        {
+            await AssignAsync(ctx, env.MessageId, order, parents[0].UnitId, holds, env.Source, env.LegalEntityId,
+                ctx.Clock.UtcNow, ct);
+        }
+        catch (CommandRefusedException exception)
+        {
+            exceptions.Add($"{order.Type} {order.Id:N}: {exception.Rule}: {exception.Message}");
+        }
+        return exceptions;
+    }
+
+    public static async Task<RecordAssemblyResult> AssignAsync(DocumentContext ctx, Guid commandId,
+        DocumentRef order, Guid parentUnitId, IReadOnlyList<ProductionComponentHold> holds, string actor,
+        Guid legalEntityId, DateTime assignedAt, CancellationToken ct)
+    {
+        var parent = (await ParentsAsync(ctx, order, ct)).SingleOrDefault(row => row.UnitId == parentUnitId)
+            ?? throw new CommandRefusedException("parent_not_on_order", "The scanned parent was not received for this production order.", "scan a parent received for this order");
+        var expected = await ctx.Bom.ExpectedSerialisedComponentsAsync(parent.ItemId,
+            DateOnly.FromDateTime(parent.CreatedAt), ct);
+        var open = await ctx.Db.AssemblyLinks.AsNoTracking().Where(link => link.TenantId == ctx.Tenant.TenantId
+            && link.ParentUnitId == parentUnitId && link.RemovedAt == null).ToListAsync(ct);
+        var inputs = new List<ChildInput>();
+        foreach (var hold in holds)
+        {
+            if (hold.ProductionOrderType != order.Type || hold.ProductionOrderId != order.Id
+                || hold.LinkedAt is not null || hold.ReturnedAt is not null)
+                throw new CommandRefusedException("component_not_held_for_order", "A scanned component is not open against this production order.", "refresh the order and scan an open held component");
+            var candidates = expected.Where(slot => slot.ComponentItemId == hold.ItemId).ToList();
+            var slot = candidates.FirstOrDefault(candidate =>
+                open.Count(link => string.Equals(link.Slot, candidate.Slot, StringComparison.OrdinalIgnoreCase))
+                + inputs.Count(input => string.Equals(input.Slot, candidate.Slot, StringComparison.OrdinalIgnoreCase))
+                < candidate.Quantity);
+            if (slot is null)
+                throw new CommandRefusedException("bom_quantity_exceeded", "The component item is not on an available serialised BOM slot for this parent.", "check the scanned item and the parent's BOM quantity");
+            inputs.Add(new ChildInput(hold.UnitId, Slot: slot.Slot,
+                ThroughPhantomItemId: slot.ThroughPhantomItemId));
+        }
+        var receipt = await ctx.Db.ProductionOrderReceipts.AsNoTracking().SingleAsync(row =>
+            row.TenantId == ctx.Tenant.TenantId && row.ParentUnitId == parentUnitId, ct);
+        var result = await ctx.AssembleAsync(new RecordAssembly(commandId, parentUnitId, inputs, assignedAt,
+            actor, legalEntityId, Document: order), ct);
+        for (var index = 0; index < holds.Count; index++)
+        {
+            var hold = holds[index];
+            hold.ParentUnitId = parentUnitId;
+            hold.AssemblyLinkId = result.LinkIds[index];
+            hold.ReceiptDocumentType = receipt.ReceiptDocumentType;
+            hold.ReceiptDocumentId = receipt.ReceiptDocumentId;
+            hold.LinkedAt = assignedAt;
+            hold.AssignedBy = actor;
+            ctx.Db.ProductionComponentAssignments.Add(new ProductionComponentAssignment
+            {
+                TenantId = ctx.Tenant.TenantId,
+                AssignmentId = TimeOrderedId.New(assignedAt),
+                CommandId = commandId,
+                HoldId = hold.HoldId,
+                ParentUnitId = parentUnitId,
+                ComponentUnitId = hold.UnitId,
+                ActorRef = actor,
+                AssignedAt = assignedAt,
+            });
+        }
+        var tasks = await ctx.Db.ProductionHoldTasks.Where(task => task.TenantId == ctx.Tenant.TenantId
+            && task.ProductionOrderType == order.Type && task.ProductionOrderId == order.Id
+            && task.Status == "open").ToListAsync(ct);
+        foreach (var task in tasks)
+        {
+            task.Status = "completed";
+            task.CompletedAt = assignedAt;
+            task.CompletedBy = actor;
+        }
+        await ctx.Db.SaveChangesAsync(ct);
+        return result;
+    }
+
+    public static async Task RaiseTaskAsync(DocumentContext ctx, DocumentRef order, string kind,
+        CancellationToken ct)
+    {
+        if (await ctx.Db.ProductionHoldTasks.AnyAsync(task => task.TenantId == ctx.Tenant.TenantId
+            && task.ProductionOrderType == order.Type && task.ProductionOrderId == order.Id
+            && task.Kind == kind && task.Status == "open", ct)) return;
+        ctx.Db.ProductionHoldTasks.Add(new ProductionHoldTask
+        {
+            TenantId = ctx.Tenant.TenantId,
+            TaskId = TimeOrderedId.New(ctx.Clock.UtcNow),
+            ProductionOrderType = order.Type,
+            ProductionOrderId = order.Id,
+            Kind = kind,
+            Status = "open",
+            RaisedAt = ctx.Clock.UtcNow,
+        });
+        await ctx.Db.SaveChangesAsync(ct);
+    }
+
+    private static async Task<List<ParentRow>> ParentsAsync(DocumentContext ctx, DocumentRef order,
+        CancellationToken ct) => await (from unit in ctx.Db.Units.AsNoTracking()
+            join created in ctx.Db.Events.AsNoTracking()
+                on new { unit.TenantId, EventId = unit.CreatedEventId }
+                equals new { created.TenantId, created.EventId }
+            join item in ctx.Db.ItemAssignments.AsNoTracking().Where(row => row.ValidTo == null)
+                on new { unit.TenantId, unit.UnitId } equals new { item.TenantId, item.UnitId }
+            where unit.TenantId == ctx.Tenant.TenantId && created.DocumentType == order.Type
+                && created.DocumentId == order.Id
+            select new ParentRow(unit.UnitId, item.ItemId, created.EventTime)).Distinct().ToListAsync(ct);
+
+    private sealed record ParentRow(Guid UnitId, Guid ItemId, DateTime CreatedAt);
 }
 
 public static class InventoryTransferPostedHandler

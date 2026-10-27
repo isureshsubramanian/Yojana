@@ -36,7 +36,9 @@ public static class Cx01WebhookHintHandler
         if (await events.IsProcessedAsync(hint.ConnectionId, hint.EventId, cancellationToken)) return;
         var mapped = await adapter.CaptureKeyAsync(hint.ConnectionId, hint.Collection, hint.Key,
             cancellationToken);
-        if (mapped is not null) _ = await inbox.Accept(mapped.Acceptance, cancellationToken);
+        if (mapped is not null)
+            foreach (var acceptance in mapped.Acceptances)
+                _ = await inbox.Accept(acceptance, cancellationToken);
         await events.MarkProcessedAsync(hint.ConnectionId, hint.EventId, cancellationToken);
     }
 }
@@ -478,8 +480,11 @@ public sealed class Cx01WebhookMaintenance(
                 var mapped = await adapter.CaptureKeyAsync(connectionId, collection, key, cancellationToken);
                 if (mapped is not null)
                 {
-                    var outcome = await inbox.Accept(mapped.Acceptance, cancellationToken);
-                    if (outcome.Outcome == InboundAcceptanceResult.Accepted) accepted++;
+                    foreach (var acceptance in mapped.Acceptances)
+                    {
+                        var outcome = await inbox.Accept(acceptance, cancellationToken);
+                        if (outcome.Outcome == InboundAcceptanceResult.Accepted) accepted++;
+                    }
                 }
                 await events.MarkProcessedAsync(connectionId, eventId, cancellationToken);
             }

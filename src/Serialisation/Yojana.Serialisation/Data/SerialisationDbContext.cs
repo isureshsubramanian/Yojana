@@ -88,6 +88,10 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
     public DbSet<ItemTrackingModeChange> ItemTrackingModeChanges => Set<ItemTrackingModeChange>();
     public DbSet<ItemSerialisationSettings> ItemSerialisationSettings => Set<ItemSerialisationSettings>();
     public DbSet<ManufacturingMessageReceipt> ManufacturingMessageReceipts => Set<ManufacturingMessageReceipt>();
+    public DbSet<ProductionComponentHold> ProductionComponentHolds => Set<ProductionComponentHold>();
+    public DbSet<ProductionHoldTask> ProductionHoldTasks => Set<ProductionHoldTask>();
+    public DbSet<ProductionComponentAssignment> ProductionComponentAssignments => Set<ProductionComponentAssignment>();
+    public DbSet<ProductionOrderReceipt> ProductionOrderReceipts => Set<ProductionOrderReceipt>();
     public DbSet<CorrectionRecordUnit> CorrectionUnits => Set<CorrectionRecordUnit>();
 
     public DbSet<SearchEntry> SearchEntries => Set<SearchEntry>();
@@ -662,6 +666,51 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.Property(r => r.MessageType).HasMaxLength(100);
             b.Property(r => r.PayloadHash).HasMaxLength(64).IsUnicode(false);
             b.HasIndex(r => new { r.TenantId, r.ProcessedAt });
+        });
+
+        modelBuilder.Entity<ProductionComponentHold>(b =>
+        {
+            b.ToTable("production_component_hold");
+            b.HasKey(row => new { row.TenantId, row.HoldId });
+            b.Property(row => row.ProductionOrderType).HasMaxLength(40);
+            b.Property(row => row.IssueDocumentType).HasMaxLength(40);
+            b.Property(row => row.ReceiptDocumentType).HasMaxLength(40);
+            b.Property(row => row.AssignedBy).HasMaxLength(200);
+            b.HasIndex(row => new { row.TenantId, row.UnitId, row.LinkedAt, row.ReturnedAt });
+            b.HasIndex(row => new { row.TenantId, row.ProductionOrderType, row.ProductionOrderId, row.LinkedAt, row.ReturnedAt });
+            b.HasIndex(row => new { row.TenantId, row.IssueDocumentId, row.IssueLine, row.UnitId }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.AssemblyLinkId });
+        });
+
+        modelBuilder.Entity<ProductionHoldTask>(b =>
+        {
+            b.ToTable("production_hold_task");
+            b.HasKey(row => new { row.TenantId, row.TaskId });
+            b.Property(row => row.ProductionOrderType).HasMaxLength(40);
+            b.Property(row => row.Kind).HasMaxLength(30);
+            b.Property(row => row.Status).HasMaxLength(20);
+            b.Property(row => row.CompletedBy).HasMaxLength(200);
+            b.HasIndex(row => new { row.TenantId, row.ProductionOrderType, row.ProductionOrderId, row.Kind, row.Status });
+            b.HasIndex(row => new { row.TenantId, row.Status, row.RaisedAt, row.TaskId });
+        });
+
+        modelBuilder.Entity<ProductionComponentAssignment>(b =>
+        {
+            b.ToTable("production_component_assignment");
+            b.HasKey(row => new { row.TenantId, row.AssignmentId });
+            b.Property(row => row.ActorRef).HasMaxLength(200);
+            b.HasIndex(row => new { row.TenantId, row.CommandId, row.ComponentUnitId }).IsUnique();
+            b.HasIndex(row => new { row.TenantId, row.HoldId });
+        });
+
+        modelBuilder.Entity<ProductionOrderReceipt>(b =>
+        {
+            b.ToTable("production_order_receipt");
+            b.HasKey(row => new { row.TenantId, row.ParentUnitId });
+            b.Property(row => row.ProductionOrderType).HasMaxLength(40);
+            b.Property(row => row.ReceiptDocumentType).HasMaxLength(40);
+            b.HasIndex(row => new { row.TenantId, row.ProductionOrderType, row.ProductionOrderId, row.ReceivedAt });
+            b.HasIndex(row => new { row.TenantId, row.ReceiptDocumentId });
         });
 
         modelBuilder.Entity<CorrectionRecordUnit>(b =>

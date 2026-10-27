@@ -170,7 +170,7 @@ public sealed class Cx01Adapter(
                 {
                     var mapped = await MapWithSerialFallbackAsync(request.ConnectionId, entity, document.RootElement,
                         configured, "poll", cancellationToken);
-                    acceptances.Add(mapped.Acceptance);
+                    acceptances.AddRange(mapped.Acceptances);
                     if (mapped.MissingSerialLines.Count > 0)
                         await attributionTasks.RaiseAsync(request.ConnectionId, entity.Collection, changed.Key,
                             mapped.MissingSerialLines, cancellationToken);
@@ -279,8 +279,8 @@ public sealed class Cx01Adapter(
             if (Cx01Mapper.IsCancelledOriginal(document.RootElement)
                 && await WasCapturedAsync(connectionId, definition, changed.Key, cancellationToken)) continue;
             if (!await IsOwnWriteAsync(connectionId, definition, document.RootElement, cancellationToken))
-                messages.Add((await MapWithSerialFallbackAsync(connectionId, definition, document.RootElement,
-                    configured, "backfill", cancellationToken)).Acceptance);
+                messages.AddRange((await MapWithSerialFallbackAsync(connectionId, definition, document.RootElement,
+                    configured, "backfill", cancellationToken)).Acceptances);
             if (messages.Count == pageSize) break;
         }
         return new(messages, examined < keys.Count ? last?.ToString() : null, allKeys.Count);
@@ -598,8 +598,8 @@ public sealed class Cx01Adapter(
             if (Cx01Mapper.IsCancelledOriginal(document.RootElement)
                 && await WasCapturedAsync(connectionId, entity, changed.Key, cancellationToken)) continue;
             if (await IsOwnWriteAsync(connectionId, entity, document.RootElement, cancellationToken)) continue;
-            messages.Add((await MapWithSerialFallbackAsync(connectionId, entity, document.RootElement,
-                configured, captureMode, cancellationToken)).Acceptance);
+            messages.AddRange((await MapWithSerialFallbackAsync(connectionId, entity, document.RootElement,
+                configured, captureMode, cancellationToken)).Acceptances);
             if (messages.Count == pageSize) break;
         }
         return messages;

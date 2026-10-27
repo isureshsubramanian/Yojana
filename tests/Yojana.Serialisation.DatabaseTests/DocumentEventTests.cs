@@ -244,6 +244,191 @@ public sealed class DocumentEventTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Twenty_five_manually_issued_components_are_held_then_linked_to_the_single_received_parent()
+    {
+        var tenant = await fixture.NewTenantAsync("dm25");
+        var prefix = "SRV" + Guid.NewGuid().ToString("N")[..5].ToUpperInvariant();
+        var parentItem = Guid.NewGuid();
+        var componentItem = Guid.NewGuid();
+        var warehouse = Guid.NewGuid();
+        var serials = Enumerable.Range(1, 25).Select(number => $"{prefix}-NIC-{number:000}").ToArray();
+        var componentReceipt = new ReceiptDocument(new DocumentRef("goods_receipt", Guid.NewGuid()),
+            Guid.NewGuid(), T0, [Line(1, componentItem, warehouse, serials)]);
+        Ports.Add(componentReceipt);
+        await InvokeAsync<ConsumedEventResult>(tenant,
+            new PurchasingReceiptPosted(Env(T0), componentReceipt.Document));
+        var order = new DocumentRef("production_order", Guid.NewGuid());
+        var issue = new ComponentIssueDocument(new DocumentRef("component_issue", Guid.NewGuid()), order,
+            T0.AddHours(1), [new ComponentIssue(1, componentItem, 25,
+                serials.Select(serial => new DocumentSerial(serial)).ToList())]);
+        Ports.Add(issue);
+
+        var issued = await InvokeAsync<ConsumedEventResult>(tenant,
+            new ManufacturingComponentIssued(Env(T0.AddHours(1)), issue.Document));
+
+        Assert.Equal(25, issued.UnitsAffected);
+        using (var heldScope = fixture.ScopeFor(tenant))
+        {
+            var heldDb = heldScope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            Assert.Equal(25, await heldDb.ProductionComponentHolds.CountAsync(row => row.LinkedAt == null));
+            Assert.Equal(25, await heldDb.Current.CountAsync(row => row.LocationKind == LocationKind.InProduction));
+            Assert.False(await heldDb.Units.AnyAsync(row => row.LifecycleStatus == LifecycleStatus.Scrapped));
+        }
+
+        fixture.Services.GetRequiredService<InMemoryItemPorts>().RegisterBom(parentItem,
+            [new ExpectedComponent("NIC", componentItem, "FIC-NIC-25G", 25)]);
+        await fixture.EnableErpBomCompletenessAsync(tenant);
+        var parentSerial = $"{prefix}-PARENT-001";
+        var production = new ProductionReceipt(new DocumentRef("production_receipt", Guid.NewGuid()), order,
+            T0.AddHours(2), [Line(1, parentItem, warehouse, parentSerial)], [], warehouse);
+        Ports.Add(production);
+        await InvokeAsync<ConsumedEventResult>(tenant,
+            new ManufacturingProductionReceiptPosted(Env(T0.AddHours(2)), production.Document));
+
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var parent = await db.Identifiers.Where(row => row.RawValue == parentSerial)
+            .Select(row => row.UnitId).SingleAsync();
+        Assert.Equal(25, await db.AssemblyLinks.CountAsync(row => row.ParentUnitId == parent
+            && row.RemovedAt == null));
+        Assert.Equal(25, await db.ProductionComponentHolds.CountAsync(row => row.ParentUnitId == parent
+            && row.LinkedAt != null));
+        Assert.All(await db.ProductionComponentHolds.Where(row => row.ParentUnitId == parent).ToListAsync(),
+            hold =>
+            {
+                Assert.Equal(issue.Document.Id, hold.IssueDocumentId);
+                Assert.Equal(production.Document.Id, hold.ReceiptDocumentId);
+            });
+        var unitQueries = scope.ServiceProvider.GetRequiredService<Yojana.Serialisation.Queries.UnitQueries>();
+        var parentDetail = await unitQueries.DetailAsync(parent, CancellationToken.None);
+        Assert.NotNull(parentDetail);
+        Assert.All(parentDetail.AsBuilt, row =>
+        {
+            Assert.Equal(order, row.ProductionOrder);
+            Assert.Equal(issue.Document.Id, row.Issue?.Id);
+            Assert.Equal(production.Document.Id, row.Receipt?.Id);
+        });
+        var released = await InvokeAsync<ReleaseUnitResult>(tenant,
+            new ReleaseUnit(Guid.NewGuid(), parent, T0.AddHours(3), "quality.user", Entity, "release-check"));
+        Assert.Equal(LifecycleStatus.Released, released.LifecycleStatus);
+        Assert.False(await db.Units.AnyAsync(row => row.LifecycleStatus == LifecycleStatus.Scrapped));
+    }
+
+    [DatabaseFact]
+    public async Task A_late_issue_links_immediately_but_multiple_received_parents_wait_for_confirmed_assignment()
+    {
+        var tenant = await fixture.NewTenantAsync("dmlate");
+        var prefix = "NET" + Guid.NewGuid().ToString("N")[..5].ToUpperInvariant();
+        var parentItem = Guid.NewGuid();
+        var componentItem = Guid.NewGuid();
+        var warehouse = Guid.NewGuid();
+        fixture.Services.GetRequiredService<InMemoryItemPorts>().RegisterBom(parentItem,
+            [new ExpectedComponent("PORT", componentItem, "FIC-NIC-25G", 1)]);
+        await fixture.EnableErpBomCompletenessAsync(tenant);
+        var componentReceipt = new ReceiptDocument(new DocumentRef("goods_receipt", Guid.NewGuid()),
+            Guid.NewGuid(), T0, [Line(1, componentItem, warehouse, $"{prefix}-C1", $"{prefix}-C2")]);
+        Ports.Add(componentReceipt);
+        await InvokeAsync<ConsumedEventResult>(tenant, new PurchasingReceiptPosted(Env(T0), componentReceipt.Document));
+
+        var singleOrder = new DocumentRef("production_order", Guid.NewGuid());
+        var singleReceipt = new ProductionReceipt(new DocumentRef("production_receipt", Guid.NewGuid()), singleOrder,
+            T0.AddHours(1), [Line(1, parentItem, warehouse, $"{prefix}-P1")], [], warehouse);
+        Ports.Add(singleReceipt);
+        await InvokeAsync<ConsumedEventResult>(tenant,
+            new ManufacturingProductionReceiptPosted(Env(T0.AddHours(1)), singleReceipt.Document));
+        var lateIssue = new ComponentIssueDocument(new DocumentRef("component_issue", Guid.NewGuid()), singleOrder,
+            T0.AddHours(2), [new ComponentIssue(1, componentItem, 1, [new DocumentSerial($"{prefix}-C1")])]);
+        Ports.Add(lateIssue);
+        await InvokeAsync<ConsumedEventResult>(tenant,
+            new ManufacturingComponentIssued(Env(T0.AddHours(2)), lateIssue.Document));
+
+        var multiOrder = new DocumentRef("production_order", Guid.NewGuid());
+        var multiIssue = new ComponentIssueDocument(new DocumentRef("component_issue", Guid.NewGuid()), multiOrder,
+            T0.AddHours(3), [new ComponentIssue(1, componentItem, 1, [new DocumentSerial($"{prefix}-C2")])]);
+        Ports.Add(multiIssue);
+        await InvokeAsync<ConsumedEventResult>(tenant,
+            new ManufacturingComponentIssued(Env(T0.AddHours(3)), multiIssue.Document));
+        var multiReceipt = new ProductionReceipt(new DocumentRef("production_receipt", Guid.NewGuid()), multiOrder,
+            T0.AddHours(4), [Line(1, parentItem, warehouse, $"{prefix}-P2", $"{prefix}-P3")], [], warehouse);
+        Ports.Add(multiReceipt);
+        await InvokeAsync<ConsumedEventResult>(tenant,
+            new ManufacturingProductionReceiptPosted(Env(T0.AddHours(4)), multiReceipt.Document));
+
+        Guid selectedParent;
+        using (var waitingScope = fixture.ScopeFor(tenant))
+        {
+            var waitingDb = waitingScope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            selectedParent = await waitingDb.Identifiers.Where(row => row.RawValue == $"{prefix}-P2")
+                .Select(row => row.UnitId).SingleAsync();
+            Assert.True(await waitingDb.ProductionComponentHolds.AnyAsync(row =>
+                row.ProductionOrderId == multiOrder.Id && row.LinkedAt == null));
+            Assert.True(await waitingDb.ProductionHoldTasks.AnyAsync(row =>
+                row.ProductionOrderId == multiOrder.Id && row.Kind == "assignment" && row.Status == "open"));
+            var queries = waitingScope.ServiceProvider.GetRequiredService<Yojana.Serialisation.Manufacturing.ProductionHoldQueries>();
+            var page = await queries.PageAsync(null, 25, CancellationToken.None);
+            Assert.Contains(page.Items, row => row.ProductionOrder == multiOrder
+                && row.Status == "waiting_for_assignment" && row.ParentsReceived == 2);
+            var detail = await queries.DetailAsync(multiOrder, CancellationToken.None);
+            Assert.NotNull(detail);
+            Assert.Equal("waiting_for_assignment", detail.Status);
+            Assert.Single(detail.Components);
+            Assert.Equal(2, detail.Parents.Count);
+        }
+        var blocked = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<ReleaseUnitResult>(tenant,
+            new ReleaseUnit(Guid.NewGuid(), selectedParent, T0.AddHours(5), "quality.user", Entity, "release-check")));
+        Assert.Equal("incomplete_asbuilt", blocked.Rule);
+        var assigned = await InvokeAsync<AssignProductionComponentsResult>(tenant,
+            new AssignProductionComponents(Guid.NewGuid(), multiOrder, $"{prefix}-P2",
+                [$"{prefix}-C2"], Entity, "production.operator"));
+        Assert.Single(assigned.AssemblyLinkIds);
+        var released = await InvokeAsync<ReleaseUnitResult>(tenant,
+            new ReleaseUnit(Guid.NewGuid(), selectedParent, T0.AddHours(6), "quality.user", Entity, "release-check"));
+        Assert.Equal(LifecycleStatus.Released, released.LifecycleStatus);
+
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        Assert.True(await db.ProductionComponentHolds.AnyAsync(row => row.ProductionOrderId == singleOrder.Id
+            && row.LinkedAt != null && row.IssueDocumentId == lateIssue.Document.Id));
+        Assert.True(await db.ProductionHoldTasks.AnyAsync(row => row.ProductionOrderId == multiOrder.Id
+            && row.Status == "completed" && row.CompletedBy == "production.operator"));
+    }
+
+    [DatabaseFact]
+    public async Task A_component_return_closes_the_hold_and_moves_the_existing_unit_back_to_the_receiving_warehouse()
+    {
+        var tenant = await fixture.NewTenantAsync("dmreturn");
+        var serial = "SSD-" + Guid.NewGuid().ToString("N")[..10].ToUpperInvariant();
+        var componentItem = Guid.NewGuid();
+        var parentItem = Guid.NewGuid();
+        var warehouse = Guid.NewGuid();
+        var receipt = new ReceiptDocument(new DocumentRef("goods_receipt", Guid.NewGuid()), Guid.NewGuid(), T0,
+            [Line(1, componentItem, warehouse, serial)]);
+        Ports.Add(receipt);
+        await InvokeAsync<ConsumedEventResult>(tenant, new PurchasingReceiptPosted(Env(T0), receipt.Document));
+        var order = new DocumentRef("production_order", Guid.NewGuid());
+        var issue = new ComponentIssueDocument(new DocumentRef("component_issue", Guid.NewGuid()), order,
+            T0.AddHours(1), [new ComponentIssue(1, componentItem, 1, [new DocumentSerial(serial)])]);
+        Ports.Add(issue);
+        await InvokeAsync<ConsumedEventResult>(tenant,
+            new ManufacturingComponentIssued(Env(T0.AddHours(1)), issue.Document));
+        var production = new ProductionReceipt(new DocumentRef("production_receipt", Guid.NewGuid()), order,
+            T0.AddHours(2), [Line(1, parentItem, warehouse, "SRV-" + Guid.NewGuid().ToString("N")[..10])], [],
+            warehouse, [Line(2, componentItem, warehouse, serial)]);
+        Ports.Add(production);
+
+        await InvokeAsync<ConsumedEventResult>(tenant,
+            new ManufacturingProductionReceiptPosted(Env(T0.AddHours(2)), production.Document));
+
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var component = await db.Identifiers.Where(row => row.RawValue == serial).Select(row => row.UnitId).SingleAsync();
+        var current = await db.Current.SingleAsync(row => row.UnitId == component);
+        Assert.Equal((warehouse, LocationKind.Warehouse), (current.LocationId, current.LocationKind));
+        Assert.NotNull((await db.ProductionComponentHolds.SingleAsync(row => row.UnitId == component)).ReturnedAt);
+        Assert.Equal(2, await db.Units.CountAsync());
+    }
+
+    [DatabaseFact]
     public async Task Transfer_return_loaner_adjustment_and_period_close_each_record_their_fact()
     {
         var tenant = await fixture.NewTenantAsync("dx");

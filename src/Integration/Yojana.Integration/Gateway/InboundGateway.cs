@@ -146,6 +146,8 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
             nameof(GoodsReceiptPosted) => await TranslateReceiptAsync(row, cancellationToken),
             nameof(ProductionCompleted) => await TranslateDocumentAsync<ProductionCompleted>(row, p => p.DocumentRef,
                 (env, doc) => new ManufacturingProductionReceiptPosted(env, doc), cancellationToken),
+            nameof(ComponentsIssued) => await TranslateDocumentAsync<ComponentsIssued>(row, p => p.DocumentRef,
+                (env, doc) => new ManufacturingComponentIssued(env, doc), cancellationToken),
             nameof(DeliveryPosted) => await TranslateDeliveryAsync(row, wasReleasedLate, cancellationToken),
             nameof(InvoicePosted) => await TranslateDocumentAsync<InvoicePosted>(row, p => p.DocumentRef,
                 (env, doc) => new SalesInvoicePosted(env, doc), cancellationToken),
@@ -384,6 +386,7 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
     {
         nameof(GoodsReceiptPosted) => Message<GoodsReceiptPosted>(row).Payload.DocumentRef,
         nameof(ProductionCompleted) => Message<ProductionCompleted>(row).Payload.DocumentRef,
+        nameof(ComponentsIssued) => Message<ComponentsIssued>(row).Payload.DocumentRef,
         nameof(DeliveryPosted) => Message<DeliveryPosted>(row).Payload.DocumentRef,
         nameof(InvoicePosted) => Message<InvoicePosted>(row).Payload.DocumentRef,
         nameof(ReturnReceived) => Message<ReturnReceived>(row).Payload.DocumentRef,
@@ -425,7 +428,11 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
                 if (x.BaseOrderRef is not null) await EnsureDocumentRefAsync(row.ConnectionId, x.BaseOrderRef, cancellationToken);
                 break;
             case ProductionCompleted x:
-                await PrepareReferencesAsync(row, x.Lines.Concat(x.Components).ToList(), null, null, cancellationToken);
+                await PrepareReferencesAsync(row, x.Lines.Concat(x.Components).Concat(x.ReturnedComponents ?? []).ToList(), null, null, cancellationToken);
+                await EnsureDocumentRefAsync(row.ConnectionId, x.ProductionOrderRef, cancellationToken);
+                break;
+            case ComponentsIssued x:
+                await PrepareReferencesAsync(row, x.Lines, null, null, cancellationToken);
                 await EnsureDocumentRefAsync(row.ConnectionId, x.ProductionOrderRef, cancellationToken);
                 break;
             case InvoicePosted x:
@@ -519,7 +526,9 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
         {
             nameof(GoodsReceiptPosted) => LineCurrencies(Message<GoodsReceiptPosted>(row).Payload.Lines),
             nameof(ProductionCompleted) => LineCurrencies(Message<ProductionCompleted>(row).Payload.Lines
-                .Concat(Message<ProductionCompleted>(row).Payload.Components)),
+                .Concat(Message<ProductionCompleted>(row).Payload.Components)
+                .Concat(Message<ProductionCompleted>(row).Payload.ReturnedComponents ?? [])),
+            nameof(ComponentsIssued) => LineCurrencies(Message<ComponentsIssued>(row).Payload.Lines),
             nameof(DeliveryPosted) => LineCurrencies(Message<DeliveryPosted>(row).Payload.Lines),
             nameof(InvoicePosted) => InvoiceCurrencies(Message<InvoicePosted>(row).Payload),
             nameof(ReturnReceived) => LineCurrencies(Message<ReturnReceived>(row).Payload.Lines),

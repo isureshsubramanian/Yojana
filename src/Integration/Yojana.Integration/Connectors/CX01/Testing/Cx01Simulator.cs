@@ -91,6 +91,8 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     public bool ReceiptCancelled { get; set; }
     public bool ProductionReceiptAvailable { get; set; }
     public bool ProductionIssueAvailable { get; set; }
+    public bool ProductionReceiptIncludesComponentReturn { get; set; }
+    public bool ProductionIssueContainsOnlyBasedLines { get; set; }
     public bool NonIsoGoodsReceiptCurrency { get; set; }
     public bool SubscriptionStopped { get; set; }
     public List<string> DeletedSubscriptionPaths { get; } = [];
@@ -455,6 +457,40 @@ internal sealed class Cx01Simulator : IAsyncDisposable
             }
             if (path == Cx01Protocol.Root + "InventoryGenEntries(139)")
             {
+                var producedLine = new
+                {
+                    LineNum = 0,
+                    ItemCode = "FIC-SRV-EDGE-01",
+                    Quantity = 1m,
+                    UoMCode = "EA",
+                    WarehouseCode = "WH-A",
+                    BaseType = 202,
+                    BaseEntry = 161,
+                    BaseLine = (int?)null,
+                    ActualBaseEntry = (int?)null,
+                    ActualBaseLine = (int?)null,
+                    SerialNumbers = new[]
+                    {
+                        new { InternalSerialNumber = "FIC-261027-SRV-01", SystemSerialNumber = 9139, Quantity = 1m },
+                    },
+                };
+                var returnedLine = new
+                {
+                    LineNum = 1,
+                    ItemCode = "FIC-CPU-32C",
+                    Quantity = 1m,
+                    UoMCode = "EA",
+                    WarehouseCode = "WH-A",
+                    BaseType = 202,
+                    BaseEntry = 161,
+                    BaseLine = (int?)1,
+                    ActualBaseEntry = (int?)null,
+                    ActualBaseLine = (int?)null,
+                    SerialNumbers = new[]
+                    {
+                        new { InternalSerialNumber = "FIC-261027-CPU-01", SystemSerialNumber = 9001, Quantity = 1m },
+                    },
+                };
                 await JsonAsync(response, new
                 {
                     DocEntry = 139,
@@ -464,31 +500,32 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                     UpdateTime = "213213",
                     DocObjectCode = "oInventoryGenEntry",
                     DocCurrency = "$",
-                    DocumentLines = new object[]
-                    {
-                        new
-                        {
-                            LineNum = 0,
-                            ItemCode = "FIC-SRV-EDGE-01",
-                            Quantity = 1m,
-                            UoMCode = "EA",
-                            WarehouseCode = "WH-A",
-                            BaseType = 202,
-                            BaseEntry = 161,
-                            BaseLine = (int?)null,
-                            ActualBaseEntry = (int?)null,
-                            ActualBaseLine = (int?)null,
-                            SerialNumbers = new[]
-                            {
-                                new { InternalSerialNumber = "FIC-261027-SRV-01", SystemSerialNumber = 9139, Quantity = 1m },
-                            },
-                        },
-                    },
+                    DocumentLines = ProductionReceiptIncludesComponentReturn
+                        ? new object[] { producedLine, returnedLine }
+                        : [producedLine],
                 });
                 return;
             }
             if (path == Cx01Protocol.Root + "InventoryGenExits(4)")
             {
+                var basedLine = new
+                {
+                    LineNum = 0, ItemCode = "FIC-CPU-32C", Quantity = 1m, UoMCode = "EA",
+                    WarehouseCode = "WH-A", BaseType = (int?)202, BaseEntry = (int?)161, BaseLine = (int?)1,
+                    SerialNumbers = new[]
+                    {
+                        new { InternalSerialNumber = "FIC-261027-CPU-01", SystemSerialNumber = 9001, Quantity = 1m },
+                    },
+                };
+                var ordinaryLine = new
+                {
+                    LineNum = 1, ItemCode = "FIC-CPU-32C", Quantity = 1m, UoMCode = "EA",
+                    WarehouseCode = "WH-A", BaseType = (int?)null, BaseEntry = (int?)null, BaseLine = (int?)null,
+                    SerialNumbers = new[]
+                    {
+                        new { InternalSerialNumber = "FIC-261027-CPU-09", SystemSerialNumber = 9009, Quantity = 1m },
+                    },
+                };
                 await JsonAsync(response, new
                 {
                     DocEntry = 4,
@@ -498,27 +535,9 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                     UpdateTime = "213000",
                     DocObjectCode = "oInventoryGenExit",
                     DocCurrency = "$",
-                    DocumentLines = new object[]
-                    {
-                        new
-                        {
-                            LineNum = 0, ItemCode = "FIC-CPU-32C", Quantity = 1m, UoMCode = "EA",
-                            WarehouseCode = "WH-A", BaseType = 202, BaseEntry = 161, BaseLine = 1,
-                            SerialNumbers = new[]
-                            {
-                                new { InternalSerialNumber = "FIC-261027-CPU-01", SystemSerialNumber = 9001, Quantity = 1m },
-                            },
-                        },
-                        new
-                        {
-                            LineNum = 1, ItemCode = "FIC-CPU-32C", Quantity = 1m, UoMCode = "EA",
-                            WarehouseCode = "WH-A", BaseType = (int?)null, BaseEntry = (int?)null, BaseLine = (int?)null,
-                            SerialNumbers = new[]
-                            {
-                                new { InternalSerialNumber = "FIC-261027-CPU-09", SystemSerialNumber = 9009, Quantity = 1m },
-                            },
-                        },
-                    },
+                    DocumentLines = ProductionIssueContainsOnlyBasedLines
+                        ? new object[] { basedLine }
+                        : [basedLine, ordinaryLine],
                 });
                 return;
             }

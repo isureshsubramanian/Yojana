@@ -11,6 +11,7 @@ public sealed class ContractCompatibilityTests
         ["ItemUpserted"] = typeof(ItemUpserted), ["BomUpserted"] = typeof(BomUpserted),
         ["PartyUpserted"] = typeof(PartyUpserted),
         ["GoodsReceiptPosted"] = typeof(GoodsReceiptPosted), ["ProductionCompleted"] = typeof(ProductionCompleted),
+        ["ComponentsIssued"] = typeof(ComponentsIssued),
         ["DeliveryPosted"] = typeof(DeliveryPosted), ["InvoicePosted"] = typeof(InvoicePosted),
         ["ReturnReceived"] = typeof(ReturnReceived), ["TransferPosted"] = typeof(TransferPosted),
         ["InventoryAdjusted"] = typeof(InventoryAdjusted), ["WarrantyLineSold"] = typeof(WarrantyLineSold),
@@ -26,7 +27,7 @@ public sealed class ContractCompatibilityTests
     {
         var examples = IntegrationSchemaCatalog.Resources.Where(name => name.Contains(".examples.", StringComparison.Ordinal)
             && name.EndsWith(".json", StringComparison.Ordinal)).ToList();
-        Assert.Equal(19, examples.Count);
+        Assert.Equal(20, examples.Count);
         foreach (var resource in examples)
         {
             var slug = resource[(resource.LastIndexOf(".examples.", StringComparison.Ordinal) + 10)..^5];
@@ -86,6 +87,7 @@ public sealed class ContractCompatibilityTests
     }
 
     [Theory]
+    [InlineData("1.1", true)]
     [InlineData("1.0", true)]
     [InlineData("0.9", true)]
     [InlineData("2.0", false)]

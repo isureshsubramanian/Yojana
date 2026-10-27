@@ -1,0 +1,21 @@
+{
+  "envelope": {
+    "contract_version": "1.1", "message_id": "0199f3d0-7d7f-7000-8000-000000000011",
+    "tenant_id": "0199f3d0-7d7f-7000-8000-000000000002", "connection_id": "0199f3d0-7d7f-7000-8000-000000000003",
+    "connector_code": "CX01", "erp_entity": "component-issue", "erp_external_id": "4:161",
+    "erp_change_marker": { "value": "2026-09-01T08:00:00Z|161", "marker_kind": "timestamp" },
+    "occurred_at": "2026-09-01T08:00:00+00:00", "observed_at": "2026-09-01T08:00:01+00:00",
+    "capture_mode": "poll", "attribution_completeness": "complete", "payload_ref": "raw/component-issue/4", "correlation_id": null
+  },
+  "message_type": "ComponentsIssued",
+  "payload": {
+    "document_ref": { "type": "60", "number": "4", "date": "2026-09-01", "external_id": "4", "line": null },
+    "production_order_ref": { "type": "production_order", "number": "161", "date": "2026-09-01", "external_id": "161", "line": null },
+    "lines": [{
+      "line_no": 0, "erp_line_id": "0", "item_external_id": "FIC-MAINBOARD", "quantity": 1, "uom": "EA",
+      "serials": [{ "value": "FIC-260901-MB-01", "issuer": null, "erp_serial_id": "1001" }], "lots": [],
+      "location_external_id": "MAIN", "base_document_ref": { "type": "202", "number": "161", "date": "2026-09-01", "external_id": "161", "line": 0 },
+      "party_external_id": null, "price": null, "currency": null
+    }]
+  }
+}

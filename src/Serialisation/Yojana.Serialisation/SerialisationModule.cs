@@ -555,12 +555,18 @@ public static class SerialisationModule
         builder.Services.AddScoped<Portal.PortalWriteService>();
         // End P7 customer portal.
 
+        builder.Services.AddScoped<Manufacturing.ProductionHoldQueries>();
+        builder.Services.AddScoped(sp => new Manufacturing.ProductionHoldAttentionSettings(
+            sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
+        builder.Services.AddScoped<Manufacturing.ProductionHoldAttentionSweep>();
+
         // Replay-and-diff healer (P1-T05): per tenant, nightly, through the platform's recurring tenant jobs.
         builder.Services.AddScoped<UnitCurrentHealer>();
         builder.Services.AddSingleton(RecurringTenantJob.For<UnitCurrentHealerJob>(UnitCurrentHealerJob.JobName, UnitCurrentHealerJob.Cron));
         builder.Services.AddSingleton(RecurringTenantJob.For<SearchIndexHealerJob>(SearchIndexHealerJob.JobName, SearchIndexHealerJob.Cron));
         builder.Services.AddSingleton(RecurringTenantJob.For<LedgerBaseOrderBackfillJob>(LedgerBaseOrderBackfillJob.JobName, baseOrderBackfill.Cron));
         builder.Services.AddSingleton(RecurringTenantJob.For<Entitlements.EntitlementRequirementJob>(Entitlements.EntitlementRequirementJob.JobName, Entitlements.EntitlementRequirementJob.Cron));
+        builder.Services.AddSingleton(RecurringTenantJob.For<Manufacturing.ProductionHoldAttentionJob>(Manufacturing.ProductionHoldAttentionJob.JobName, Manufacturing.ProductionHoldAttentionJob.Cron));
         // P5 advance-replacement block: one tenant-local nightly sweep, with publication through Wolverine's outbox.
         builder.Services.AddSingleton(RecurringTenantJob.For<Replacements.ReplacementOverdueJob>(Replacements.ReplacementOverdueJob.JobName, Replacements.ReplacementOverdueJob.Cron));
         builder.Services.AddSingleton(RecurringTenantJob.For<ImportFileMaintenanceJob>(ImportFileMaintenanceJob.JobName, ImportFileMaintenanceJob.Cron));

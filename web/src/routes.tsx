@@ -100,6 +100,7 @@ export const router = createBrowserRouter([
           { path: "units/receive", lazy: () => import("./units/Receive") },
           { path: "units/ranges", lazy: () => import("./units/SerialRanges") },
           { path: "units/completeness", lazy: () => import("./units/Completeness") },
+          { path: "units/in-production", lazy: () => import("./units/InProduction") },
           { path: "units/release", lazy: () => import("./units/Release") },
           { path: "units/:unitId", lazy: () => import("./units/UnitDetail") },
           { path: "units/:unitId/email", lazy: () => import("./mail/ComposeCoverageMail") },

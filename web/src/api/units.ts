@@ -55,7 +55,8 @@ export const episodeRow = z.object({
 export const asBuiltRow = z.object({
   linkId: text, slot: nullableText, relation: text, childUnitId: nullableText, childSerial: nullableText, childItemId: nullableText,
   childLotId: nullableText, quantity: nullableCount, releaseStatus: nullableText, throughPhantomItemId: nullableText,
-  installedAt: text, removedAt: nullableText,
+  installedAt: text, removedAt: nullableText, productionOrder: z.optional(z.nullable(documentRef)),
+  receipt: z.optional(z.nullable(documentRef)), issue: z.optional(z.nullable(documentRef)),
 });
 export const historyRow = z.object({
   eventId: text, seq: count, eventType: text, eventTime: text, recordedTime: text, bizStep: nullableText, disposition: nullableText,
@@ -70,6 +71,8 @@ export const unitDetail = z.object({
   overlayFlags: text, lastEventSeq: count, lastEventTime: text, identifiers: z.array(identifierRow), episodes: z.array(episodeRow),
   asBuilt: z.array(asBuiltRow), buildRecords: z.array(buildRecordRow), parentUnitId: nullableText, eventCount: count,
   ownerAndHolderDiffer: flag,
+  productionSource: z.optional(z.nullable(z.object({ productionOrder: documentRef, issue: documentRef,
+    receipt: z.nullable(documentRef), parentUnitId: nullableText, parentSerial: nullableText }))),
 });
 export type IdentifierRow = z.infer<typeof identifierRow>;
 export type EpisodeRow = z.infer<typeof episodeRow>;

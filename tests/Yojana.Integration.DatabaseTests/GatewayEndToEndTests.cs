@@ -61,6 +61,62 @@ public sealed class GatewayEndToEndTests(IntegrationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Canonical_component_issue_is_held_once_and_the_production_receipt_links_it_to_the_parent()
+    {
+        var tenant = await fixture.NewTenantAsync("cmpissue");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        var componentItem = "FIC-NIC-" + Guid.NewGuid().ToString("N")[..6];
+        var parentItem = "FIC-SRV-" + Guid.NewGuid().ToString("N")[..6];
+        var componentSerial = "NIC-" + Guid.NewGuid().ToString("N")[..10];
+        var parentSerial = "SRV-" + Guid.NewGuid().ToString("N")[..10];
+        await AcceptAndTranslate(tenant, connection, "item", componentItem, "001", new ItemUpserted(
+            componentItem, "Fictional network adapter", OpenEnum.Known("serial"), "EA", false));
+        await AcceptAndTranslate(tenant, connection, "item", parentItem, "001", new ItemUpserted(
+            parentItem, "Fictional rack server", OpenEnum.Known("serial"), "EA", false));
+        await AcceptAndTranslate(tenant, connection, "bom", parentItem, "001", new BomUpserted(parentItem, At,
+            false, [new BomUpsertedLine(1, OpenEnum.Known("item"), componentItem,
+                "Fictional network adapter", 1, "EA")]));
+        await AcceptAndTranslate(tenant, connection, "receipt", "GR-COMP-1", "001", new GoodsReceiptPosted(
+            Doc("goods_receipt", "GR-COMP-1"), "FIC-VENDOR-1", [Line(componentItem, componentSerial, "WH-1")]));
+        var order = Doc("production_order", "PO-1001");
+        var issuedLine = Line(componentItem, componentSerial, "WH-1") with
+        {
+            BaseDocumentRef = order with { Type = "202", Line = 1 },
+        };
+        var issued = new ComponentsIssued(Doc("component_issue", "GI-1001"), order, [issuedLine]);
+
+        await AcceptAndTranslate(tenant, connection, "component_issue", "GI-1001", "001", issued,
+            At.AddHours(1));
+        var duplicate = await Accept(tenant, connection, "component_issue", "GI-1001", "001", issued,
+            At.AddHours(1));
+        Assert.Equal(InboundAcceptanceResult.AlreadyProcessed, duplicate.Outcome);
+        using (var held = fixture.ScopeFor(tenant))
+        {
+            var serialisation = held.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            Assert.Single(await serialisation.ProductionComponentHolds.Where(row => row.LinkedAt == null).ToListAsync());
+            var component = await serialisation.Identifiers.Where(row => row.RawValue == componentSerial)
+                .Select(row => row.UnitId).SingleAsync();
+            Assert.Equal(LocationKind.InProduction,
+                (await serialisation.Current.SingleAsync(row => row.UnitId == component)).LocationKind);
+        }
+
+        var producedLine = Line(parentItem, parentSerial, "WH-1") with { BaseDocumentRef = order };
+        await AcceptAndTranslate(tenant, connection, "production_receipt", "PR-1001", "001",
+            new ProductionCompleted(Doc("production_receipt", "PR-1001"), order, parentItem,
+                [producedLine], []), At.AddHours(2));
+
+        using var final = fixture.ScopeFor(tenant);
+        var db = final.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var parent = await db.Identifiers.Where(row => row.RawValue == parentSerial)
+            .Select(row => row.UnitId).SingleAsync();
+        Assert.Single(await db.AssemblyLinks.Where(row => row.ParentUnitId == parent && row.RemovedAt == null)
+            .ToListAsync());
+        var hold = await db.ProductionComponentHolds.SingleAsync();
+        Assert.Equal(parent, hold.ParentUnitId);
+        Assert.NotNull(hold.LinkedAt);
+    }
+
+    [DatabaseFact]
     public async Task Cancellation_waits_for_its_original_then_reverses_the_receipt()
     {
         var tenant = await fixture.NewTenantAsync("cancelwait");

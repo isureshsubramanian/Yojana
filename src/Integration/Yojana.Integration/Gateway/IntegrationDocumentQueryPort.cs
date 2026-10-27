@@ -42,10 +42,25 @@ public sealed class IntegrationDocumentQueryPort(IntegrationDbContext db, ITenan
         foreach (var line in payload.Components)
             components.Add(new(line.LineNo, await RefAsync(row.ConnectionId, "item", line.ItemExternalId, cancellationToken),
                 line.Quantity, line.Serials.Select(Serial).ToList(), LotId: null));
-        return new(document, order, row.OccurredAt, produced, components);
+        var returned = await LinesAsync(row.ConnectionId, payload.ReturnedComponents ?? [], cancellationToken);
+        return new(document, order, row.OccurredAt, produced, components, ReturnedComponents: returned);
     }
 
-    public Task<ComponentIssueDocument?> GetComponentIssueAsync(SerialDocumentRef document, CancellationToken cancellationToken) => Task.FromResult<ComponentIssueDocument?>(null);
+    public async Task<ComponentIssueDocument?> GetComponentIssueAsync(SerialDocumentRef document,
+        CancellationToken cancellationToken)
+    {
+        var row = await RowAsync(document.Id, cancellationToken);
+        if (row?.MessageType != nameof(ComponentsIssued)) return null;
+        var payload = JsonSerializer.Deserialize<ComponentsIssued>(row.Payload, IntegrationContracts.Json)!;
+        var order = await DocumentRefAsync(row.ConnectionId, payload.ProductionOrderRef, cancellationToken)
+            ?? throw new InvalidOperationException("production_order_ref_missing");
+        var components = new List<ComponentIssue>();
+        foreach (var line in payload.Lines)
+            components.Add(new(line.LineNo,
+                await RefAsync(row.ConnectionId, "item", line.ItemExternalId, cancellationToken), line.Quantity,
+                line.Serials.Select(Serial).ToList()));
+        return new(document, order, row.OccurredAt, components);
+    }
 
     public async Task<TransferDocument?> GetTransferAsync(SerialDocumentRef document, CancellationToken cancellationToken)
     {

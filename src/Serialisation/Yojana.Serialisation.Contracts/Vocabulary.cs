@@ -191,6 +191,7 @@ public static class LocationKind
     public const string AtSubcontractor = "at_subcontractor";
     public const string At3pl = "at_3pl";
     public const string InRepair = "in_repair";
+    public const string InProduction = "in_production";
     public const string Vendor = "vendor";
     public const string Scrapped = "scrapped";
 }

@@ -14,7 +14,11 @@ using Yojana.Platform.Contracts.Time;
 namespace Yojana.Integration.Connectors.CX01;
 
 internal sealed record Cx01MappedAcceptance(InboundAcceptance Acceptance,
-    IReadOnlyList<Cx01MissingSerialLine> MissingSerialLines, string? ContentHash = null);
+    IReadOnlyList<Cx01MissingSerialLine> MissingSerialLines, string? ContentHash = null,
+    IReadOnlyList<InboundAcceptance>? AdditionalAcceptances = null)
+{
+    public IReadOnlyList<InboundAcceptance> Acceptances => [Acceptance, .. AdditionalAcceptances ?? []];
+}
 
 internal sealed class Cx01CurrencyNotMappedException(string erpCode)
     : InvalidOperationException($"ERP currency code '{erpCode}' has no confirmed ISO 4217 mapping.")
@@ -368,9 +372,7 @@ internal static class Cx01Mapper
                         new Money(Decimal(raw, "DocTotal"), Currency(raw, currencyMap) ?? "")),
                     "GoodsReceiptPosted" => new GoodsReceiptPosted(DocumentRef(raw, key),
                         Text(raw, "CardCode") ?? "", lines, BaseDocument(lines)),
-                    "ProductionCompleted" => new ProductionCompleted(DocumentRef(raw, key),
-                        ProductionOrderRef(lines, raw, key, occurred),
-                        lines.Count == 0 ? "" : lines[0].ItemExternalId, lines, []),
+                    "ProductionCompleted" => ProductionReceipt(raw, key, occurred, lines),
                     "TransferPosted" => new TransferPosted(DocumentRef(raw, key),
                         Text(raw, "FromWarehouse") ?? (lines.Count == 0 ? null : lines[0].LocationExternalId) ?? "",
                         Text(raw, "ToWarehouse") ?? "", lines),
@@ -391,9 +393,16 @@ internal static class Cx01Mapper
         var canonicalType = typeof(CanonicalMessage<>).MakeGenericType(payload.GetType());
         var canonical = Activator.CreateInstance(canonicalType, envelope, messageType, payload)
             ?? throw new InvalidOperationException("Could not create the canonical CX01 message.");
-        return new(new InboundAcceptance(envelope, messageType,
-            JsonSerializer.Serialize(canonical, canonicalType, IntegrationContracts.Json), RetainedRaw(raw)), missing,
-            contentHash);
+        var retainedRaw = RetainedRaw(raw);
+        var primary = new InboundAcceptance(envelope, messageType,
+            JsonSerializer.Serialize(canonical, canonicalType, IntegrationContracts.Json), retainedRaw);
+        var additional = entity.CanonicalMessage == nameof(InventoryAdjusted)
+            ? ProductionIssueAcceptances(raw, Lines(raw, previousSerials, recoveredSerials, serialManagedLines, [],
+                currencyMap), envelope, retainedRaw)
+            : [];
+        if (payload is InventoryAdjusted { Lines.Count: 0 } && additional.Count > 0)
+            return new(additional[0], missing, contentHash, additional.Skip(1).ToList());
+        return new(primary, missing, contentHash, additional);
     }
 
     public static string ChangeMarker(JsonElement value, string key)
@@ -559,6 +568,33 @@ internal static class Cx01Mapper
     // (with their missing-serial entries) until the as-built link is decided; the raw document is still retained.
     private const string ProductionOrderObjectType = "202";
 
+    private static List<InboundAcceptance> ProductionIssueAcceptances(JsonElement raw,
+        IReadOnlyList<CanonicalLine> lines, CanonicalEnvelope source, string retainedRaw)
+    {
+        var issued = lines.Where(line => line.BaseDocumentRef?.Type == ProductionOrderObjectType)
+            .GroupBy(line => line.BaseDocumentRef!.ExternalId ?? line.BaseDocumentRef.Number,
+                StringComparer.Ordinal);
+        var result = new List<InboundAcceptance>();
+        foreach (var order in issued)
+        {
+            var based = order.First().BaseDocumentRef!;
+            var payload = new ComponentsIssued(DocumentRef(raw, source.ErpExternalId),
+                based with { Type = "production_order" }, order.ToList());
+            var envelope = source with
+            {
+                MessageId = Guid.CreateVersion7(),
+                ErpExternalId = source.ErpExternalId + ":" + order.Key,
+                ErpChangeMarker = new(source.ErpChangeMarker.Value + "|order:" + order.Key,
+                    source.ErpChangeMarker.MarkerKind),
+                PayloadRef = source.PayloadRef + "/order/" + order.Key,
+            };
+            var message = new CanonicalMessage<ComponentsIssued>(envelope, nameof(ComponentsIssued), payload);
+            result.Add(new(envelope, nameof(ComponentsIssued),
+                JsonSerializer.Serialize(message, IntegrationContracts.Json), retainedRaw));
+        }
+        return result;
+    }
+
     private static List<CanonicalLine> WithoutProductionIssues(List<CanonicalLine> lines,
         List<Cx01MissingSerialLine> missing)
     {
@@ -579,6 +615,23 @@ internal static class Cx01Mapper
             return linked with { Type = "production_order" };
         return new("production_order", Text(raw, "BaseRef") ?? key,
             DateOnly.FromDateTime(occurred.Date));
+    }
+
+    private static ProductionCompleted ProductionReceipt(JsonElement raw, string key, DateTimeOffset occurred,
+        List<CanonicalLine> lines)
+    {
+        var based = lines.Where(line => line.BaseDocumentRef?.Type == ProductionOrderObjectType).ToList();
+        // The parent output line has no source BOM line. This is the receipt's own evidence of the order's produced
+        // item; it avoids a second remote read. A return-only shape cannot be classified safely and is parked.
+        var producedItem = based.FirstOrDefault(line => line.BaseDocumentRef?.Line is null)?.ItemExternalId;
+        if (producedItem is null && based.Count > 0)
+            throw new InvalidOperationException("production_receipt_produced_item_unavailable");
+        producedItem ??= lines.Count == 0 ? "" : lines[0].ItemExternalId;
+        var produced = lines.Where(line => line.BaseDocumentRef?.Type != ProductionOrderObjectType
+            || line.ItemExternalId == producedItem).ToList();
+        var returned = based.Where(line => line.ItemExternalId != producedItem).ToList();
+        return new(DocumentRef(raw, key), ProductionOrderRef(lines, raw, key, occurred), producedItem,
+            produced, [], returned);
     }
 
     private static string PartnerKind(string? value) => value switch

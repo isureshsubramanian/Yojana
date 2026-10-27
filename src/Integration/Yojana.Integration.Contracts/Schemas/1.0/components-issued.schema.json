@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sw.integration/1.0/components-issued",
+  "title": "ComponentsIssued",
+  "type": "object",
+  "required": ["envelope", "message_type", "payload"],
+  "properties": {
+    "envelope": { "$ref": "envelope.schema.json" },
+    "message_type": { "const": "ComponentsIssued" },
+    "payload": {
+      "type": "object",
+      "required": ["document_ref", "production_order_ref", "lines"],
+      "properties": {
+        "document_ref": { "type": "object" },
+        "production_order_ref": { "type": "object" },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["line_no", "erp_line_id", "item_external_id", "quantity", "uom", "serials", "lots", "location_external_id", "base_document_ref", "party_external_id", "price", "currency"],
+            "properties": {
+              "line_no": { "type": "number" }, "erp_line_id": { "type": "string" },
+              "item_external_id": { "type": "string" }, "quantity": { "type": "number" },
+              "uom": { "type": "string" }, "serials": { "type": "array", "items": { "type": "object" } },
+              "lots": { "type": "array", "items": {} },
+              "location_external_id": { "type": ["string", "null"] },
+              "base_document_ref": { "type": ["object", "null"] },
+              "party_external_id": { "type": ["string", "null"] },
+              "price": { "type": ["number", "null"] }, "currency": { "type": ["string", "null"] }
+            }, "additionalProperties": true
+          }
+        }
+      }, "additionalProperties": true
+    }
+  }, "additionalProperties": true
+}

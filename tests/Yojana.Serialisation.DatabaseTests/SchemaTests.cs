@@ -30,7 +30,7 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
         using var scope = fixture.ScopeFor(null);
         var db = Db(scope);
         var expected = db.Model.GetEntityTypes().Where(e => typeof(ITenantScoped).IsAssignableFrom(e.ClrType)).Select(e => e.GetTableName()!).ToHashSet();
-        Assert.Equal(114, expected.Count);
+        Assert.Equal(118, expected.Count);
         var covered = await db.Database.SqlQueryRaw<string>($"""
             SELECT OBJECT_NAME(p.target_object_id) AS [Value]
             FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id
@@ -58,6 +58,7 @@ public sealed class SchemaTests(SerialisationHostFixture fixture)
             "claim_cause", "policy_cover_item", "policy_cover_item_cause",
             "mail_template", "mail_template_version", "mail_template_default", "customer_mail_message",
             "item_serialisation_settings",
+            "production_component_assignment", "production_component_hold", "production_hold_task", "production_order_receipt",
         });
         var blocks = await db.Database.SqlQueryRaw<int>($"SELECT COUNT(*) AS [Value] FROM sys.security_predicates p JOIN sys.security_policies s ON s.object_id = p.object_id WHERE s.name = 'tenant_policy_{S}' AND p.predicate_type_desc = 'BLOCK'").SingleAsync();
         Assert.Equal(expected.Count * 2, blocks);
