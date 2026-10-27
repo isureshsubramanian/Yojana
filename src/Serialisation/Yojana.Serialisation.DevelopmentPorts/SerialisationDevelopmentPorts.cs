@@ -20,8 +20,9 @@ public static class SerialisationDevelopmentPorts
         builder.Services.AddSingleton<InMemorySerialSchemes>();
         builder.Services.AddSingleton<ISerialSchemeSource>(sp => sp.GetRequiredService<InMemorySerialSchemes>());
 
+        // The PDF download printer (ADR-0024) is a real adapter and answers in Development too, so the demo host can
+        // print labels. Tests that inspect sent jobs bind ILabelPrinterPort to this class in their own fixture.
         builder.Services.AddSingleton<InMemoryLabelPrinterPort>();
-        builder.Services.AddSingleton<ILabelPrinterPort>(sp => sp.GetRequiredService<InMemoryLabelPrinterPort>());
 
         builder.Services.AddSingleton<InMemoryDocumentPorts>();
         builder.Services.AddSingleton<IPurchasingDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
