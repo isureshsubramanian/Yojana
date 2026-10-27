@@ -636,9 +636,32 @@ internal static class Components
             row.TenantId == ctx.Tenant.TenantId && row.ParentUnitId == parentUnitId, ct);
         var result = await ctx.AssembleAsync(new RecordAssembly(commandId, parentUnitId, inputs, assignedAt,
             actor, legalEntityId, Document: order), ct);
+        // A linked component is no longer in production: it is inside the parent, so it takes the parent's custody.
+        var parentCustody = await ctx.Db.Episodes.AsNoTracking().SingleOrDefaultAsync(episode =>
+            episode.TenantId == ctx.Tenant.TenantId && episode.UnitId == parentUnitId
+            && episode.Kind == EpisodeKind.Custody && episode.ValidTo == null, ct);
         for (var index = 0; index < holds.Count; index++)
         {
             var hold = holds[index];
+            if (parentCustody?.LocationKind is { } parentLocationKind)
+            {
+                var move = await ctx.Episodes.PrepareCustodyMoveAsync(hold.UnitId,
+                    new CustodyTarget(parentLocationKind, parentCustody.LocationId, parentCustody.PartyRef,
+                        parentCustody.PartyType, Reason: EpisodeReason.Production, Source: EpisodeSource.Manufacturing),
+                    UnitEventType.CustodyChanged,
+                    IdempotencyKey.For(actor, order.Type, order.Id, hold.IssueLine, hold.UnitId,
+                        UnitEventType.CustodyChanged + ":assembled", assignedAt),
+                    assignedAt, actor, legalEntityId, order,
+                    new Dictionary<string, object?>
+                    {
+                        ["production_order_type"] = order.Type,
+                        ["production_order_id"] = order.Id,
+                        ["parent_unit_id"] = parentUnitId,
+                        ["receipt_document_type"] = receipt.ReceiptDocumentType,
+                        ["receipt_document_id"] = receipt.ReceiptDocumentId,
+                    }, null, false, ct);
+                await ctx.Writer.AppendAsync([move.Draft], ct);
+            }
             hold.ParentUnitId = parentUnitId;
             hold.AssemblyLinkId = result.LinkIds[index];
             hold.ReceiptDocumentType = receipt.ReceiptDocumentType;
