@@ -5,6 +5,7 @@ using Yojana.Integration.Connectors;
 using Yojana.Integration.Contracts;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
+using Yojana.Integration.DeadLetters;
 using Yojana.Integration.Gateway;
 using Yojana.Integration.Inbox;
 using Yojana.Integration.Notifications;
@@ -12,6 +13,7 @@ using Yojana.Integration.Outbox;
 using Yojana.Integration.Reconciliation;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
+using Yojana.Serialisation.Contracts;
 
 namespace Yojana.Integration.Connectors.CX01;
 
@@ -31,29 +33,61 @@ public sealed class Cx01Adapter(
     ICx01InboundRejectionSink inboundRejections,
     ICx01SurveyReader surveyReader,
     ICx01TrackingPermissionSink trackingPermissions,
+    ITenantTimeZoneReadPort timeZones,
     Cx01OutboundDocuments? documents = null,
     Cx01NativeWarrantyWriter? nativeWarranty = null,
     Cx01BomSyncSchedule? bomSchedule = null) : IConnectorAdapter, IOutboundConnector,
-    IConnectorWatermarkSeed
+    IConnectorWatermarkSeed, IInboundRetryPreparer
 {
     public string ConnectorCode => Cx01Capabilities.ConnectorCode;
     public bool OwnsConnectionLane => true;
     public OutboundConnectorCapabilities Capabilities { get; } = new(false, OwnsConnectionLane: true);
 
-    // HIDDEN COUPLING (OD-60) with SourceExtractor.SourceClockAsync: the time given here is the source server's local
-    // clock read when the final load's extraction began. Cx01Watermark.From reads the remote's update stamps as that same
-    // local time (written as if UTC), so the two compare directly. If either side starts converting time zones, the
-    // other must too, or the first poll after the hand-over skips or repeats documents.
-    public string? StartingWatermark(DateTime sourceLocalTime) =>
-        new Cx01Watermark(new DateTimeOffset(DateTime.SpecifyKind(sourceLocalTime, DateTimeKind.Unspecified),
-            TimeSpan.Zero), "").ToString();
+    // HIDDEN COUPLING (OD-60) with SourceExtractor.SourceClockAsync: migration extraction supplies the source-local
+    // clock and the connection identifies its server time zone. Converting here keeps the hand-over marker on the UTC
+    // scale used by remote update stamps. If either side stops supplying source-local time or the connection identity,
+    // the first poll after hand-over can skip or repeat documents.
+    public async Task<string?> StartingWatermarkAsync(Guid connectionId, DateTime sourceLocalTime,
+        CancellationToken cancellationToken)
+    {
+        var zone = await ServerTimeZoneAsync(connectionId, cancellationToken);
+        var utc = TimeZoneInfo.ConvertTimeToUtc(
+            DateTime.SpecifyKind(sourceLocalTime, DateTimeKind.Unspecified), zone);
+        return new Cx01Watermark(new DateTimeOffset(utc, TimeSpan.Zero), "").ToString();
+    }
 
-    public string WatermarkAt(DateTime utcInstant) => StartingWatermark(utcInstant)!;
+    public string WatermarkAt(DateTime utcInstant) => new Cx01Watermark(
+        new DateTimeOffset(DateTime.SpecifyKind(utcInstant, DateTimeKind.Utc)), "").ToString();
     public DateTime? InstantOf(string watermark) => Cx01Watermark.Parse(watermark) is var value
         && value != Cx01Watermark.Empty ? value.Timestamp.UtcDateTime : null;
     public bool IsMasterData(string entityType) => entityType is "items" or "item"
         or "product_trees" or "product_tree" or "ProductTrees"
         or "business_partners" or "business_partner" or "Items" or "BusinessPartners";
+
+    public bool Applies(InboundMessage message) => message.ConnectorCode == ConnectorCode
+        && message.AttentionReasonCode is "erp_currency_not_mapped" or "currency_not_home";
+
+    public async Task PrepareAsync(InboundMessage message, CancellationToken cancellationToken)
+    {
+        var entity = Entity(message.ErpEntity);
+        var configured = await settings.GetAsync(message.ConnectionId, cancellationToken);
+        using var raw = JsonDocument.Parse(message.RawPayload);
+        Cx01MappedAcceptance mapped;
+        try
+        {
+            mapped = await MapWithSerialFallbackAsync(message.ConnectionId, entity, raw.RootElement, configured,
+                message.CaptureMode, cancellationToken);
+        }
+        catch (Cx01CurrencyNotMappedException exception)
+        {
+            throw new Yojana.Platform.Contracts.CommandRefusedException("erp_currency_not_mapped",
+                exception.Message, "Confirm this ERP currency on the connection settings screen.");
+        }
+        message.MessageType = mapped.Acceptance.MessageType;
+        message.CanonicalMessage = mapped.Acceptance.CanonicalMessage;
+        message.ErpChangeMarker = mapped.Acceptance.Envelope.ErpChangeMarker.Value;
+        message.ContractVersion = mapped.Acceptance.Envelope.ContractVersion;
+    }
 
     public async Task<Connections.FullHistoryEstimate> EstimateFullHistoryAsync(Guid connectionId,
         CancellationToken cancellationToken)
@@ -65,7 +99,8 @@ public sealed class Cx01Adapter(
             {
                 using var response = await client.GetAsync(connectionId,
                     Cx01Protocol.Collection(entity.Value) + "?$count=true&$top=0", cancellationToken);
-                if (!response.RootElement.TryGetProperty("@odata.count", out var count) || !count.TryGetInt64(out var value))
+                if (!response.RootElement.TryGetProperty("@odata.count", out var count)
+                    || Cx01Json.Int64(count) is not { } value)
                     return new("unknown", null);
                 counts[entity.Key] = value;
             }
@@ -85,7 +120,8 @@ public sealed class Cx01Adapter(
         if (entity.CanonicalMessage == nameof(BomUpserted))
             return await PollBomsAsync(request, entity, cancellationToken);
         var configured = await settings.GetAsync(request.ConnectionId, cancellationToken);
-        var cursor = Cx01Watermark.Parse(request.Watermark);
+        var cursor = Cx01Watermark.Parse(request.Watermark,
+            await ServerTimeZoneAsync(request.ConnectionId, cancellationToken));
         var from = cursor.Timestamp == DateTimeOffset.MinValue
             ? DateTimeOffset.UnixEpoch : cursor.Timestamp - request.OverlapWindow;
         var keys = await ChangedKeysAsync(request.ConnectionId, entity, from, null,
@@ -130,12 +166,27 @@ public sealed class Cx01Adapter(
                     next = Cx01Watermark.Max(next, changed);
                     continue;
                 }
-                var mapped = await MapWithSerialFallbackAsync(request.ConnectionId, entity, document.RootElement,
-                    configured, "poll", cancellationToken);
-                acceptances.Add(mapped.Acceptance);
-                if (mapped.MissingSerialLines.Count > 0)
-                    await attributionTasks.RaiseAsync(request.ConnectionId, entity.Collection, changed.Key,
-                        mapped.MissingSerialLines, cancellationToken);
+                try
+                {
+                    var mapped = await MapWithSerialFallbackAsync(request.ConnectionId, entity, document.RootElement,
+                        configured, "poll", cancellationToken);
+                    acceptances.Add(mapped.Acceptance);
+                    if (mapped.MissingSerialLines.Count > 0)
+                        await attributionTasks.RaiseAsync(request.ConnectionId, entity.Collection, changed.Key,
+                            mapped.MissingSerialLines, cancellationToken);
+                }
+                catch (Cx01CurrencyNotMappedException exception)
+                {
+                    await inboundRejections.ParkDocumentAsync(request.ConnectionId, entity.Collection,
+                        entity.CanonicalMessage, changed.Key,
+                        document.RootElement, "erp_currency_not_mapped", exception.Message, cancellationToken);
+                }
+                catch (Exception exception) when (IsDocumentReadFailure(exception))
+                {
+                    await inboundRejections.ParkDocumentAsync(request.ConnectionId, entity.Collection,
+                        entity.CanonicalMessage, changed.Key,
+                        document.RootElement, "erp_document_unreadable", exception.Message, cancellationToken);
+                }
             }
             next = Cx01Watermark.Max(next, changed);
         }
@@ -355,8 +406,26 @@ public sealed class Cx01Adapter(
             if (Cx01Mapper.IsCancelledOriginal(document.RootElement)
                 && await WasCapturedAsync(connectionId, entity, key, cancellationToken)) return null;
             if (await IsOwnWriteAsync(connectionId, entity, document.RootElement, cancellationToken)) return null;
-            var mapped = await MapWithSerialFallbackAsync(connectionId, entity, document.RootElement, configured,
-                "webhook", cancellationToken);
+            Cx01MappedAcceptance mapped;
+            try
+            {
+                mapped = await MapWithSerialFallbackAsync(connectionId, entity, document.RootElement, configured,
+                    "webhook", cancellationToken);
+            }
+            catch (Cx01CurrencyNotMappedException exception)
+            {
+                await inboundRejections.ParkDocumentAsync(connectionId, entity.Collection, entity.CanonicalMessage,
+                    key, document.RootElement,
+                    "erp_currency_not_mapped", exception.Message, cancellationToken);
+                return null;
+            }
+            catch (Exception exception) when (IsDocumentReadFailure(exception))
+            {
+                await inboundRejections.ParkDocumentAsync(connectionId, entity.Collection, entity.CanonicalMessage,
+                    key, document.RootElement,
+                    "erp_document_unreadable", exception.Message, cancellationToken);
+                return null;
+            }
             if (entity.CanonicalMessage == nameof(BomUpserted)
                 && !await BomChangedAsync(connectionId, key, mapped, deleted: false, cancellationToken)) return null;
             if (mapped.MissingSerialLines.Count > 0)
@@ -466,7 +535,7 @@ public sealed class Cx01Adapter(
                 configured, cancellationToken);
         return Cx01Mapper.Map(tenant.TenantId, connectionId, entity, raw, previous, recovered, managed, captureMode,
             clock.UtcNow, Cx01Mapper.IsCancelledOriginal(raw),
-            new Cx01FieldReader(Cx01FieldMap.Effective(configured.FieldMap)), configured.Documents?.CurrencyMap);
+            new Cx01FieldReader(Cx01FieldMap.Effective(configured.FieldMap)), configured.CurrencyMap);
     }
 
     private async Task<Dictionary<int, IReadOnlyList<CanonicalSerial>>> RecoverSerialsAsync(Guid connectionId,
@@ -555,9 +624,13 @@ public sealed class Cx01Adapter(
         bool restrictToWatermarkRange, CancellationToken cancellationToken)
     {
         var result = new List<Cx01Watermark>();
+        var zone = await ServerTimeZoneAsync(connectionId, cancellationToken);
+        var filterFrom = restrictToWatermarkRange ? TimeZoneInfo.ConvertTime(fromInclusive, zone) : fromInclusive;
+        var filterUntil = restrictToWatermarkRange && toExclusive is { } utcUntil
+            ? TimeZoneInfo.ConvertTime(utcUntil, zone) : toExclusive;
         var filter = filterField + " ge '"
-            + fromInclusive.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + "'";
-        if (toExclusive is { } until)
+            + filterFrom.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + "'";
+        if (filterUntil is { } until)
             filter += " and " + filterField + " lt '"
                 + until.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + "'";
         var path = Cx01Protocol.Collection(entity) + "?$select=" + entity.KeyField
@@ -571,10 +644,12 @@ public sealed class Cx01Adapter(
             foreach (var row in Values(response.RootElement))
             {
                 var key = RequiredText(row, entity.KeyField);
-                var marker = Cx01Watermark.From(row, key);
+                var marker = Cx01Watermark.From(row, key, zone);
                 // Without a change time a marker is the day's midnight; compare whole days, or a record changed later
                 // that day falls before a time-of-day watermark and is never read. Same-day re-reads deduplicate.
-                var from = entity.HasUpdateTime ? fromInclusive : new DateTimeOffset(fromInclusive.UtcDateTime.Date, TimeSpan.Zero);
+                var from = entity.HasUpdateTime ? fromInclusive : new DateTimeOffset(
+                    TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(filterFrom.Date, DateTimeKind.Unspecified), zone),
+                    TimeSpan.Zero);
                 if (!restrictToWatermarkRange || marker.Timestamp >= from
                     && (toExclusive is null || marker.Timestamp < toExclusive))
                     result.Add(marker);
@@ -586,6 +661,17 @@ public sealed class Cx01Adapter(
         }
         return result;
     }
+
+    private async Task<TimeZoneInfo> ServerTimeZoneAsync(Guid connectionId, CancellationToken cancellationToken)
+    {
+        var configured = await settings.TryGetAsync(connectionId, cancellationToken);
+        var id = configured?.ErpServerTimeZone ?? await timeZones.GetAsync(cancellationToken);
+        return TimeZoneInfo.FindSystemTimeZoneById(id);
+    }
+
+    private static bool IsDocumentReadFailure(Exception exception) =>
+        exception is not Cx01RemoteException
+        && (exception is JsonException or FormatException or InvalidOperationException);
 
     private async Task<string> OutboundModeAsync(Guid connectionId, CancellationToken cancellationToken) =>
         await db.ConnectionGatewaySettings.AsNoTracking().Where(x => x.TenantId == tenant.TenantId
@@ -660,9 +746,9 @@ public sealed class Cx01Adapter(
         value.TryGetProperty(property, out var found) && found.ValueKind != JsonValueKind.Null
             ? found.ValueKind == JsonValueKind.String ? found.GetString() : found.ToString() : null;
     private static int Int(JsonElement value, string property) =>
-        value.TryGetProperty(property, out var found) && found.TryGetInt32(out var number) ? number : 0;
+        value.TryGetProperty(property, out var found) ? Cx01Json.Int32(found) ?? 0 : 0;
     private static decimal Number(JsonElement value, string property) =>
-        value.TryGetProperty(property, out var found) && found.TryGetDecimal(out var number) ? number : 0;
+        value.TryGetProperty(property, out var found) ? Cx01Json.Decimal(found) ?? 0 : 0;
 }
 
 internal readonly record struct Cx01Watermark(DateTimeOffset Timestamp, string Key) : IComparable<Cx01Watermark>
@@ -675,25 +761,43 @@ internal readonly record struct Cx01Watermark(DateTimeOffset Timestamp, string K
         return time != 0 ? time : StringComparer.Ordinal.Compare(Key, other.Key);
     }
 
-    public override string ToString() => Timestamp.ToString("O", CultureInfo.InvariantCulture) + "|" + Key;
+    // "|utc" marks the UTC scale (CX01FIX-01). Watermarks stored before it carry no marker: a keyed one came from an
+    // ERP row whose server-local clock was written as if it were UTC; an unkeyed one is a registration seed that was
+    // already true UTC. Parse with the server zone re-reads the keyed legacy form as server-local, so an upgraded
+    // connection neither skips changes (zones east of UTC) nor waits hours for them.
+    private const string UtcMarker = "utc";
 
-    public static Cx01Watermark Parse(string? value)
+    public override string ToString() =>
+        Timestamp.ToString("O", CultureInfo.InvariantCulture) + "|" + Key + "|" + UtcMarker;
+
+    public static Cx01Watermark Parse(string? value, TimeZoneInfo? legacyServerTimeZone = null)
     {
         if (string.IsNullOrWhiteSpace(value)) return Empty;
-        var separator = value.LastIndexOf('|');
-        return separator > 0 && DateTimeOffset.TryParse(value[..separator], CultureInfo.InvariantCulture,
-            DateTimeStyles.AssumeUniversal, out var timestamp) ? new(timestamp, value[(separator + 1)..]) : Empty;
+        var utcScale = value.EndsWith("|" + UtcMarker, StringComparison.Ordinal);
+        var body = utcScale ? value[..^(UtcMarker.Length + 1)] : value;
+        var separator = body.LastIndexOf('|');
+        if (separator <= 0 || !DateTimeOffset.TryParse(body[..separator], CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal, out var timestamp)) return Empty;
+        var key = body[(separator + 1)..];
+        if (!utcScale && key.Length > 0 && legacyServerTimeZone is not null && timestamp != DateTimeOffset.MinValue)
+            timestamp = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(
+                DateTime.SpecifyKind(timestamp.UtcDateTime, DateTimeKind.Unspecified), legacyServerTimeZone), TimeSpan.Zero);
+        return new(timestamp, key);
     }
 
-    public static Cx01Watermark From(JsonElement value, string key)
+    public static Cx01Watermark From(JsonElement value, string key, TimeZoneInfo serverTimeZone)
     {
-        var date = value.TryGetProperty("UpdateDate", out var dateValue) ? Cx01Protocol.DatePart(dateValue.GetString()) : null;
+        var date = value.TryGetProperty("UpdateDate", out var dateValue) && dateValue.ValueKind == JsonValueKind.String
+            ? Cx01Protocol.DatePart(dateValue.GetString()) : null;
         var time = value.TryGetProperty("UpdateTime", out var timeValue) ? timeValue.ToString() : "0";
         var digits = new string((time ?? "0").Where(char.IsAsciiDigit).ToArray()).PadLeft(6, '0');
         if (digits.Length > 6) digits = digits[^6..];
-        var text = $"{date}T{digits[..2]}:{digits[2..4]}:{digits[4..6]}Z";
-        return DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal,
-            out var timestamp) ? new(timestamp, key) : new(DateTimeOffset.MinValue, key);
+        var text = $"{date}T{digits[..2]}:{digits[2..4]}:{digits[4..6]}";
+        if (!DateTime.TryParseExact(text, "yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var local)) return new(DateTimeOffset.MinValue, key);
+        local = DateTime.SpecifyKind(local, DateTimeKind.Unspecified);
+        var utc = TimeZoneInfo.ConvertTimeToUtc(local, serverTimeZone);
+        return new(new DateTimeOffset(utc, TimeSpan.Zero), key);
     }
 
     public static Cx01Watermark Max(Cx01Watermark left, Cx01Watermark right) =>

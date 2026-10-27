@@ -79,6 +79,9 @@ public static class IntegrationEndpoints
             CreateProvisionalAndRetryDeadLetterRequest request, ClaimsPrincipal user, DeadLetterService service,
             CancellationToken ct) => Invoke(() => service.CreateProvisionalAndRetryAsync(itemId, request,
                 Actor(user), ct)));
+        integration.MapPost("/dead-letters/{itemId:guid}/retry", (Guid itemId, ClaimsPrincipal user,
+            DeadLetterService service, CancellationToken ct) =>
+            Invoke(() => service.RetryAsync(itemId, Actor(user), ct)));
         integration.MapPost("/dead-letters/{itemId:guid}/discard", (Guid itemId,
             DiscardDeadLetterRequest request, ClaimsPrincipal user, DeadLetterService service,
             CancellationToken ct) => Invoke(() => service.DiscardAsync(itemId, request.Reason, Actor(user), ct)));
@@ -117,6 +120,14 @@ public static class IntegrationEndpoints
         integration.MapPut("/connections/{connectionId:guid}/cx01/field-map", (Guid connectionId,
                 [FromBody] UpdateCx01FieldMap request, [FromServices] Cx01FieldMapService fieldMap,
                 CancellationToken ct) => Invoke(() => fieldMap.SetAsync(connectionId, request, ct)))
+            .RequireAuthorization(YojanaPolicy.TenantAdministrator);
+        integration.MapGet("/connections/{connectionId:guid}/cx01/currencies", (Guid connectionId,
+            [FromServices] Cx01CurrencyMapService currencies, CancellationToken ct) =>
+            Invoke(() => currencies.GetAsync(connectionId, ct)));
+        integration.MapPut("/connections/{connectionId:guid}/cx01/currencies", (Guid connectionId,
+                [FromBody] ConfirmCx01CurrencyMapping request, ClaimsPrincipal user,
+                [FromServices] Cx01CurrencyMapService currencies, CancellationToken ct) =>
+            Invoke(() => currencies.ConfirmAsync(connectionId, request, Actor(user), ct)))
             .RequireAuthorization(YojanaPolicy.TenantAdministrator);
         integration.MapGet("/connections/{connectionId:guid}/cx01/documents", (Guid connectionId,
             [FromServices] Cx01DocumentsService documents, CancellationToken ct) =>

@@ -13,7 +13,8 @@ namespace Yojana.Integration.DeadLetters;
 
 public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext tenant, IClock clock,
     IManualTaskReferenceVerifier referenceVerifier, ManualTaskDeskSettings deskSettings,
-    IInboundMessageParkingSink parking, OutboundCompleteness completeness) : IOutboundRetryWindow
+    IInboundMessageParkingSink parking, OutboundCompleteness completeness,
+    IEnumerable<IInboundRetryPreparer> inboundRetryPreparers) : IOutboundRetryWindow
 {
     public Task<DateTime?> StartedAtAsync(Guid outboundCommandId, CancellationToken cancellationToken) =>
         (from item in db.DeadLetterItems.AsNoTracking()
@@ -163,6 +164,25 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         CreateProvisionalAndRetryDeadLetterRequest request, string actorRef,
         CancellationToken cancellationToken) => MapAndRetryAsync(itemId, request.EntityType,
         request.ExternalId, TimeOrderedId.New(clock.UtcNow), true, actorRef, cancellationToken);
+
+    public async Task<DeadLetterActionResult> RetryAsync(Guid itemId, string actorRef,
+        CancellationToken cancellationToken)
+    {
+        actorRef = RequiredActor(actorRef);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var item = await OpenItemAsync(itemId, cancellationToken);
+        if (item.SourceKind != DeadLetterSourceKind.InboundMessage)
+            throw new DeadLetterRuleException("dead_letter_retry_not_inbound",
+                "Only an inbound message can be retried without adding a record mapping.");
+        await ScheduleRetryAsync(item, cancellationToken);
+        item.Status = DeadLetterStatus.RetryPending;
+        item.UpdatedAt = clock.UtcNow;
+        item.ResolvedAt = clock.UtcNow;
+        AddEvent(itemId, DeadLetterAction.Retry, actorRef, null, new { });
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new(itemId, item.Status);
+    }
 
     public async Task<DeadLetterActionResult> DiscardAsync(Guid itemId, string reason, string actorRef,
         CancellationToken cancellationToken)
@@ -421,6 +441,8 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
         {
             var inbound = await db.InboundMessages.SingleAsync(x => x.TenantId == tenant.TenantId
                 && x.InboundMessageId == item.SourceId, cancellationToken);
+            var preparer = inboundRetryPreparers.SingleOrDefault(candidate => candidate.Applies(inbound));
+            if (preparer is not null) await preparer.PrepareAsync(inbound, cancellationToken);
             inbound.TranslationStatus = InboundTranslationStatus.Pending;
             inbound.TranslationAttemptCount = 0;
             inbound.TranslationStartedAt = null;
@@ -428,6 +450,10 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
             inbound.LastTranslationError = null;
             inbound.AttentionReasonCode = null;
             inbound.TranslatedAt = null;
+            foreach (var task in await db.ExceptionTasks.Where(x => x.TenantId == tenant.TenantId
+                         && x.InboundMessageId == inbound.InboundMessageId && x.Status == "open")
+                         .ToListAsync(cancellationToken))
+                task.Status = "completed";
             return;
         }
         throw new DeadLetterRuleException("dead_letter_source_unknown", "The dead-letter source cannot be retried.");

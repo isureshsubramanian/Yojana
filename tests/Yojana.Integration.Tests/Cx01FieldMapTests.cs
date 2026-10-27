@@ -86,9 +86,42 @@ public sealed class Cx01FieldMapTests
         var mapped = Cx01Mapper.Map(new TenantId(Guid.NewGuid()), Guid.NewGuid(), Cx01Protocol.Entities["goods_receipts"],
             raw.RootElement, new Dictionary<int, IReadOnlyList<Contracts.CanonicalSerial>>(),
             new Dictionary<int, IReadOnlyList<Contracts.CanonicalSerial>>(), new HashSet<int>(), "poll",
-            new DateTime(2026, 10, 24, 17, 0, 0, DateTimeKind.Utc), currencyMap: new Dictionary<string, string> { ["USD"] = "$" });
+            new DateTime(2026, 10, 24, 17, 0, 0, DateTimeKind.Utc), currencyMap: new Dictionary<string, string> { ["$"] = "USD" });
         Assert.Contains("\"USD\"", mapped.Acceptance.CanonicalMessage, StringComparison.Ordinal);
         Assert.DoesNotContain("\"$\"", mapped.Acceptance.CanonicalMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_listed_iso_currency_passes_without_a_connection_mapping()
+    {
+        using var raw = JsonDocument.Parse("""
+            {"DocEntry":1292,"DocDate":"2026-09-01","UpdateDate":"2026-09-01","UpdateTime":"090000",
+             "CardCode":"V-FICTIONAL","DocCurrency":"EUR","DocumentLines":[{"LineNum":0,"ItemCode":"FIC-SRV-01",
+             "Quantity":1,"Price":10,"WarehouseCode":"WH-A","SerialNumbers":[]}]}
+            """);
+        var mapped = Cx01Mapper.Map(new TenantId(Guid.NewGuid()), Guid.NewGuid(), Cx01Protocol.Entities["goods_receipts"],
+            raw.RootElement, new Dictionary<int, IReadOnlyList<Contracts.CanonicalSerial>>(),
+            new Dictionary<int, IReadOnlyList<Contracts.CanonicalSerial>>(), new HashSet<int>(), "poll",
+            new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc));
+
+        Assert.Contains("\"EUR\"", mapped.Acceptance.CanonicalMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_non_iso_currency_is_never_guessed_from_its_shape()
+    {
+        using var raw = JsonDocument.Parse("""
+            {"DocEntry":1293,"DocDate":"2026-09-01","UpdateDate":"2026-09-01","UpdateTime":"090000",
+             "CardCode":"V-FICTIONAL","DocCurrency":"CAN","DocumentLines":[{"LineNum":0,"ItemCode":"FIC-SRV-01",
+             "Quantity":1,"WarehouseCode":"WH-A","SerialNumbers":[]}]}
+            """);
+
+        var exception = Assert.Throws<Cx01CurrencyNotMappedException>(() => Cx01Mapper.Map(
+            new TenantId(Guid.NewGuid()), Guid.NewGuid(), Cx01Protocol.Entities["goods_receipts"], raw.RootElement,
+            new Dictionary<int, IReadOnlyList<Contracts.CanonicalSerial>>(),
+            new Dictionary<int, IReadOnlyList<Contracts.CanonicalSerial>>(), new HashSet<int>(), "poll",
+            new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc)));
+        Assert.Equal("CAN", exception.ErpCode);
     }
 
     private static JsonElement Map(string entity, JsonElement raw, IReadOnlyDictionary<string, Cx01FieldSource>? map)

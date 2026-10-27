@@ -28,6 +28,7 @@ internal static class Cx01Protocol
     public const string AdminInfo = "CompanyService_GetAdminInfo";
     public const string UserFields = "UserFieldsMD";
     public const string ApprovalTemplates = "ApprovalTemplates";
+    public const string Currencies = "Currencies";
     public const string Drafts = "Drafts";
 
     /// <summary>
@@ -124,3 +125,16 @@ internal static class Cx01Protocol
 
 internal sealed record Cx01EntityDefinition(string Collection, string KeyField, string CanonicalMessage,
     bool HasUpdateTime = true);
+
+/// <summary>Null-tolerant reads for optional numeric fields returned by the remote service.</summary>
+internal static class Cx01Json
+{
+    public static int? Int32(JsonElement value) => value.ValueKind == JsonValueKind.Number
+        && value.TryGetInt32(out var number) ? number : null;
+
+    public static long? Int64(JsonElement value) => value.ValueKind == JsonValueKind.Number
+        && value.TryGetInt64(out var number) ? number : null;
+
+    public static decimal? Decimal(JsonElement value) => value.ValueKind == JsonValueKind.Number
+        && value.TryGetDecimal(out var number) ? number : null;
+}

@@ -134,6 +134,11 @@ public sealed class SiteRelayTests
     public void Document_and_approval_calls_are_declared_without_draft_mutations(string method, string path, bool allowed) =>
         Assert.Equal(allowed, new RelayAllowList(Cx01RelayProfile.Declaration(Settings with { DocumentsAcceptance = new("actor", new(2026, 9, 1), "accepted") }, "documents")).Allows(method, path, ""));
 
+    [Fact]
+    public void Currency_survey_read_is_declared() =>
+        Assert.True(new RelayAllowList(Cx01RelayProfile.Declaration(Settings)).Allows("GET", "/b1s/v2/Currencies",
+            "?$select=Code,Name,DocumentsCode"));
+
     [Theory]
     [InlineData("GET", "/admin", "")]
     [InlineData("POST", "//external.example/", "")]

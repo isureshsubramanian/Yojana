@@ -497,7 +497,8 @@ public sealed partial class ApplyService
             run.WatermarkNote = "The source has no registered connection; nothing to hand over.";
             return;
         }
-        var watermark = connectors.Poller(connectorCode).StartingWatermark(from);
+        var watermark = await connectors.Poller(connectorCode)
+            .StartingWatermarkAsync(batch.ConnectionId, from, cancellationToken);
         if (watermark is null)
         {
             run.WatermarkNote = "The connector cannot start from a time; the watermarks were left as they were.";

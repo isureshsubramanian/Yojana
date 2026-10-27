@@ -1,7 +1,7 @@
 import * as z from "zod/mini";
 import { apiParsed } from "../api/client.ts";
 import type { GridSort } from "../components";
-import { approvalView, archiveResult, backfill, type Backfill, checklist, coexistenceSettings, type CoexistenceSettings, connectionDetail, type ConnectionEvent, connectionEvent, connectionPage, cursorPage, type EntityDay, entityDay, fieldMap, type FieldSource, fullHistoryEstimate, healthDetail, type LocationCheck, locationCheck, type RegistrationConnector, registrationConnector, type Relay, relay, relayIssued, type Run, run, serviceCertificate, syncControlResult, type SyncStart, tenantStatusPage, transportSettings, warrantyContractSettings, type WarrantyContractSettings } from "./adminTypes.ts";
+import { approvalView, archiveResult, backfill, type Backfill, checklist, coexistenceSettings, type CoexistenceSettings, connectionDetail, type ConnectionEvent, connectionEvent, connectionPage, currencyMap, cursorPage, type EntityDay, entityDay, fieldMap, type FieldSource, fullHistoryEstimate, healthDetail, type LocationCheck, locationCheck, type RegistrationConnector, registrationConnector, type Relay, relay, relayIssued, type Run, run, serviceCertificate, syncControlResult, type SyncStart, tenantStatusPage, transportSettings, warrantyContractSettings, type WarrantyContractSettings } from "./adminTypes.ts";
 const root = "/api/integration";
 function query(values: Record<string, string | number | boolean | undefined>) { const q = new URLSearchParams(); for (const [key, value] of Object.entries(values)) if (value !== undefined && value !== "") q.set(key, String(value)); return `?${q}`; }
 const connection = (id: string) => `${root}/connections/${id}`;
@@ -26,6 +26,8 @@ export const adminApi = {
   events: (id: string, cursor: string | undefined, signal: AbortSignal | undefined, grid: GridRequest) => apiParsed(`${connection(id)}/events${query({ cursor, sort: grid.sort.key, dir: grid.sort.dir, take: grid.pageSize })}`, cursorPage(connectionEvent), { signal }),
   fieldMap: (id: string) => apiParsed(`${connection(id)}/cx01/field-map`, fieldMap),
   saveFieldMap: (id: string, fields: Record<string, FieldSource | null>) => apiParsed(`${connection(id)}/cx01/field-map`, fieldMap, { method: "PUT", body: { fields } }),
+  currencies: (id: string) => apiParsed(`${connection(id)}/cx01/currencies`, currencyMap),
+  confirmCurrency: (id: string, erpCode: string, isoCode: string) => apiParsed(`${connection(id)}/cx01/currencies`, currencyMap, { method: "PUT", body: { erpCode, isoCode } }),
   approvals: (id: string) => apiParsed(`${connection(id)}/cx01/approval-handling`, approvalView),
   saveApprovals: (id: string, documentTypes: Record<string, { mode: string; evidence: string } | null>) => apiParsed(`${connection(id)}/cx01/approval-handling`, approvalView, { method: "PUT", body: { documentTypes } }),
   checklist: (id: string) => apiParsed(`${connection(id)}/onboarding-checklist`, checklist),

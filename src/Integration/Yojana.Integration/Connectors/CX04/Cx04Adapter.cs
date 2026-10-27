@@ -37,10 +37,12 @@ public sealed class Cx04Adapter(ITenantContext tenant, IClock clock, Integration
 {
     public string ConnectorCode => Cx04Capabilities.ConnectorCode;
     public bool OwnsConnectionLane => true;
-    public string? StartingWatermark(DateTime sourceLocalTime) =>
-        new Cx04Watermark(new(DateTime.SpecifyKind(sourceLocalTime, DateTimeKind.Utc)), "").ToString();
+    public Task<string?> StartingWatermarkAsync(Guid connectionId, DateTime sourceLocalTime,
+        CancellationToken cancellationToken) => Task.FromResult<string?>(
+            new Cx04Watermark(new(DateTime.SpecifyKind(sourceLocalTime, DateTimeKind.Utc)), "").ToString());
 
-    public string WatermarkAt(DateTime utcInstant) => StartingWatermark(utcInstant)!;
+    public string WatermarkAt(DateTime utcInstant) =>
+        new Cx04Watermark(new(DateTime.SpecifyKind(utcInstant, DateTimeKind.Utc)), "").ToString();
     public DateTime? InstantOf(string watermark) => Cx04Watermark.Parse(watermark) is var value
         && value != Cx04Watermark.Empty ? value.Timestamp.UtcDateTime : null;
     public bool IsMasterData(string entityType) => entityType is "items" or "parties";

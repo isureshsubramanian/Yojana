@@ -103,6 +103,10 @@ export type FieldSource = z.infer<typeof fieldSource>;
 export const fieldMap = z.object({ fields: z.array(z.object({ code: z.string(), label: z.string(), kind: z.number(),
   effective: fieldSource, warning: z.nullable(z.string()), surveyedFields: z.array(z.string()) })) });
 export type FieldMap = z.infer<typeof fieldMap>;
+export const currencyMap = z.object({ connectionId: z.string(), surveyObservedAt: z.nullable(z.string()),
+  currencies: z.array(z.object({ erpCode: z.string(), name: z.string(), documentsCode: z.nullable(z.string()),
+  suggestedIsoCode: z.nullable(z.string()), mappedIsoCode: z.nullable(z.string()) })) });
+export type CurrencyMap = z.infer<typeof currencyMap>;
 export const approvalView = z.object({ templatesKnown: z.boolean(),
   documentTypes: z.array(z.object({ collection: z.string(), documentType: z.string(), draftSupported: z.boolean(),
   activeTemplates: z.array(z.string()), effectiveMode: z.string(), warning: z.nullable(z.string()),

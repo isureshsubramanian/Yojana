@@ -147,6 +147,8 @@ public static class IntegrationModule
         builder.Services.AddScoped<ICx01OwnWriteStore, EfCx01OwnWriteStore>();
         builder.Services.AddScoped<ICx01InboundRejectionSink, EfCx01InboundRejectionSink>();
         builder.Services.AddScoped<Cx01Adapter>();
+        builder.Services.AddScoped<IInboundRetryPreparer>(services => services.GetRequiredService<Cx01Adapter>());
+        builder.Services.AddScoped<Cx01CurrencyMapService>();
         builder.Services.AddKeyedScoped<IConnectorAdapter>(Cx01Capabilities.ConnectorCode, (services, _) =>
             services.GetRequiredService<Cx01Adapter>());
         builder.Services.AddKeyedScoped<IConnectorWatermarkSeed>(Cx01Capabilities.ConnectorCode, (services, _) =>

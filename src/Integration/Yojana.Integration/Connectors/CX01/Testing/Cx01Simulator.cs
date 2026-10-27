@@ -89,6 +89,8 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     public List<string> ProductTreeQueries { get; } = [];
     public bool DeliveryCancelled { get; set; }
     public bool ReceiptCancelled { get; set; }
+    public bool ProductionReceiptAvailable { get; set; }
+    public bool NonIsoGoodsReceiptCurrency { get; set; }
     public bool SubscriptionStopped { get; set; }
     public List<string> DeletedSubscriptionPaths { get; } = [];
     public bool WebhookSubscriptionCreated { get; private set; }
@@ -332,6 +334,19 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                 });
                 return;
             }
+            if (path == Cx01Protocol.Root + Cx01Protocol.Currencies)
+            {
+                await JsonAsync(response, new
+                {
+                    value = new object[]
+                    {
+                        new { Code = "$", Name = "US Dollar", DocumentsCode = "$" },
+                        new { Code = "CAN", Name = "Canadian Dollar", DocumentsCode = "CAN" },
+                        new { Code = "EUR", Name = "Euro", DocumentsCode = "EUR" },
+                    },
+                });
+                return;
+            }
             if (path == Cx01Protocol.Root + "Items('HW-EDGE-100')")
             {
                 await RawJsonAsync(response, item);
@@ -409,6 +424,7 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                     UpdateTime = cancellation ? "084500" : "081000",
                     DocObjectCode = "oPurchaseDeliveryNotes",
                     CardCode = "V-FICTIONAL-01",
+                    DocCurrency = !cancellation && NonIsoGoodsReceiptCurrency ? "$" : "USD",
                     Cancelled = ReceiptCancelled && !cancellation ? "tYES" : "tNO",
                     CancelStatus = cancellation ? "csCancellation" : ReceiptCancelled ? "csYes" : "csNo",
                     DocumentLines = cancellation
@@ -433,6 +449,50 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                                 },
                             },
                         },
+                });
+                return;
+            }
+            if (path == Cx01Protocol.Root + "InventoryGenEntries(139)")
+            {
+                await JsonAsync(response, new
+                {
+                    DocEntry = 139,
+                    DocNum = 900139,
+                    DocDate = "2026-09-01",
+                    UpdateDate = "2026-09-01",
+                    UpdateTime = "213213",
+                    DocObjectCode = "oInventoryGenEntry",
+                    DocCurrency = "$",
+                    DocumentLines = new object[]
+                    {
+                        new
+                        {
+                            LineNum = 0,
+                            ItemCode = "FIC-SRV-EDGE-01",
+                            Quantity = 1m,
+                            UoMCode = "EA",
+                            WarehouseCode = "WH-A",
+                            BaseType = 202,
+                            BaseEntry = 161,
+                            BaseLine = (int?)null,
+                            ActualBaseEntry = (int?)null,
+                            ActualBaseLine = (int?)null,
+                            SerialNumbers = new[]
+                            {
+                                new { InternalSerialNumber = "FIC-261027-SRV-01", SystemSerialNumber = 9139, Quantity = 1m },
+                            },
+                        },
+                    },
+                });
+                return;
+            }
+            if (path == Cx01Protocol.Root + "InventoryGenEntries")
+            {
+                await JsonAsync(response, new
+                {
+                    value = ProductionReceiptAvailable
+                        ? new object[] { new { DocEntry = 139, UpdateDate = "2026-09-01", UpdateTime = "213213" } }
+                        : Array.Empty<object>(),
                 });
                 return;
             }

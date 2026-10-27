@@ -11,6 +11,7 @@ public sealed class Cx01ConnectionLifecycleAdapter(Cx01Settings settings, Cx01Cl
     public ConnectionRegistrationForm RegistrationForm => new(
         [new("service_uri", "Server address", "url"), new("company_database", "Company database", "text"),
          new("release", "Release", "text", "unknown"), new("transport", "Connection route", "route", "direct"),
+         new("erp_server_time_zone", "ERP server time zone (IANA; empty uses tenant time zone)", "text"),
          new("bom_sync_schedule", "Bill of materials sync", "select", Cx01BomSyncSchedule.Daily, Cx01BomSyncSchedule.Options),
          new("bom_sync_daily_at", "Daily sync time (site time)", "time", "02:00")],
         Cx01Client.CredentialPurpose, [new("user_name", "Dedicated integration user", "text"), new("password", "Password", "password")]);
@@ -24,7 +25,13 @@ public sealed class Cx01ConnectionLifecycleAdapter(Cx01Settings settings, Cx01Cl
     {
         var previous = await settings.TryGetAsync(connectionId, ct);
         var incoming = Read(value);
-        var configured = incoming with { DocumentsAcceptance = previous?.DocumentsAcceptance, Documents = incoming.Documents ?? previous?.Documents };
+        var configured = incoming with
+        {
+            CurrencyMap = incoming.CurrencyMap ?? previous?.CurrencyMap,
+            DocumentsAcceptance = previous?.DocumentsAcceptance,
+            Documents = incoming.Documents ?? previous?.Documents,
+            ErpServerTimeZone = incoming.ErpServerTimeZone ?? previous?.ErpServerTimeZone,
+        };
         var gateway = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleOrDefaultAsync(
             db.ConnectionGatewaySettings.Where(x => x.TenantId == tenant.TenantId && x.ConnectionId == connectionId), ct);
         if (gateway?.OutboundMode == "documents" && string.IsNullOrWhiteSpace(configured.Documents?.LocalCurrencyCode))

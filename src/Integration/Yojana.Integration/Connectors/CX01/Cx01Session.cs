@@ -301,7 +301,7 @@ public sealed class Cx01Client(
                 using var document = await JsonDocument.ParseAsync(
                     await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
                 if (document.RootElement.TryGetProperty("SessionTimeout", out var timeoutValue)
-                    && timeoutValue.TryGetInt32(out var readTimeout)) timeout = readTimeout;
+                    && Cx01Json.Int32(timeoutValue) is { } readTimeout) timeout = readTimeout;
                 state.Release = Text(document.RootElement, "Version");
                 state.ExpiresAtUtc = clock.UtcNow.AddMinutes(Math.Max(1, timeout));
             }

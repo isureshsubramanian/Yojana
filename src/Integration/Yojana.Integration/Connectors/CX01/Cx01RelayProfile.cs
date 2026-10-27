@@ -72,7 +72,8 @@ public sealed class Cx01RelayProfile(Cx01Settings settings, ITenantContext tenan
         }
         foreach (var path in new[] { Cx01Protocol.Root, Cx01Protocol.Metadata,
                      Cx01Protocol.Root + Cx01Protocol.UserFields, Cx01Protocol.Root + "ItemWarehouseInfoCollection",
-                     Cx01Protocol.Root + Cx01Protocol.EventNotifications }) rules.Add(new("GET", Regex.Escape(path)));
+                     Cx01Protocol.Root + Cx01Protocol.EventNotifications,
+                     Cx01Protocol.Root + Cx01Protocol.Currencies }) rules.Add(new("GET", Regex.Escape(path)));
         rules.Add(new("POST", Regex.Escape(Cx01Protocol.Root + Cx01Protocol.AdminInfo)));
         // Approval handling: read-only template survey; drafts held for review are created and read, never changed.
         rules.Add(new("GET", Regex.Escape(Cx01Protocol.Root + Cx01Protocol.ApprovalTemplates)));

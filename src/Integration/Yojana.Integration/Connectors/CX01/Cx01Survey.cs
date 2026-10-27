@@ -62,7 +62,8 @@ public sealed record Cx01SurveyResult(
     // Null when not read (older survey, or the integration user may not read approval templates).
     IReadOnlyList<Cx01SurveyApprovalTemplate>? ApprovalTemplates = null, string? LocalCurrencyCode = null,
     IReadOnlyDictionary<string, int>? FieldLengths = null,
-    string BillOfMaterialsSupport = CapabilitySupport.Native);
+    string BillOfMaterialsSupport = CapabilitySupport.Native,
+    IReadOnlyList<Cx01SurveyCurrency>? Currencies = null);
 
 public sealed record Cx01SurveyPage(
     Guid ConnectionId,
@@ -126,6 +127,7 @@ public sealed class Cx01SurveyProbe(ICx01SurveyRemotePort remote, IClock clock)
         var userFields = await UserFieldsAsync(connectionId, cancellationToken);
         var allowlist = Cx01TrackingPermissions.Declared(configured);
         var approvalTemplates = await ApprovalTemplatesAsync(connectionId, cancellationToken);
+        var currencies = await CurrenciesAsync(connectionId, cancellationToken);
         return new(connectionId, clock.UtcNow, release,
             new(releaseSupports, webhookEnabled, Int(adminRoot, "WebhookRetryTimes"),
                 Int(adminRoot, "WebhookRetryInterval"), Int(adminRoot, "WebhookRequestTimeout"),
@@ -133,7 +135,30 @@ public sealed class Cx01SurveyProbe(ICx01SurveyRemotePort remote, IClock clock)
                 "Error 10001237 while enabling webhooks means a configured company folder path is invalid; "
                 + "the customer's administrator must correct it. The adapter does not change company settings."),
             userFields, allowlist, answers, approvalTemplates, Text(adminRoot, "LocalCurrency"),
-            ReadLengths(metadata, userFields), billOfMaterialsSupport);
+            ReadLengths(metadata, userFields), billOfMaterialsSupport, currencies);
+    }
+
+    private async Task<IReadOnlyList<Cx01SurveyCurrency>> CurrenciesAsync(Guid connectionId,
+        CancellationToken cancellationToken)
+    {
+        var result = new List<Cx01SurveyCurrency>();
+        var path = Cx01Protocol.Root + Cx01Protocol.Currencies
+            + "?$select=Code,Name,DocumentsCode";
+        while (path is not null)
+        {
+            using var response = await remote.GetAsync(connectionId, path, cancellationToken);
+            foreach (var row in Values(response.RootElement))
+            {
+                var code = Text(row, "Code")?.Trim();
+                if (string.IsNullOrWhiteSpace(code)) continue;
+                var name = Text(row, "Name")?.Trim() ?? code;
+                result.Add(new(code, name, Text(row, "DocumentsCode")?.Trim(),
+                    Cx01CurrencyNames.Suggest(name)));
+            }
+            path = Cx01Protocol.NextPage(response.RootElement.TryGetProperty("@odata.nextLink", out var next)
+                ? next.GetString() : null);
+        }
+        return result;
     }
 
     private static Dictionary<string, int> ReadLengths(string metadata, IReadOnlyList<Cx01SurveyUserField> fields)
@@ -245,7 +270,7 @@ public sealed class Cx01SurveyProbe(ICx01SurveyRemotePort remote, IClock clock)
             ? found.ValueKind == JsonValueKind.String ? found.GetString() : found.ToString() : null;
 
     private static int? Int(JsonElement value, string property) => value.ValueKind == JsonValueKind.Object
-        && value.TryGetProperty(property, out var found) && found.TryGetInt32(out var number) ? number : null;
+        && value.TryGetProperty(property, out var found) ? Cx01Json.Int32(found) : null;
 }
 
 public sealed class Cx01SurveyService(
@@ -325,8 +350,12 @@ public sealed class Cx01SurveyService(
                     values[pair.Key] = JsonSerializer.SerializeToNode(new Cx01TrackingTablePermission(
                         allowed ? "allowed" : "unknown", allowed ? "owner_declared" : "unknown"), IntegrationContracts.Json);
         var result = node.Deserialize<Cx01SurveyResult>(IntegrationContracts.Json)!;
-        return result with { TrackingTableAllowlist = result.TrackingTableAllowlist
-            .ToDictionary(pair => pair.Key.ToUpperInvariant(), pair => pair.Value, StringComparer.OrdinalIgnoreCase) };
+        return result with
+        {
+            TrackingTableAllowlist = result.TrackingTableAllowlist
+                .ToDictionary(pair => pair.Key.ToUpperInvariant(), pair => pair.Value, StringComparer.OrdinalIgnoreCase),
+            Currencies = result.Currencies ?? [],
+        };
     }
 
     public async Task<Cx01SurveyPage?> LatestPageAsync(Guid connectionId, string? cursor, int take,

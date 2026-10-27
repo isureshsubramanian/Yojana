@@ -17,6 +17,7 @@ export const integrationApi = {
     apiParsed(`/api/integration/dead-letters/${id}/map-and-retry`, actionResult, { method: "POST", body: { entityType, externalId, moduleId } }),
   createProvisionalAndRetry: (id: string, entityType: string, externalId: string) =>
     apiParsed(`/api/integration/dead-letters/${id}/create-provisional-and-retry`, actionResult, { method: "POST", body: { entityType, externalId } }),
+  retry: (id: string) => apiParsed(`/api/integration/dead-letters/${id}/retry`, actionResult, { method: "POST" }),
   discard: (id: string, reason: string) => apiParsed(`/api/integration/dead-letters/${id}/discard`, actionResult, { method: "POST", body: { reason } }),
   manualTasks: (filters: { status: string; desk?: string | undefined; cursor?: string | undefined; take?: number | undefined }, signal?: AbortSignal) =>
     apiParsed(`/api/integration/manual-tasks${query(filters)}`, manualTaskPage, { signal }),

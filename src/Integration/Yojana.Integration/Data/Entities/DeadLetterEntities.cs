@@ -83,6 +83,7 @@ public static class DeadLetterAction
     public const string Parked = "parked";
     public const string MapAndRetry = "map_and_retry";
     public const string CreateProvisionalAndRetry = "create_provisional_and_retry";
+    public const string Retry = "retry";
     public const string Discard = "discard";
     public const string ManualMapping = "manual_mapping";
 }

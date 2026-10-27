@@ -11,7 +11,8 @@ export function maySeeIntegrationIndicator(roles: readonly string[]): boolean {
 const reasonLabels: Record<string, string> = {
   item_not_mapped: "Unknown item", unknown_item: "Unknown item", serial_not_found: "Serial not found",
   party_not_mapped: "Customer or supplier not linked", party_not_linked: "Customer or supplier not linked",
-  max_outbox_age: "Could not send", rejected: "Could not send", unsupported: "Needs hand entry",
+  erp_currency_not_mapped: "Currency not mapped", max_outbox_age: "Could not send", rejected: "Could not send",
+  unsupported: "Needs hand entry",
 };
 const recordLabels: Record<string, string> = {
   ItemUpserted: "Items", BomUpserted: "Bills of materials", PartyUpserted: "Customers and suppliers", WarrantyLineSold: "Warranty lines sold",
