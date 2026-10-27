@@ -243,6 +243,7 @@ public static class IntegrationModule
         builder.Services.AddScoped<OutboxRelaySettings>();
         builder.Services.AddScoped<IOutboundConnectorResolver, OutboundConnectorResolver>();
         builder.Services.AddScoped<DeadLetterParkingSink>();
+        builder.Services.AddScoped<RetriedDeadLetterSettler>();
         builder.Services.AddScoped<IOutboundCommandParkingSink>(services =>
             services.GetRequiredService<DeadLetterParkingSink>());
         builder.Services.AddScoped<IInboundMessageParkingSink>(services =>

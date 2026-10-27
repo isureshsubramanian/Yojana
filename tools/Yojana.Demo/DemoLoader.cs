@@ -554,7 +554,8 @@ public sealed partial class DemoLoader(IServiceProvider services, DemoCatalogue 
         if (rejected.Status != LabelPrintStatus.Rejected || rejected.EmptyRequiredField != LabelBindableField.ItemRevision)
             throw new InvalidOperationException("network demo label must be rejected because item.revision is empty");
         await InvokeAsync<LabelPrintResult>(new ReprintLabel(DemoIds.FromName("label-reprint:server"),
-            server.JobId, "line-2", at.AddMinutes(3), LegalEntityId, actor), cancellationToken);
+            server.JobId, "line-2", at.AddMinutes(3), LegalEntityId, actor,
+            Reason: "Label scuffed during rack mounting"), cancellationToken);
     }
 
     private async Task CreateTenantCertificateLayoutAsync(CancellationToken cancellationToken)

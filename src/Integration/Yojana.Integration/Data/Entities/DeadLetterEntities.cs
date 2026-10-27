@@ -86,6 +86,7 @@ public static class DeadLetterAction
     public const string Retry = "retry";
     public const string Discard = "discard";
     public const string ManualMapping = "manual_mapping";
+    public const string RetrySucceeded = "retry_succeeded";
 }
 
 public static class ManualTaskStatus

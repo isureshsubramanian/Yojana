@@ -6,6 +6,7 @@ using Wolverine.Attributes;
 using Yojana.Integration.Contracts;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
+using Yojana.Integration.DeadLetters;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
@@ -31,11 +32,13 @@ public sealed record GatewayTranslationResult(Guid InboundMessageId, string Mess
 public sealed class TranslateInboundMessageHandler
 {
     public static async Task<GatewayTranslationResult> Handle(TranslateInboundMessage command, InboundGateway gateway,
-        InboundTranslationRecovery recovery, CancellationToken cancellationToken)
+        InboundTranslationRecovery recovery, RetriedDeadLetterSettler retried, CancellationToken cancellationToken)
     {
         try
         {
-            return await gateway.TranslateAsync(command.InboundMessageId, cancellationToken);
+            var result = await gateway.TranslateAsync(command.InboundMessageId, cancellationToken);
+            await retried.SettleInboundAsync(command.InboundMessageId, cancellationToken);
+            return result;
         }
         catch (Exception exception)
         {

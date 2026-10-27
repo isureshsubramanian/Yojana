@@ -163,7 +163,21 @@ public sealed class DeadLetterParkingSink(IntegrationDbContext db, ITenantContex
             ?? await db.DeadLetterItems.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
                 && x.SourceKind == DeadLetterSourceKind.InboundMessage
                 && x.SourceId == message.InboundMessageId, cancellationToken);
-        if (existing is not null) return existing.DeadLetterItemId;
+        if (existing is not null)
+        {
+            // A retried item that fails again needs a person again; a discarded one stays discarded.
+            if (existing.Status is DeadLetterStatus.RetryPending or DeadLetterStatus.Resolved)
+            {
+                existing.ReasonCode = reasonCode;
+                existing.Failure = Failure(failure);
+                existing.Status = DeadLetterStatus.NeedsAttention;
+                existing.ResolvedAt = null;
+                existing.UpdatedAt = clock.UtcNow;
+                db.DeadLetterEvents.Add(Event(existing.DeadLetterItemId, DeadLetterAction.Parked,
+                    $"system:connection:{message.ConnectionId:N}", failure, "{}"));
+            }
+            return existing.DeadLetterItemId;
+        }
 
         var id = TimeOrderedId.New(clock.UtcNow);
         db.DeadLetterItems.Add(new DeadLetterItem

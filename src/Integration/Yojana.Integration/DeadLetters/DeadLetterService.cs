@@ -579,8 +579,9 @@ public sealed class DeadLetterService(IntegrationDbContext db, ITenantContext te
                 CouldNotSend = group.Count(x => x.Status == DeadLetterStatus.NeedsAttention
                     && x.Direction == DeadLetterDirection.Outbound),
                 ResolvedLast30Days = group.Count(x => x.ResolvedAt >= cutoff),
+                // Retried items count whether the retry is still running or has since succeeded.
                 RetriedLast30Days = group.Count(x => x.ResolvedAt >= cutoff
-                    && x.Status == DeadLetterStatus.RetryPending),
+                    && (x.Status == DeadLetterStatus.RetryPending || x.Status == DeadLetterStatus.Resolved)),
                 DiscardedLast30Days = group.Count(x => x.ResolvedAt >= cutoff
                     && x.Status == DeadLetterStatus.Discarded),
             }).SingleOrDefaultAsync(cancellationToken);

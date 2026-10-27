@@ -232,6 +232,99 @@ public sealed class DeadLetterTests(IntegrationHostFixture fixture)
         Assert.Null(inbound.AttentionReasonCode);
     }
 
+    [DatabaseFact]
+    public async Task Retried_inbound_dead_letter_is_resolved_once_the_message_translates()
+    {
+        ResetClock();
+        var tenant = await fixture.NewTenantAsync("rt-ok");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        var inboundId = await AddInboundAsync(tenant, connection);
+        using var scope = fixture.ScopeFor(tenant);
+        var service = scope.ServiceProvider.GetRequiredService<DeadLetterService>();
+        var itemId = await service.ParkInboundAsync(inboundId, "party_not_mapped", "Party mapping failed.",
+            CancellationToken.None);
+        await service.RetryAsync(itemId, "test-operator", CancellationToken.None);
+        var settler = scope.ServiceProvider.GetRequiredService<RetriedDeadLetterSettler>();
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+
+        // Still pending translation: nothing to settle yet.
+        await settler.SettleInboundAsync(inboundId, CancellationToken.None);
+        Assert.Equal(DeadLetterStatus.RetryPending,
+            (await db.DeadLetterItems.AsNoTracking().SingleAsync(x => x.DeadLetterItemId == itemId)).Status);
+
+        // The gateway completes by bulk update; the settler reads the stored state.
+        await db.InboundMessages.Where(x => x.InboundMessageId == inboundId).ExecuteUpdateAsync(update => update
+            .SetProperty(x => x.TranslationStatus, InboundTranslationStatus.Completed));
+        fixture.Clock.UtcNow = fixture.Clock.UtcNow.AddMinutes(2);
+        await settler.SettleInboundAsync(inboundId, CancellationToken.None);
+
+        var item = await db.DeadLetterItems.AsNoTracking().SingleAsync(x => x.DeadLetterItemId == itemId);
+        Assert.Equal(DeadLetterStatus.Resolved, item.Status);
+        Assert.Equal(fixture.Clock.UtcNow, item.ResolvedAt);
+        Assert.True(await db.DeadLetterEvents.AnyAsync(x => x.DeadLetterItemId == itemId
+            && x.Action == DeadLetterAction.RetrySucceeded));
+        var page = await service.ListAsync(new(connection, null, null, null, null, null, null, null, null, null),
+            CancellationToken.None);
+        Assert.Equal(0, page.Summary.Open);
+        Assert.Equal(0, page.Summary.Retried);
+        Assert.Equal(1, page.Summary.RetriedLast30Days);
+    }
+
+    [DatabaseFact]
+    public async Task Retried_inbound_dead_letter_needs_attention_again_when_the_retry_fails()
+    {
+        ResetClock();
+        var tenant = await fixture.NewTenantAsync("rt-fail");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        var inboundId = await AddInboundAsync(tenant, connection);
+        using var scope = fixture.ScopeFor(tenant);
+        var service = scope.ServiceProvider.GetRequiredService<DeadLetterService>();
+        var itemId = await service.ParkInboundAsync(inboundId, "party_not_mapped", "Party mapping failed.",
+            CancellationToken.None);
+        await service.RetryAsync(itemId, "test-operator", CancellationToken.None);
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        await db.InboundMessages.Where(x => x.InboundMessageId == inboundId).ExecuteUpdateAsync(update => update
+            .SetProperty(x => x.TranslationStatus, InboundTranslationStatus.Processing)
+            .SetProperty(x => x.TranslationAttemptCount, InboundTranslationRecoveryOptions.Default.MaximumAttempts));
+
+        await scope.ServiceProvider.GetRequiredService<InboundTranslationRecovery>()
+            .RecordFailureAsync(inboundId, new InvalidOperationException("Fictional mapping failure"),
+                CancellationToken.None);
+
+        var item = await db.DeadLetterItems.AsNoTracking().SingleAsync(x => x.DeadLetterItemId == itemId);
+        Assert.Equal(DeadLetterStatus.NeedsAttention, item.Status);
+        Assert.Equal("translation_attempts_exhausted", item.ReasonCode);
+        Assert.Null(item.ResolvedAt);
+        Assert.Equal(2, await db.DeadLetterEvents.CountAsync(x => x.DeadLetterItemId == itemId
+            && x.Action == DeadLetterAction.Parked));
+    }
+
+    [DatabaseFact]
+    public async Task Retried_outbound_dead_letter_is_resolved_in_the_command_completion_commit()
+    {
+        ResetClock();
+        var tenant = await fixture.NewTenantAsync("rt-out");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.NewGuid());
+        var (commandId, _) = await AddCommandAsync(tenant, connection, fixture.Clock.UtcNow.AddHours(-1));
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var command = await db.OutboundCommands.SingleAsync(x => x.OutboundCommandId == commandId);
+        await scope.ServiceProvider.GetRequiredService<IOutboundCommandParkingSink>().ParkAsync(command,
+            "connector_unavailable", "Fictional ERP timeout.", CancellationToken.None);
+        await db.SaveChangesAsync();
+        var itemId = (await db.DeadLetterItems.SingleAsync(x => x.SourceId == commandId)).DeadLetterItemId;
+        await scope.ServiceProvider.GetRequiredService<DeadLetterService>().MapAndRetryAsync(itemId,
+            new("item", "ITEM-FIC-2", Guid.NewGuid()), "test-operator", CancellationToken.None);
+
+        await scope.ServiceProvider.GetRequiredService<IOutboundProgressStore>().CompleteAsync(connection,
+            commandId, new OutboundDocument("SO-FIC-1", "1"), "created", CancellationToken.None);
+
+        var item = await db.DeadLetterItems.AsNoTracking().SingleAsync(x => x.DeadLetterItemId == itemId);
+        Assert.Equal(DeadLetterStatus.Resolved, item.Status);
+        Assert.True(await db.DeadLetterEvents.AnyAsync(x => x.DeadLetterItemId == itemId
+            && x.Action == DeadLetterAction.RetrySucceeded));
+    }
+
     private async Task<(Guid CommandId, Guid ModuleId)> AddCommandAsync(TenantId tenant, Guid connection,
         DateTime createdAt)
     {
