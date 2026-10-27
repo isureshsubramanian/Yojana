@@ -108,6 +108,84 @@ public sealed class Cx01FieldMapTests
     }
 
     [Fact]
+    public void A_foreign_currency_line_carries_the_erp_local_amount_never_a_rate_applied_here()
+    {
+        // Shape of live GRPO 1296: EUR document, company local currency "$", rate 1.3866 applied by the ERP.
+        using var raw = JsonDocument.Parse("""
+            {"DocEntry":1296,"DocDate":"2026-10-28T00:00:00Z","UpdateDate":"2026-10-28T00:00:00Z","UpdateTime":"10:00:00",
+             "CardCode":"V21000","DocCurrency":"EUR","DocRate":1.3866,"DocTotal":24674.85,"DocTotalFc":17795.22,
+             "DocumentLines":[
+              {"LineNum":0,"ItemCode":"YD-MAINBOARD","Quantity":1,"Currency":"EUR","Price":1000,"LineTotal":1386.6,
+               "RowTotalFC":1000,"WarehouseCode":"01","SerialNumbers":[]},
+              {"LineNum":2,"ItemCode":"YD-DIMM-64G","Quantity":8,"Currency":"EUR","Price":120,"LineTotal":1331.14,
+               "RowTotalFC":960,"WarehouseCode":"01","SerialNumbers":[]}]}
+            """);
+        var lines = Lines(MapLocal("goods_receipts", raw.RootElement, "$"));
+
+        Assert.Equal(1386.6m, lines[0].GetProperty("price").GetDecimal());
+        Assert.Equal(1331.14m / 8, lines[1].GetProperty("price").GetDecimal());
+        Assert.All(lines, line => Assert.Equal("USD", line.GetProperty("currency").GetString()));
+    }
+
+    [Fact]
+    public void A_foreign_currency_line_without_a_known_local_currency_keeps_its_own_amount_for_a_person()
+    {
+        using var raw = JsonDocument.Parse("""
+            {"DocEntry":1296,"DocDate":"2026-10-28","UpdateDate":"2026-10-28","UpdateTime":"10:00:00",
+             "CardCode":"V21000","DocCurrency":"EUR","DocumentLines":[{"LineNum":0,"ItemCode":"YD-MAINBOARD",
+             "Quantity":1,"Currency":"EUR","Price":1000,"LineTotal":1386.6,"WarehouseCode":"01","SerialNumbers":[]}]}
+            """);
+        var line = Lines(MapLocal("goods_receipts", raw.RootElement, null))[0];
+
+        Assert.Equal(1000m, line.GetProperty("price").GetDecimal());
+        Assert.Equal("EUR", line.GetProperty("currency").GetString());
+    }
+
+    [Fact]
+    public void A_local_currency_line_keeps_its_price_before_discount()
+    {
+        using var raw = JsonDocument.Parse("""
+            {"DocEntry":1295,"DocDate":"2026-10-28","UpdateDate":"2026-10-28","UpdateTime":"10:00:00",
+             "CardCode":"V10000","DocCurrency":"$","DocumentLines":[{"LineNum":0,"ItemCode":"YD-NIC-25G",
+             "Quantity":2,"Currency":"$","Price":100,"LineTotal":180,"WarehouseCode":"01","SerialNumbers":[]}]}
+            """);
+        var line = Lines(MapLocal("goods_receipts", raw.RootElement, "$"))[0];
+
+        Assert.Equal(100m, line.GetProperty("price").GetDecimal());
+        Assert.Equal("USD", line.GetProperty("currency").GetString());
+    }
+
+    [Fact]
+    public void A_foreign_currency_invoice_total_is_the_erp_local_total()
+    {
+        using var raw = JsonDocument.Parse("""
+            {"DocEntry":880,"DocDate":"2026-10-28","UpdateDate":"2026-10-28","UpdateTime":"10:00:00",
+             "CardCode":"C20000","DocCurrency":"EUR","DocTotal":1386.6,"DocTotalFc":1000,
+             "DocumentLines":[{"LineNum":0,"ItemCode":"YD-SRV-2U","Quantity":1,"Currency":"EUR","Price":1000,
+             "LineTotal":1386.6,"WarehouseCode":"01","SerialNumbers":[]}]}
+            """);
+        var payload = MapLocal("invoices", raw.RootElement, "$");
+        var totals = payload.EnumerateObject().Single(property => property.Value.ValueKind == JsonValueKind.Object
+            && property.Value.TryGetProperty("currency", out _)).Value;
+
+        Assert.Equal(1386.6m, totals.GetProperty("amount").GetDecimal());
+        Assert.Equal("USD", totals.GetProperty("currency").GetString());
+    }
+
+    private static JsonElement MapLocal(string entity, JsonElement raw, string? localCurrency)
+    {
+        var mapped = Cx01Mapper.Map(new TenantId(Guid.NewGuid()), Guid.NewGuid(), Cx01Protocol.Entities[entity],
+            raw, new Dictionary<int, IReadOnlyList<Contracts.CanonicalSerial>>(),
+            new Dictionary<int, IReadOnlyList<Contracts.CanonicalSerial>>(), new HashSet<int>(), "poll",
+            new DateTime(2026, 10, 28, 10, 0, 0, DateTimeKind.Utc),
+            currencyMap: new Dictionary<string, string> { ["$"] = "USD" }, localCurrency: localCurrency);
+        return JsonDocument.Parse(mapped.Acceptance.CanonicalMessage).RootElement.GetProperty("payload").Clone();
+    }
+
+    private static List<JsonElement> Lines(JsonElement payload) =>
+        payload.GetProperty("lines").EnumerateArray().ToList();
+
+    [Fact]
     public void A_non_iso_currency_is_never_guessed_from_its_shape()
     {
         using var raw = JsonDocument.Parse("""

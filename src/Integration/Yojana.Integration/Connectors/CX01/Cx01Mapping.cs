@@ -312,7 +312,8 @@ internal static class Cx01Mapper
         IReadOnlySet<int> serialManagedLines, string captureMode, DateTime observedUtc,
         bool mapCancelledOriginal = false, Cx01FieldReader? fields = null,
         IReadOnlyDictionary<string, string>? currencyMap = null,
-        IReadOnlyDictionary<string, Cx01ProductionOrderRead?>? productionOrders = null)
+        IReadOnlyDictionary<string, Cx01ProductionOrderRead?>? productionOrders = null,
+        string? localCurrency = null)
     {
         fields ??= Cx01FieldReader.Defaults;
         var key = Text(raw, entity.KeyField) ?? throw new InvalidOperationException("CX01 response has no key.");
@@ -359,7 +360,8 @@ internal static class Cx01Mapper
                 break;
             default:
             {
-                var lines = Lines(raw, previousSerials, recoveredSerials, serialManagedLines, missing, currencyMap);
+                var lines = Lines(raw, previousSerials, recoveredSerials, serialManagedLines, missing, currencyMap,
+                    localCurrency);
                 if (entity.CanonicalMessage == nameof(InventoryAdjusted)) lines = WithoutProductionIssues(lines, missing);
                 if (missing.Count > 0) completeness = "partial";
                 payload = entity.CanonicalMessage switch
@@ -372,7 +374,7 @@ internal static class Cx01Mapper
                     "InvoicePosted" => new InvoicePosted(DocumentRef(raw, key), Text(raw, "CardCode") ?? "",
                         lines.Select(x => x.BaseDocumentRef).Where(x => x is not null).Cast<ExternalDocumentRef>()
                             .Distinct().ToList(), lines,
-                        new Money(Decimal(raw, "DocTotal"), Currency(raw, currencyMap) ?? "")),
+                        new Money(Decimal(raw, "DocTotal"), DocumentTotalCurrency(raw, currencyMap, localCurrency) ?? "")),
                     "GoodsReceiptPosted" => new GoodsReceiptPosted(DocumentRef(raw, key),
                         Text(raw, "CardCode") ?? "", lines, BaseDocument(lines)),
                     "ProductionCompleted" => ProductionReceipt(raw, key, occurred, lines, productionOrders),
@@ -401,7 +403,7 @@ internal static class Cx01Mapper
             JsonSerializer.Serialize(canonical, canonicalType, IntegrationContracts.Json), retainedRaw);
         var additional = entity.CanonicalMessage == nameof(InventoryAdjusted)
             ? ProductionIssueAcceptances(raw, Lines(raw, previousSerials, recoveredSerials, serialManagedLines, [],
-                currencyMap), envelope, retainedRaw, productionOrders)
+                currencyMap, localCurrency), envelope, retainedRaw, productionOrders)
             : [];
         if (payload is InventoryAdjusted { Lines.Count: 0 } && additional.Count > 0)
             return new(additional[0], missing, contentHash, additional.Skip(1).ToList());
@@ -441,7 +443,7 @@ internal static class Cx01Mapper
         IReadOnlyDictionary<int, IReadOnlyList<CanonicalSerial>> previous,
         IReadOnlyDictionary<int, IReadOnlyList<CanonicalSerial>> recovered,
         IReadOnlySet<int> serialManagedLines,
-        List<Cx01MissingSerialLine> missing, IReadOnlyDictionary<string, string>? currencyMap)
+        List<Cx01MissingSerialLine> missing, IReadOnlyDictionary<string, string>? currencyMap, string? localCurrency)
     {
         var result = new List<CanonicalLine>();
         foreach (var line in LineElements(document))
@@ -460,10 +462,10 @@ internal static class Cx01Mapper
             var baseRef = baseEntry is null ? null : new ExternalDocumentRef(Text(line, "BaseType") ?? "document",
                 baseEntry, DateOnly.FromDateTime((Date(document, "DocDate") ?? DateTimeOffset.UnixEpoch).Date),
                 baseEntry, IntOrNull(line, "BaseLine"));
+            var (price, currency) = LineAmount(document, line, quantity, currencyMap, localCurrency);
             result.Add(new CanonicalLine(lineNo, lineNo.ToString(CultureInfo.InvariantCulture),
                 Text(line, "ItemCode") ?? "", quantity, Text(line, "UoMCode") ?? "EA", serials, [],
-                Text(line, "WarehouseCode"), baseRef, Text(document, "CardCode"), DecimalOrNull(line, "Price"),
-                Currency(document, currencyMap)));
+                Text(line, "WarehouseCode"), baseRef, Text(document, "CardCode"), price, currency));
         }
         return result;
     }
@@ -660,10 +662,34 @@ internal static class Cx01Mapper
 
     // ISO-shaped values are checked against the actual code list. Customer-defined codes are never guessed: the
     // onboarding survey may suggest a mapping, but only the administrator-confirmed per-connection map is applied.
+    // ADR-0010: the ERP converts, Yojana never applies a rate. A line in a currency other than the company's local
+    // currency carries the ERP's own local amount: LineTotal is always in local currency (after line discount), so the
+    // unit amount is LineTotal / Quantity in the local currency. Without a known local currency the foreign price
+    // passes through unchanged and the gateway holds the document for a person.
+    private static (decimal? Price, string? Currency) LineAmount(JsonElement document, JsonElement line,
+        decimal quantity, IReadOnlyDictionary<string, string>? currencyMap, string? localCurrency)
+    {
+        var remote = (Text(line, "Currency") ?? Text(document, "DocCurrency"))?.Trim();
+        var local = localCurrency?.Trim();
+        if (remote is not null && local is { Length: > 0 } && remote != local && quantity != 0
+            && DecimalOrNull(line, "LineTotal") is { } localTotal)
+            return (localTotal / quantity, Code(local, currencyMap));
+        return (DecimalOrNull(line, "Price"), remote is null ? null : Code(remote, currencyMap));
+    }
+
+    // DocTotal is the ERP's local-currency total whatever the document currency.
+    private static string? DocumentTotalCurrency(JsonElement document, IReadOnlyDictionary<string, string>? currencyMap,
+        string? localCurrency) =>
+        localCurrency?.Trim() is { Length: > 0 } local ? Code(local, currencyMap) : Currency(document, currencyMap);
+
     private static string? Currency(JsonElement document, IReadOnlyDictionary<string, string>? currencyMap)
     {
         var remote = Text(document, "DocCurrency")?.Trim();
-        if (remote is null) return null;
+        return remote is null ? null : Code(remote, currencyMap);
+    }
+
+    private static string Code(string remote, IReadOnlyDictionary<string, string>? currencyMap)
+    {
         if (Iso4217Codes.Contains(remote)) return remote;
         if (currencyMap?.GetValueOrDefault(remote) is { } mapped && Iso4217Codes.Contains(mapped)) return mapped;
         throw new Cx01CurrencyNotMappedException(remote);
