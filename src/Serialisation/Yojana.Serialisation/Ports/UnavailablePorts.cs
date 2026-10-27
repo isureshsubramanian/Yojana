@@ -150,6 +150,9 @@ public sealed class UnavailableLabelPrinterPort : ILabelPrinterPort, IUnavailabl
 
     public Task<LabelPrinterReceipt> SendAsync(LabelPrinterRequest request, CancellationToken cancellationToken) =>
         Task.FromException<LabelPrinterReceipt>(UnavailableRefusal.For(UnavailableCode));
+
+    public Task<LabelPrinterReceipt> SendBatchAsync(LabelPrinterBatchRequest request, CancellationToken cancellationToken) =>
+        Task.FromException<LabelPrinterReceipt>(UnavailableRefusal.For(UnavailableCode));
 }
 
 public sealed class UnavailableSerialSchemeSource : ISerialSchemeSource, IUnavailablePort

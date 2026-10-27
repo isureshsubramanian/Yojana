@@ -890,7 +890,7 @@ public static class SerialisationEndpoints
             Invoke<LabelTemplateVersionSaved>(bus, tenant, new SaveLabelTemplateDraft(request.CommandId, templateId,
                 request.TemplateVersionId, request.EffectiveFrom, request.EffectiveTo, request.LayoutKind, request.Layout,
                 request.StaticText, request.Bindings, request.Symbology, request.PreviewSampleUnitId, request.Regulated,
-                Actor(user)), ct))
+                Actor(user), request.WidthMm, request.HeightMm, request.DpiHint), ct))
             .RequireAuthorization(YojanaPolicy.LabelAdministrator);
         labels.MapPost("/versions/{versionId:guid}/preview", (Guid versionId, PreviewLabelTemplateRequest request,
             ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant, CancellationToken ct) =>
@@ -923,6 +923,8 @@ public static class SerialisationEndpoints
                 versionId, request.RetiredAt, Actor(user)), ct))
             .RequireAuthorization(YojanaPolicy.LabelAdministrator);
         labels.MapGet("/settings", async (LabelSettings settings, CancellationToken ct) => Results.Ok(await settings.GetAsync(ct)));
+        labels.MapGet("/print-options", async (LabelSettings settings, CancellationToken ct) =>
+            Results.Ok(await settings.PrintOptionsAsync(ct)));
         labels.MapPut("/settings", async (LabelPolicy policy, LabelSettings settings, CancellationToken ct) =>
         {
             try { return Results.Ok(await settings.SetAsync(policy, ct)); }
@@ -950,19 +952,20 @@ public static class SerialisationEndpoints
         labels.MapGet("/print-jobs/{jobId:guid}", async (Guid jobId, LabelQueries queries, CancellationToken ct) =>
             await queries.JobAsync(jobId, ct) is { } job ? Results.Ok(job) : Results.NotFound());
         labels.MapPost("/print-jobs", (PrintLabelRequest request, ClaimsPrincipal user, IMessageBus bus, ITenantContext tenant,
-            CancellationToken ct) => Invoke<LabelPrintResult>(bus, tenant, new PrintLabel(request.CommandId,
+            HttpContext http, CancellationToken ct) => PrintDownloadInvoke(bus, tenant, new PrintLabel(request.CommandId,
                 request.UnitId, request.TemplateId, request.IdentifierId, request.PrinterRef, request.PrintAt,
-                request.LegalEntityId, Actor(user)), ct))
+                request.LegalEntityId, Actor(user), PrintLayout: request.Layout), http, ct))
             .RequireAuthorization(YojanaPolicy.LabelPrinter);
         labels.MapPost("/print-jobs/batch", (BatchPrintLabelRequest request, ClaimsPrincipal user, IMessageBus bus,
-            ITenantContext tenant, IClock clock, CancellationToken ct) => Invoke<LabelBatchPrintResult>(bus, tenant,
+            ITenantContext tenant, IClock clock, HttpContext http, CancellationToken ct) => BatchPrintDownloadInvoke(bus, tenant,
                 new BatchPrintLabels(request.CommandId, request.TemplateVersionId, request.PrinterRef,
-                    request.Serials, clock.UtcNow, Actor(user)), ct))
+                    request.Serials, clock.UtcNow, Actor(user), request.Layout), http, ct))
             .RequireAuthorization(YojanaPolicy.LabelPrinter);
         labels.MapPost("/print-jobs/{jobId:guid}/reprint", (Guid jobId, ReprintLabelRequest request, ClaimsPrincipal user,
-            IMessageBus bus, ITenantContext tenant, CancellationToken ct) => Invoke<LabelPrintResult>(bus, tenant,
+            IMessageBus bus, ITenantContext tenant, HttpContext http, CancellationToken ct) => PrintDownloadInvoke(bus, tenant,
                 new ReprintLabel(request.CommandId, jobId, request.PrinterRef, request.ReprintedAt,
-                    request.LegalEntityId, Actor(user)), ct)).RequireAuthorization(YojanaPolicy.LabelPrinter);
+                    request.LegalEntityId, Actor(user), request.Reason, request.Layout), http, ct))
+            .RequireAuthorization(YojanaPolicy.LabelPrinter);
         // End P6 labels block.
 
         // P6 jurisdiction catalogue block. Configuration is tenant data; application code consumes only the narrow
@@ -1965,6 +1968,57 @@ public static class SerialisationEndpoints
         }
     }
 
+    private static async Task<IResult> PrintDownloadInvoke(IMessageBus bus, ITenantContext tenant, object command,
+        HttpContext http, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await bus.InvokeAsync<LabelPrintResult>(command,
+                new DeliveryOptions { TenantId = tenant.TenantId.ToString() }, cancellationToken);
+            if (result.Status == LabelPrintStatus.Rejected)
+                return Results.Problem(title: result.RejectionRule ?? "label_print_rejected",
+                    detail: result.RejectionReason ?? "The label could not be downloaded.",
+                    statusCode: StatusCodes.Status409Conflict,
+                    extensions: new Dictionary<string, object?> { ["rule"] = result.RejectionRule });
+            if (result.Download is not { } download) return Results.Ok(result);
+            if (download.HtmlFallback) http.Response.Headers["X-Yojana-Render"] = "html-fallback";
+            http.Response.Headers["X-Yojana-Label-Job"] = result.JobNumber;
+            return Results.File(download.Bytes, download.MediaType, download.FileName);
+        }
+        catch (CommandRefusedException ex)
+        {
+            return Refused(ex, StatusCodes.Status409Conflict);
+        }
+    }
+
+    private static async Task<IResult> BatchPrintDownloadInvoke(IMessageBus bus, ITenantContext tenant,
+        BatchPrintLabels command, HttpContext http, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await bus.InvokeAsync<LabelBatchPrintResult>(command,
+                new DeliveryOptions { TenantId = tenant.TenantId.ToString() }, cancellationToken);
+            if (result.Download is not { } download)
+            {
+                var refusal = result.Outcomes.FirstOrDefault(outcome => outcome.RejectionRule is not null);
+                return refusal is null ? Results.Ok(result) : Results.Problem(
+                    title: refusal.RejectionRule, detail: refusal.RejectionReason,
+                    statusCode: StatusCodes.Status409Conflict,
+                    extensions: new Dictionary<string, object?> { ["rule"] = refusal.RejectionRule });
+            }
+            if (download.HtmlFallback) http.Response.Headers["X-Yojana-Render"] = "html-fallback";
+            http.Response.Headers["X-Yojana-Label-Downloaded"] = result.Outcomes.Count(outcome =>
+                outcome.Status == LabelPrintStatus.Downloaded).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            http.Response.Headers["X-Yojana-Label-Rejected"] = result.Outcomes.Count(outcome =>
+                outcome.Status == LabelPrintStatus.Rejected).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return Results.File(download.Bytes, download.MediaType, download.FileName);
+        }
+        catch (CommandRefusedException ex)
+        {
+            return Refused(ex, StatusCodes.Status409Conflict);
+        }
+    }
+
     private static async Task<IResult> CopyInvoke(IMessageBus bus, ITenantContext tenant,
         PrintCertificateCopy command, HttpContext http, CancellationToken cancellationToken)
     {
@@ -2435,7 +2489,10 @@ public static class SerialisationEndpoints
         IReadOnlyList<LabelBinding> Bindings,
         string Symbology,
         Guid? PreviewSampleUnitId,
-        bool Regulated);
+        bool Regulated,
+        decimal? WidthMm,
+        decimal? HeightMm,
+        int? DpiHint);
 
     public sealed record PreviewLabelTemplateRequest(Guid? SampleUnitId = null);
 
@@ -2452,19 +2509,23 @@ public static class SerialisationEndpoints
         Guid? IdentifierId,
         string PrinterRef,
         DateTime PrintAt,
-        Guid LegalEntityId);
+        Guid LegalEntityId,
+        LabelPrintLayout? Layout);
 
     public sealed record ReprintLabelRequest(
         Guid CommandId,
         string? PrinterRef,
         DateTime ReprintedAt,
-        Guid LegalEntityId);
+        Guid LegalEntityId,
+        string Reason,
+        LabelPrintLayout? Layout);
 
     public sealed record BatchPrintLabelRequest(
         Guid CommandId,
         Guid? TemplateVersionId,
         string PrinterRef,
-        IReadOnlyList<string> Serials);
+        IReadOnlyList<string> Serials,
+        LabelPrintLayout? Layout);
 
     public sealed record ScanRequest(string Raw);
 }

@@ -23,6 +23,8 @@ import { useReferenceNames } from "../corrections/ReferenceFields";
 import { QuestionsPanel } from "../questions/QuestionsPanel";
 import { isModelNumberRefusal, ModelNumberConfirmation } from "./ModelNumberConfirmation";
 import type { ApiError } from "../api/client";
+import { PrintLabelDrawer } from "../labels/PrintLabelDrawer";
+import { useSession } from "../session/session";
 
 const HISTORY_PAGE = 20;
 const FLAGS = ["lost", "stolen", "written_off", "clone_seen", "recalled", "authenticity_failed"];
@@ -30,6 +32,7 @@ const REASONS = ["typo", "misread", "relabel", "regulatory"];
 
 /** Unit detail (P1 screen 2): the print-ready record. History on the left, identifiers, episodes and as-built on the right; the state strip is always visible. */
 export function Component() {
+  const session = useSession();
   const { unitId = "" } = useParams();
   const [params] = useSearchParams();
   useLegacyParam("resolved", "resolvedFrom");
@@ -77,6 +80,7 @@ export function Component() {
     documents: [lotDocument(detail?.lotId), ...(history?.items.map((e) => e.document) ?? []), ...(detail?.episodes.flatMap((e) => [e.openingDocument, e.closingDocument]) ?? []), ...(detail?.asBuilt.map((row) => lotDocument(row.childLotId)) ?? [])],
   });
   const primary = detail?.identifiers.find((i) => i.validTo === null && i.type === "internal_serial") ?? detail?.identifiers.find((i) => i.validTo === null);
+  const canPrintLabel = session.roles.some((role) => ["label_administrator", "technician", "inventory_controller", "service_desk", "service_supervisor", "service_manager", "production_supervisor", "warehouse_lead", "shipping_supervisor"].includes(role));
   const title = primary?.rawValue ?? (detail ? "Serial not recorded" : "…");
   const owner = detail?.episodes.find((e) => e.kind === "ownership" && e.validTo === null);
   const custody = detail?.episodes.find((e) => e.kind === "custody" && e.validTo === null);
@@ -148,6 +152,7 @@ export function Component() {
             </p>
           </div>
           <div className="actions">
+            {canPrintLabel && primary && <button type="button" className="btn" onClick={() => openDrawer({ eyebrow: "Print label", title: primary.rawValue, mono: true }, <PrintLabelDrawer serial={primary.rawValue} />)}><Icon name="down" />Print label…</button>}
             <button type="button" className="btn" onClick={() => { if (tab === "whats-covered") window.open(`/api/units/${unitId}/whats-covered/sheet.pdf`, "_blank", "noopener"); else window.print(); }}><Icon name="print" />Print</button>
             {tab !== "whats-covered" && <Link className="btn" to={`/corrections?unit=${unitId}`} state={primary?.rawValue ? { entry: primary.rawValue } : null}>Something is wrong…</Link>}
             {tab === "whats-covered" ? <>{whatsCovered?.customerEmailEnabled && <Link className="btn" to={`/units/${unitId}/email`}>E-mail to customer…</Link>}<Link className="btn primary" to={`/claims/new?unit=${unitId}`}>Start a claim</Link></> : tab === "entitlements" ? <><button type="button" className="btn" onClick={() => openAttachEntitlement(unitId, entitlementDetail, reloadEntitlements)}>Attach extended or add-on…</button><button type="button" className="btn primary" onClick={() => openAmendEntitlement(entitlementDetail, reloadEntitlements)}><Icon name="corr" />Amend entitlement…</button></> : <><button type="button" className="btn" onClick={flag}>Overlay flag…</button><button type="button" className="btn primary" onClick={correct}><Icon name="corr" />Correct identifier…</button></>}

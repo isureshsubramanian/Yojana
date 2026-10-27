@@ -26,7 +26,7 @@ public static class LabelTemplateLifecycleHandler
             await db.SaveChangesAsync(cancellationToken);
         }
         return new(version.TemplateVersionId, unitId, version.LayoutKind, result.Payload, result.Bindings,
-            result.EmptyRequiredField, result.RejectionReason, result.Barcode);
+            result.EmptyRequiredField, result.RejectionReason, result.Barcode, version.WidthMm, version.HeightMm);
     }
 
     public static async Task<LabelTemplateVersionChanged> Handle(RequestLabelLegalReview command, SerialisationDbContext db,

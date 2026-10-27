@@ -4,6 +4,7 @@ import test from "node:test";
 import { activationReasons, bindingTableRows, highlightLayout, reviewActions } from "../src/labels/editorModel.ts";
 import { dayBounds, defaultPrintJobDays, printJobRejectionSummary, summaryKpis } from "../src/labels/printJobModel.ts";
 import { labelBindableFieldSchema } from "../src/labels/types.ts";
+import { sheetFit, sheetName } from "../src/labels/sheetModel.ts";
 
 test("label layout mirror marks placeholders and every legal phrase hit without changing text", () => {
   const layout = "^FD{{serial}} Warranty void if removed. void^FS";
@@ -62,9 +63,9 @@ test("activation stays disabled until the saved content has current preview, rev
 });
 
 test("print-job KPIs use the complete server aggregate", () => {
-  const kpis = summaryKpis({ printed: 412, confirmed: 398, waiting: 12, rejected: 2, reprints: 7, fromEvents: 31, from: "2026-10-18T00:00:00Z", to: "2026-10-19T00:00:00Z" });
+  const kpis = summaryKpis({ printed: 412, confirmed: 98, downloaded: 300, waiting: 12, rejected: 2, reprints: 7, fromEvents: 31, from: "2026-10-18T00:00:00Z", to: "2026-10-19T00:00:00Z" });
   assert.deepEqual(kpis.map((kpi) => kpi.value), ["412", "12", "2", "7", "31"]);
-  assert.match(kpis[0]?.detail ?? "", /398/);
+  assert.match(kpis[0]?.detail ?? "", /300/);
 });
 
 test("print-job date filters send an exclusive day boundary", () => {
@@ -80,4 +81,22 @@ test("print job lists explain missing fields without exposing the stored technic
   assert.equal(printJobRejectionSummary("item.revision", "item.revision is empty for unit 0199"), "Required field Revision is empty");
   assert.equal(printJobRejectionSummary(null, "identifier.manufacturer_serial is empty for unit 0199"), "Required field Manufacturer serial is empty");
   assert.equal(printJobRejectionSummary(null, "printer refused raw payload"), "The label could not be rendered");
+});
+
+test("sticker-sheet maths reports an oversized margin as overflow and the default A4 3 × 8 sheet fits", () => {
+  const estimated = { profileId: "tenant-default", name: "", pageSize: "A4" as const, columns: 3, rows: 8, labelWidthMm: 70, labelHeightMm: 37, marginTopMm: 4.5, marginRightMm: 0, marginBottomMm: 4.5, marginLeftMm: 0, horizontalGapMm: 0, verticalGapMm: 0, builtIn: false };
+  assert.deepEqual(sheetFit(estimated), { fits: false, horizontalOverflowMm: 0, verticalOverflowMm: 8 });
+  assert.equal(sheetFit({ ...estimated, marginTopMm: 0.5, marginBottomMm: 0.5 }).fits, true);
+  assert.equal(sheetName(estimated), "A4 · 3 × 8 · 70 × 37 mm");
+});
+
+test("label screens expose physical sizing, sheet selection, PDF wording and the required reprint reason", () => {
+  const editor = readFileSync(new URL("../src/labels/LabelTemplateEditor.tsx", import.meta.url), "utf8");
+  const jobs = readFileSync(new URL("../src/labels/PrintJobs.tsx", import.meta.url), "utf8");
+  const drawer = readFileSync(new URL("../src/labels/PrintLabelDrawer.tsx", import.meta.url), "utf8");
+  const settings = readFileSync(new URL("../src/settings/LabelSettings.tsx", import.meta.url), "utf8");
+  assert.match(editor, /Width · mm/); assert.match(editor, /true-scale/);
+  assert.match(jobs, /Download PDF/); assert.match(jobs, /printing is not confirmed/i); assert.match(jobs, /Reprint reason/);
+  assert.match(drawer, /Start row/); assert.match(drawer, /Start column/); assert.match(drawer, /Download PDF/);
+  assert.match(settings, /Sticker sheet/); assert.match(settings, /Grid does not fit/); assert.match(settings, /PDF download/);
 });

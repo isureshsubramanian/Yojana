@@ -36,8 +36,30 @@ public static class LabelPrintStatus
     public const string Rendered = "rendered";
     public const string Sent = "sent";
     public const string Confirmed = "confirmed";
+    public const string Downloaded = "downloaded";
     public const string Rejected = "rejected";
-    public static readonly IReadOnlyList<string> All = [Rendered, Sent, Confirmed, Rejected];
+    public static readonly IReadOnlyList<string> All = [Rendered, Sent, Confirmed, Downloaded, Rejected];
+}
+
+public static class LabelOutputFormat
+{
+    public const string Sheet = "sheet";
+    public const string OnePerPage = "one_per_page";
+    public static readonly IReadOnlyList<string> All = [Sheet, OnePerPage];
+}
+
+public static class LabelPrinterAdapter
+{
+    public const string PdfDownload = "pdf_download";
+    public const string Unavailable = "unavailable";
+    public static readonly IReadOnlyList<string> All = [PdfDownload, Unavailable];
+}
+
+public static class LabelPageSize
+{
+    public const string A4 = "A4";
+    public const string Letter = "Letter";
+    public static readonly IReadOnlyList<string> All = [A4, Letter];
 }
 
 public static class LabelPrintJobKind
@@ -107,7 +129,10 @@ public sealed record SaveLabelTemplateDraft(
     string Symbology,
     Guid? PreviewSampleUnitId,
     bool Regulated,
-    string ActorRef);
+    string ActorRef,
+    decimal? WidthMm = null,
+    decimal? HeightMm = null,
+    int? DpiHint = null);
 
 public sealed record LabelTemplateVersionSaved(Guid TemplateId, Guid TemplateVersionId, int Version, bool LegalReview, bool Replayed);
 
@@ -121,7 +146,9 @@ public sealed record LabelTemplatePreview(
     IReadOnlyList<LabelResolvedBinding> Bindings,
     string? EmptyRequiredField,
     string? RejectionReason,
-    BarcodeEncoding? Barcode);
+    BarcodeEncoding? Barcode,
+    decimal? WidthMm = null,
+    decimal? HeightMm = null);
 
 public sealed record RequestLabelLegalReview(Guid CommandId, Guid TemplateVersionId, string ActorRef);
 
@@ -148,7 +175,8 @@ public sealed record PrintLabel(
     Guid? TemplateVersionId = null,
     Guid? BatchCommandId = null,
     int? BatchSequence = null,
-    string? RequestedSerial = null);
+    string? RequestedSerial = null,
+    LabelPrintLayout? PrintLayout = null);
 
 public sealed record ReprintLabel(
     Guid CommandId,
@@ -156,7 +184,9 @@ public sealed record ReprintLabel(
     string? PrinterRef,
     DateTime ReprintedAt,
     Guid LegalEntityId,
-    string ActorRef);
+    string ActorRef,
+    string Reason = "",
+    LabelPrintLayout? PrintLayout = null);
 
 public sealed record LabelPrintResult(
     Guid JobId,
@@ -166,7 +196,8 @@ public sealed record LabelPrintResult(
     string? PayloadHash,
     bool Replayed,
     string? RejectionRule = null,
-    string? EmptyRequiredField = null);
+    string? EmptyRequiredField = null,
+    LabelDownload? Download = null);
 
 public sealed record BatchPrintLabels(
     Guid CommandId,
@@ -174,7 +205,8 @@ public sealed record BatchPrintLabels(
     string PrinterRef,
     IReadOnlyList<string> Serials,
     DateTime PrintAt,
-    string ActorRef);
+    string ActorRef,
+    LabelPrintLayout? PrintLayout = null);
 
 public sealed record LabelBatchPrintOutcome(
     string Serial,
@@ -188,7 +220,33 @@ public sealed record LabelBatchPrintOutcome(
 public sealed record LabelBatchPrintResult(
     Guid CommandId,
     IReadOnlyList<LabelBatchPrintOutcome> Outcomes,
-    bool Replayed);
+    bool Replayed,
+    LabelDownload? Download = null);
+
+public sealed record LabelPrintLayout(
+    string Format,
+    string? SheetProfileId = null,
+    int StartRow = 1,
+    int StartColumn = 1,
+    int Copies = 1);
+
+public sealed record LabelDownload(byte[] Bytes, string MediaType, string FileName, bool HtmlFallback = false);
+
+public sealed record LabelSheetProfile(
+    string ProfileId,
+    string Name,
+    string PageSize,
+    int Columns,
+    int Rows,
+    decimal LabelWidthMm,
+    decimal LabelHeightMm,
+    decimal MarginTopMm,
+    decimal MarginRightMm,
+    decimal MarginBottomMm,
+    decimal MarginLeftMm,
+    decimal HorizontalGapMm,
+    decimal VerticalGapMm,
+    bool BuiltIn = false);
 
 public sealed record LabelTemplateCatalogueRow(
     Guid TemplateId,
@@ -207,7 +265,9 @@ public sealed record LabelTemplateCatalogueRow(
     bool LegalReview,
     string? LegalReviewedBy,
     DateTime? ApprovedAt,
-    int PrintedCount);
+    int PrintedCount,
+    decimal? ActiveWidthMm = null,
+    decimal? ActiveHeightMm = null);
 
 public sealed record LabelTemplateVersionRow(
     Guid TemplateVersionId,
@@ -232,7 +292,10 @@ public sealed record LabelTemplateVersionRow(
     bool ApprovalCurrent,
     string Status,
     DateTime RecordedAt,
-    string ActorRef);
+    string ActorRef,
+    decimal? WidthMm = null,
+    decimal? HeightMm = null,
+    int? DpiHint = null);
 
 public sealed record LabelTemplateDetail(
     Guid TemplateId,
@@ -264,13 +327,21 @@ public sealed record LabelPrintJobRow(
     string? EmptyRequiredField,
     DateTime? SentAt,
     DateTime? ConfirmedAt,
-    Guid? SourceEventId);
+    Guid? SourceEventId,
+    DateTime? DownloadedAt = null,
+    string? OutputFormat = null,
+    string? SheetProfileId = null,
+    int? StartRow = null,
+    int? StartColumn = null,
+    int Copies = 1,
+    string? ReprintReason = null);
 
 public sealed record LabelPrintJobPage(IReadOnlyList<LabelPrintJobRow> Rows, int Total, int Skip, int Take);
 
 public sealed record LabelPrintJobSummary(
     int Printed,
     int Confirmed,
+    int Downloaded,
     int Waiting,
     int Rejected,
     int Reprints,
@@ -278,7 +349,19 @@ public sealed record LabelPrintJobSummary(
     DateTime From,
     DateTime To);
 
-public sealed record LabelPolicy(IReadOnlyList<string> LegalReviewPhrases, bool PrintExpiryDates = false, string DefaultPrinterRef = "default");
+public sealed record LabelPolicy(
+    IReadOnlyList<string> LegalReviewPhrases,
+    bool PrintExpiryDates = false,
+    string DefaultPrinterRef = "pdf_download",
+    string PrinterAdapter = LabelPrinterAdapter.PdfDownload,
+    string DefaultFormat = LabelOutputFormat.Sheet,
+    LabelSheetProfile? DefaultSheet = null,
+    IReadOnlyList<LabelSheetProfile>? ExtraSheetProfiles = null);
+
+public sealed record LabelPrintOptions(
+    string DefaultFormat,
+    IReadOnlyList<LabelSheetProfile> SheetProfiles,
+    string DefaultSheetProfileId);
 
 public sealed record LabelBindableFieldRow(string FieldPath, bool ExpiryControlled = false);
 
