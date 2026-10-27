@@ -353,6 +353,7 @@ internal static class Cx01Mapper
             default:
             {
                 var lines = Lines(raw, previousSerials, recoveredSerials, serialManagedLines, missing, currencyMap);
+                if (entity.CanonicalMessage == nameof(InventoryAdjusted)) lines = WithoutProductionIssues(lines, missing);
                 if (missing.Count > 0) completeness = "partial";
                 payload = entity.CanonicalMessage switch
                 {
@@ -551,6 +552,21 @@ internal static class Cx01Mapper
             foreach (var item in value.EnumerateArray())
                 CollectUserFields(item, path + "[" + index++ + "]", fields, ref retainedCharacters);
         }
+    }
+
+    // ERP object type 202 is a production order. An issue line based on one is a component going into a build,
+    // not stock leaving the business: sent as an adjustment out it would scrap the part. Such lines are left out
+    // (with their missing-serial entries) until the as-built link is decided; the raw document is still retained.
+    private const string ProductionOrderObjectType = "202";
+
+    private static List<CanonicalLine> WithoutProductionIssues(List<CanonicalLine> lines,
+        List<Cx01MissingSerialLine> missing)
+    {
+        var issued = lines.Where(x => x.BaseDocumentRef?.Type == ProductionOrderObjectType)
+            .Select(x => x.LineNo).ToHashSet();
+        if (issued.Count == 0) return lines;
+        missing.RemoveAll(x => issued.Contains(x.LineNo));
+        return lines.Where(x => !issued.Contains(x.LineNo)).ToList();
     }
 
     private static ExternalDocumentRef? BaseDocument(IEnumerable<CanonicalLine> lines) =>
