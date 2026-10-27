@@ -299,6 +299,7 @@ public sealed class DocumentEventTests(SerialisationHostFixture fixture)
                 Assert.Equal(issue.Document.Id, hold.IssueDocumentId);
                 Assert.Equal(production.Document.Id, hold.ReceiptDocumentId);
             });
+        await AssertComponentsTakeParentLocationAsync(db, parent);
         var unitQueries = scope.ServiceProvider.GetRequiredService<Yojana.Serialisation.Queries.UnitQueries>();
         var parentDetail = await unitQueries.DetailAsync(parent, CancellationToken.None);
         Assert.NotNull(parentDetail);
@@ -396,6 +397,27 @@ public sealed class DocumentEventTests(SerialisationHostFixture fixture)
             && row.LinkedAt != null && row.IssueDocumentId == lateIssue.Document.Id));
         Assert.True(await db.ProductionHoldTasks.AnyAsync(row => row.ProductionOrderId == multiOrder.Id
             && row.Status == "completed" && row.CompletedBy == "production.operator"));
+        var lateParent = await db.Identifiers.Where(row => row.RawValue == $"{prefix}-P1")
+            .Select(row => row.UnitId).SingleAsync();
+        await AssertComponentsTakeParentLocationAsync(db, lateParent);
+        await AssertComponentsTakeParentLocationAsync(db, selectedParent);
+    }
+
+    // A component linked out of a production hold leaves in_production and sits where its parent sits.
+    private static async Task AssertComponentsTakeParentLocationAsync(SerialisationDbContext db, Guid parent)
+    {
+        var parentState = await db.Current.SingleAsync(row => row.UnitId == parent);
+        var children = await db.AssemblyLinks.Where(row => row.ParentUnitId == parent && row.ChildUnitId != null
+            && row.RemovedAt == null).Select(row => row.ChildUnitId!.Value).ToListAsync();
+        Assert.NotEmpty(children);
+        var states = await db.Current.Where(row => children.Contains(row.UnitId)).ToListAsync();
+        Assert.Equal(children.Count, states.Count);
+        Assert.All(states, state =>
+        {
+            Assert.NotEqual(LocationKind.InProduction, state.LocationKind);
+            Assert.Equal(parentState.LocationKind, state.LocationKind);
+            Assert.Equal(parentState.LocationId, state.LocationId);
+        });
     }
 
     [DatabaseFact]
