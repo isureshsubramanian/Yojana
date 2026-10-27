@@ -94,6 +94,8 @@ public sealed class SerialisationHostFixture : IAsyncLifetime
         builder.Services.AddSingleton<ICertificateRunChunkObserver>(sp => sp.GetRequiredService<TestCertificateRunChunkObserver>());
         builder.AddSerialisationModule();
         builder.AddSerialisationDevelopmentPorts();
+        // Label tests read the jobs this printer received; the shipped and Development hosts use the PDF adapter.
+        builder.Services.AddSingleton<ILabelPrinterPort>(sp => sp.GetRequiredService<Yojana.Serialisation.Labels.InMemoryLabelPrinterPort>());
         builder.Services.AddSingleton<IErpBomCapabilityPort, TestErpBomCapabilityPort>();
         builder.Services.AddDbContext<Yojana.Serialisation.Data.SerialisationDbContext>(options => options.AddInterceptors(PolicyCommandCounter.Instance), optionsLifetime: ServiceLifetime.Singleton);
         builder.Services.ConfigureWolverine(options =>
