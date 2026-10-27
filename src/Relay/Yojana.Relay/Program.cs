@@ -11,9 +11,23 @@ var secretFile = new RelaySecretFile(protection);
 var secretPath = configPath + ".secrets";
 if (args.Contains("--protect-secrets", StringComparer.Ordinal))
 {
-    var secrets = JsonSerializer.Deserialize<RelaySecrets>(await Console.In.ReadToEndAsync(), JsonSerializerOptions.Web)
-        ?? throw new InvalidDataException("relay_secrets_invalid");
-    secretFile.Write(secretPath, secrets);
+    // Provisioning is run by an administrator at a console: report a refusal in one line, never a stack trace.
+    try
+    {
+        var secrets = JsonSerializer.Deserialize<RelaySecrets>(await Console.In.ReadToEndAsync(), JsonSerializerOptions.Web)
+            ?? throw new InvalidDataException("relay_secrets_invalid");
+        secretFile.Write(secretPath, secrets);
+    }
+    catch (RelaySecretFileExistsException exception)
+    {
+        await Console.Error.WriteLineAsync(exception.Message);
+        Environment.ExitCode = 2;
+    }
+    catch (Exception exception) when (exception is JsonException or InvalidDataException)
+    {
+        await Console.Error.WriteLineAsync("The secrets on standard input are not one valid JSON object (relaySecret, company, userName, password).");
+        Environment.ExitCode = 2;
+    }
     return;
 }
 var configuration = JsonSerializer.Deserialize<RelayAgentConfiguration>(await File.ReadAllTextAsync(configPath), JsonSerializerOptions.Web)

@@ -181,7 +181,9 @@ public sealed class SiteRelayTests
             var secrets = new RelaySecrets("relay", "Fictional", "user", "secret");
             store.Write(path, secrets);
             Assert.Equal(secrets, store.Read(path));
-            Assert.Throws<IOException>(() => store.Write(path, secrets));
+            var exists = Assert.Throws<RelaySecretFileExistsException>(() => store.Write(path, secrets));
+            Assert.Contains(path, exists.Message, StringComparison.Ordinal);
+            Assert.Equal(secrets, store.Read(path)); // the refused write left the stored secrets untouched
             if (!OperatingSystem.IsWindows())
             {
                 Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(path));
