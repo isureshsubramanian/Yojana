@@ -432,10 +432,14 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
                 break;
             case ProductionCompleted x:
                 await PrepareReferencesAsync(row, x.Lines.Concat(x.Components).Concat(x.ReturnedComponents ?? []).ToList(), null, null, cancellationToken);
+                if (!string.IsNullOrWhiteSpace(x.ProducedItemExternalId))
+                    await references.ResolveAsync(row.ConnectionId, "item", x.ProducedItemExternalId, false, cancellationToken);
                 await EnsureDocumentRefAsync(row.ConnectionId, x.ProductionOrderRef, cancellationToken);
                 break;
             case ComponentsIssued x:
                 await PrepareReferencesAsync(row, x.Lines, null, null, cancellationToken);
+                if (!string.IsNullOrWhiteSpace(x.ProducedItemExternalId))
+                    await references.ResolveAsync(row.ConnectionId, "item", x.ProducedItemExternalId, false, cancellationToken);
                 await EnsureDocumentRefAsync(row.ConnectionId, x.ProductionOrderRef, cancellationToken);
                 break;
             case InvoicePosted x:

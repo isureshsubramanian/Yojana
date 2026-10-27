@@ -353,6 +353,8 @@ public static class ManufacturingProductionReceiptPostedHandler
         ManufacturingContractService returnService, CancellationToken ct) => ctx.InTransactionAsync(async () =>
     {
         var doc = await ctx.Manufacturing.GetProductionReceiptAsync(message.Document, ct) ?? throw new CommandRefusedException("document_unavailable", $"Production receipt {message.Document.Id:N} could not be read through the manufacturing port.");
+        await Components.RememberOrderAsync(ctx, doc.ProductionOrder, doc.ProducedItemId,
+            doc.PlannedQuantity, doc.PostedAt, ct);
         var exceptions = new List<string>();
         var affected = 0;
         foreach (var line in doc.Produced)
@@ -397,6 +399,8 @@ public static class ManufacturingComponentIssuedHandler
     public static Task<ConsumedEventResult> Handle(ManufacturingComponentIssued message, DocumentContext ctx, CancellationToken ct) => ctx.InTransactionAsync(async () =>
     {
         var doc = await ctx.Manufacturing.GetComponentIssueAsync(message.Document, ct) ?? throw new CommandRefusedException("document_unavailable", $"Component issue {message.Document.Id:N} could not be read through the manufacturing port.");
+        await Components.RememberOrderAsync(ctx, doc.ProductionOrder, doc.ProducedItemId,
+            doc.PlannedQuantity, doc.PostedAt, ct);
         var exceptions = await Components.AssembleAsync(ctx, message.Envelope, doc.Document, doc.ProductionOrder, doc.Components, doc.PostedAt, ct);
         var held = await Components.HoldAsync(ctx, message.Envelope, doc, exceptions, ct);
         exceptions.AddRange(await Components.LinkHeldAsync(ctx, message.Envelope, doc.ProductionOrder, ct));
@@ -407,6 +411,31 @@ public static class ManufacturingComponentIssuedHandler
 
 internal static class Components
 {
+    public static async Task RememberOrderAsync(DocumentContext ctx, DocumentRef order, Guid? producedItemId,
+        decimal? plannedQuantity, DateTime firstSeenAt, CancellationToken ct)
+    {
+        var row = await ctx.Db.ProductionOrderBuilds.FindAsync(
+            [ctx.Tenant.TenantId, order.Type, order.Id], ct);
+        if (row is null)
+        {
+            ctx.Db.ProductionOrderBuilds.Add(new ProductionOrderBuild
+            {
+                TenantId = ctx.Tenant.TenantId,
+                ProductionOrderType = order.Type,
+                ProductionOrderId = order.Id,
+                ProducedItemId = producedItemId,
+                PlannedQuantity = plannedQuantity,
+                FirstSeenAt = firstSeenAt,
+            });
+        }
+        else
+        {
+            row.ProducedItemId ??= producedItemId;
+            row.PlannedQuantity ??= plannedQuantity;
+        }
+        await ctx.Db.SaveChangesAsync(ct);
+    }
+
     /// <summary>Component lines with a parent serial become AssemblyLinks of that parent (case 35); lines without one are the order's loose stock and are reported, not guessed.</summary>
     public static async Task<List<string>> AssembleAsync(DocumentContext ctx, ThinEnvelope env, DocumentRef doc, DocumentRef order, IReadOnlyList<ComponentIssue> components, DateTime at, CancellationToken ct)
     {
@@ -550,6 +579,14 @@ internal static class Components
             && row.LinkedAt == null && row.ReturnedAt == null).OrderBy(row => row.IssuedAt)
             .ThenBy(row => row.IssueLine).ThenBy(row => row.HoldId).ToListAsync(ct);
         if (holds.Count == 0) return exceptions;
+        var build = await ctx.Db.ProductionOrderBuilds.AsNoTracking().SingleOrDefaultAsync(row =>
+            row.TenantId == ctx.Tenant.TenantId && row.ProductionOrderType == order.Type
+            && row.ProductionOrderId == order.Id, ct);
+        if (build?.PlannedQuantity != 1m)
+        {
+            await RaiseTaskAsync(ctx, order, "assignment", ct);
+            return exceptions;
+        }
         var parents = await ParentsAsync(ctx, order, ct);
         if (parents.Count == 0) return exceptions;
         if (parents.Count > 1)

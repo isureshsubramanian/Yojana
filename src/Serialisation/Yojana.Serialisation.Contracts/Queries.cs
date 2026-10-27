@@ -49,13 +49,15 @@ public sealed record AsBuiltRow(Guid LinkId, string? Slot, string Relation, Guid
     DocumentRef? ProductionOrder = null, DocumentRef? Receipt = null, DocumentRef? Issue = null);
 
 public sealed record InProductionOrderRow(DocumentRef ProductionOrder, Guid? ProducedItemId, int HeldCount,
-    DateTime OldestIssuedAt, int ParentsReceived, string Status, string? Continuation = null);
+    DateTime OldestIssuedAt, int ParentsReceived, decimal? PlannedQuantity, string Status,
+    string? Continuation = null);
 public sealed record InProductionOrderPage(IReadOnlyList<InProductionOrderRow> Items, string? NextCursor);
 public sealed record InProductionComponentRow(Guid HoldId, Guid UnitId, Guid ItemId, string Serial,
     DateTime IssuedAt, DocumentRef Issue, int IssueLine);
 public sealed record InProductionParentRow(Guid UnitId, Guid ItemId, string Serial, DocumentRef Receipt);
 public sealed record InProductionOrderDetail(DocumentRef ProductionOrder, Guid? ProducedItemId,
-    IReadOnlyList<InProductionComponentRow> Components, IReadOnlyList<InProductionParentRow> Parents, string Status);
+    decimal? PlannedQuantity, IReadOnlyList<InProductionComponentRow> Components,
+    IReadOnlyList<InProductionParentRow> Parents, string Status);
 public sealed record AssignProductionComponents(Guid CommandId, DocumentRef ProductionOrder, string ParentSerial,
     IReadOnlyList<string> ComponentSerials, Guid LegalEntityId, string ActorRef = "");
 public sealed record AssignProductionComponentsResult(Guid ParentUnitId, IReadOnlyList<Guid> ComponentUnitIds,

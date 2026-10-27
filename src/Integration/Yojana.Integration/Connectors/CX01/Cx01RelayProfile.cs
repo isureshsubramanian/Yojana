@@ -53,7 +53,7 @@ public sealed class Cx01RelayProfile(Cx01Settings settings, ITenantContext tenan
         const string key = @"\((?:[0-9]+|'(?:[^'/%\\\r\n]|'')*')\)";
         // Approval-governed document types are read by the review tracker to find the document added from a draft.
         var collections = Cx01Protocol.Entities.Values.Select(entity => entity.Collection)
-            .Concat(["CustomerEquipmentCards", "SerialNumberDetails"])
+            .Concat(["CustomerEquipmentCards", "SerialNumberDetails", "ProductionOrders"])
             .Concat(Cx01DocumentCatalogue.Collections)
             .Concat(Cx01ApprovalCatalogue.Targets.Select(target => target.Collection))
             .Distinct(StringComparer.Ordinal).ToList();

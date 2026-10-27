@@ -127,6 +127,7 @@ public sealed class SiteRelayTests
     [InlineData("POST", "/b1s/v2/Drafts", true)]
     [InlineData("GET", "/b1s/v2/Drafts(7001)", true)]
     [InlineData("GET", "/b1s/v2/CreditNotes", true)]
+    [InlineData("GET", "/b1s/v2/ProductionOrders(161)", true)]
     [InlineData("PATCH", "/b1s/v2/Drafts(7001)", false)]
     [InlineData("DELETE", "/b1s/v2/Drafts(7001)", false)]
     [InlineData("POST", "/b1s/v2/ApprovalTemplates", false)]

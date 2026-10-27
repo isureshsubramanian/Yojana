@@ -80,6 +80,23 @@ namespace Yojana.Serialisation.Data.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "production_order_build",
+                schema: "serialisation",
+                columns: table => new
+                {
+                    tenant_id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    production_order_type = table.Column<string>(type: "nvarchar(40)", maxLength: 40, nullable: false),
+                    production_order_id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    produced_item_id = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    planned_quantity = table.Column<decimal>(type: "decimal(19,6)", precision: 19, scale: 6, nullable: true),
+                    first_seen_at = table.Column<DateTime>(type: "datetime2(3)", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_production_order_build", x => new { x.tenant_id, x.production_order_type, x.production_order_id });
+                });
+
+            migrationBuilder.CreateTable(
                 name: "production_order_receipt",
                 schema: "serialisation",
                 columns: table => new
@@ -148,6 +165,12 @@ namespace Yojana.Serialisation.Data.Migrations
                 columns: new[] { "tenant_id", "status", "raised_at", "task_id" });
 
             migrationBuilder.CreateIndex(
+                name: "ix_production_order_build_tenant_id_produced_item_id_first_seen_at",
+                schema: "serialisation",
+                table: "production_order_build",
+                columns: new[] { "tenant_id", "produced_item_id", "first_seen_at" });
+
+            migrationBuilder.CreateIndex(
                 name: "ix_production_order_receipt_tenant_id_production_order_type_production_order_id_received_at",
                 schema: "serialisation",
                 table: "production_order_receipt",
@@ -162,6 +185,7 @@ namespace Yojana.Serialisation.Data.Migrations
             migrationBuilder.AddTenantPolicy("serialisation", "production_component_assignment");
             migrationBuilder.AddTenantPolicy("serialisation", "production_component_hold");
             migrationBuilder.AddTenantPolicy("serialisation", "production_hold_task");
+            migrationBuilder.AddTenantPolicy("serialisation", "production_order_build");
             migrationBuilder.AddTenantPolicy("serialisation", "production_order_receipt");
         }
 
@@ -171,6 +195,7 @@ namespace Yojana.Serialisation.Data.Migrations
             migrationBuilder.RemoveTenantPolicy("serialisation", "production_component_assignment");
             migrationBuilder.RemoveTenantPolicy("serialisation", "production_component_hold");
             migrationBuilder.RemoveTenantPolicy("serialisation", "production_hold_task");
+            migrationBuilder.RemoveTenantPolicy("serialisation", "production_order_build");
             migrationBuilder.RemoveTenantPolicy("serialisation", "production_order_receipt");
 
             migrationBuilder.DropTable(
@@ -183,6 +208,10 @@ namespace Yojana.Serialisation.Data.Migrations
 
             migrationBuilder.DropTable(
                 name: "production_hold_task",
+                schema: "serialisation");
+
+            migrationBuilder.DropTable(
+                name: "production_order_build",
                 schema: "serialisation");
 
             migrationBuilder.DropTable(

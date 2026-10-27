@@ -5,13 +5,14 @@ const text = z.string();
 const nullableText = z.string().nullable();
 const documentRef = z.object({ type: text, id: text, line: z.number().nullable() });
 const orderRow = z.object({ productionOrder: documentRef, producedItemId: nullableText, heldCount: z.number(),
-  oldestIssuedAt: text, parentsReceived: z.number(), status: text, continuation: nullableText });
+  oldestIssuedAt: text, parentsReceived: z.number(), plannedQuantity: z.number().nullable(), status: text,
+  continuation: nullableText });
 export const inProductionOrderPage = z.object({ items: z.array(orderRow), nextCursor: nullableText });
 const component = z.object({ holdId: text, unitId: text, itemId: text, serial: text, issuedAt: text,
   issue: documentRef, issueLine: z.number() });
 const parent = z.object({ unitId: text, itemId: text, serial: text, receipt: documentRef });
 export const inProductionDetail = z.object({ productionOrder: documentRef, producedItemId: nullableText,
-  components: z.array(component), parents: z.array(parent), status: text });
+  plannedQuantity: z.number().nullable(), components: z.array(component), parents: z.array(parent), status: text });
 export const assignProductionComponents = z.object({ commandId: text, productionOrder: documentRef,
   parentSerial: text.min(1), componentSerials: z.array(text.min(1)).min(1), legalEntityId: z.string().optional() });
 const assignmentResult = z.object({ parentUnitId: text, componentUnitIds: z.array(text),

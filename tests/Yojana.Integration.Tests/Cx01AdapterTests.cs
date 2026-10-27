@@ -199,6 +199,11 @@ public sealed class Cx01AdapterTests
         var payload = canonical.RootElement.GetProperty("payload");
         Assert.Equal("161", payload.GetProperty("production_order_ref").GetProperty("external_id").GetString());
         Assert.Equal("production_order", payload.GetProperty("production_order_ref").GetProperty("type").GetString());
+        Assert.Equal("FIC-SRV-EDGE-01", payload.GetProperty("produced_item_external_id").GetString());
+        Assert.Equal(1m, payload.GetProperty("planned_quantity").GetDecimal());
+        Assert.Equal(1, simulator.ProductionOrderReadCount);
+        Assert.Equal("?$select=AbsoluteEntry,ItemNo,PlannedQuantity",
+            Assert.Single(simulator.ProductionOrderQueries));
         var line = Assert.Single(payload.GetProperty("lines").EnumerateArray());
         Assert.Equal(JsonValueKind.Null, line.GetProperty("base_document_ref").GetProperty("line").ValueKind);
         Assert.Equal("FIC-261027-SRV-01", Assert.Single(line.GetProperty("serials").EnumerateArray())
@@ -233,6 +238,8 @@ public sealed class Cx01AdapterTests
         using var issuedCanonical = JsonDocument.Parse(issue.CanonicalMessage);
         var issuedPayload = issuedCanonical.RootElement.GetProperty("payload");
         Assert.Equal("161", issuedPayload.GetProperty("production_order_ref").GetProperty("external_id").GetString());
+        Assert.Equal("FIC-SRV-EDGE-01", issuedPayload.GetProperty("produced_item_external_id").GetString());
+        Assert.Equal(1m, issuedPayload.GetProperty("planned_quantity").GetDecimal());
         var issuedLine = Assert.Single(issuedPayload.GetProperty("lines").EnumerateArray());
         Assert.Equal(0, issuedLine.GetProperty("line_no").GetInt32());
         Assert.Equal("FIC-261027-CPU-01", Assert.Single(issuedLine.GetProperty("serials").EnumerateArray())
@@ -286,6 +293,84 @@ public sealed class Cx01AdapterTests
         Assert.Single(payload.GetProperty("lines").EnumerateArray());
         var returned = Assert.Single(payload.GetProperty("returned_components").EnumerateArray());
         Assert.Equal("FIC-CPU-32C", returned.GetProperty("item_external_id").GetString());
+    }
+
+    [Fact]
+    public async Task A_return_only_production_receipt_uses_the_order_item_and_never_creates_output()
+    {
+        await using var simulator = new Cx01Simulator
+        {
+            ProductionReceiptAvailable = true,
+            ProductionReceiptReturnOnly = true,
+        };
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+        var configured = await context.Settings.GetAsync(context.ConnectionId, CancellationToken.None);
+        await context.Settings.SetAsync(context.ConnectionId, configured with
+        {
+            CurrencyMap = new Dictionary<string, string> { ["$"] = "USD" },
+        }, CancellationToken.None);
+
+        var result = await context.Adapter.PollAsync(new(context.TenantId, context.ConnectionId,
+            "production_receipts", null, TimeSpan.FromMinutes(2), 10), CancellationToken.None);
+
+        var accepted = Assert.Single(result.Events);
+        using var canonical = JsonDocument.Parse(accepted.CanonicalMessage);
+        var payload = canonical.RootElement.GetProperty("payload");
+        Assert.Empty(payload.GetProperty("lines").EnumerateArray());
+        var returned = Assert.Single(payload.GetProperty("returned_components").EnumerateArray());
+        Assert.Equal("FIC-CPU-32C", returned.GetProperty("item_external_id").GetString());
+        Assert.Equal("FIC-SRV-EDGE-01", payload.GetProperty("produced_item_external_id").GetString());
+    }
+
+    [Fact]
+    public async Task A_based_line_for_the_orders_produced_item_remains_produced_output()
+    {
+        await using var simulator = new Cx01Simulator
+        {
+            ProductionReceiptAvailable = true,
+            ProductionOutputHasBaseLine = true,
+        };
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+        var configured = await context.Settings.GetAsync(context.ConnectionId, CancellationToken.None);
+        await context.Settings.SetAsync(context.ConnectionId, configured with
+        {
+            CurrencyMap = new Dictionary<string, string> { ["$"] = "USD" },
+        }, CancellationToken.None);
+
+        var result = await context.Adapter.PollAsync(new(context.TenantId, context.ConnectionId,
+            "production_receipts", null, TimeSpan.FromMinutes(2), 10), CancellationToken.None);
+
+        using var canonical = JsonDocument.Parse(Assert.Single(result.Events).CanonicalMessage);
+        var payload = canonical.RootElement.GetProperty("payload");
+        Assert.Single(payload.GetProperty("lines").EnumerateArray());
+        Assert.Empty(payload.GetProperty("returned_components").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task A_failed_order_read_keeps_planned_quantity_unknown_instead_of_parking_the_issue()
+    {
+        await using var simulator = new Cx01Simulator
+        {
+            ProductionIssueAvailable = true,
+            ProductionIssueContainsOnlyBasedLines = true,
+            ProductionOrderAvailable = false,
+        };
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+        var configured = await context.Settings.GetAsync(context.ConnectionId, CancellationToken.None);
+        await context.Settings.SetAsync(context.ConnectionId, configured with
+        {
+            CurrencyMap = new Dictionary<string, string> { ["$"] = "USD" },
+        }, CancellationToken.None);
+
+        var result = await context.Adapter.PollAsync(new(context.TenantId, context.ConnectionId,
+            "inventory_adjustments", null, TimeSpan.FromMinutes(2), 10), CancellationToken.None);
+
+        var accepted = Assert.Single(result.Events);
+        using var canonical = JsonDocument.Parse(accepted.CanonicalMessage);
+        var payload = canonical.RootElement.GetProperty("payload");
+        Assert.Equal(JsonValueKind.Null, payload.GetProperty("planned_quantity").ValueKind);
+        Assert.Equal(JsonValueKind.Null, payload.GetProperty("produced_item_external_id").ValueKind);
+        Assert.Empty(context.Rejections.ParkedDocuments);
     }
 
     [Fact]

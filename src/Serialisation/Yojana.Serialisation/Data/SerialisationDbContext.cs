@@ -90,6 +90,7 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
     public DbSet<ManufacturingMessageReceipt> ManufacturingMessageReceipts => Set<ManufacturingMessageReceipt>();
     public DbSet<ProductionComponentHold> ProductionComponentHolds => Set<ProductionComponentHold>();
     public DbSet<ProductionHoldTask> ProductionHoldTasks => Set<ProductionHoldTask>();
+    public DbSet<ProductionOrderBuild> ProductionOrderBuilds => Set<ProductionOrderBuild>();
     public DbSet<ProductionComponentAssignment> ProductionComponentAssignments => Set<ProductionComponentAssignment>();
     public DbSet<ProductionOrderReceipt> ProductionOrderReceipts => Set<ProductionOrderReceipt>();
     public DbSet<CorrectionRecordUnit> CorrectionUnits => Set<CorrectionRecordUnit>();
@@ -680,6 +681,15 @@ public sealed class SerialisationDbContext(DbContextOptions<SerialisationDbConte
             b.HasIndex(row => new { row.TenantId, row.ProductionOrderType, row.ProductionOrderId, row.LinkedAt, row.ReturnedAt });
             b.HasIndex(row => new { row.TenantId, row.IssueDocumentId, row.IssueLine, row.UnitId }).IsUnique();
             b.HasIndex(row => new { row.TenantId, row.AssemblyLinkId });
+        });
+
+        modelBuilder.Entity<ProductionOrderBuild>(b =>
+        {
+            b.ToTable("production_order_build");
+            b.HasKey(row => new { row.TenantId, row.ProductionOrderType, row.ProductionOrderId });
+            b.Property(row => row.ProductionOrderType).HasMaxLength(40);
+            b.Property(row => row.PlannedQuantity).HasPrecision(19, 6);
+            b.HasIndex(row => new { row.TenantId, row.ProducedItemId, row.FirstSeenAt });
         });
 
         modelBuilder.Entity<ProductionHoldTask>(b =>

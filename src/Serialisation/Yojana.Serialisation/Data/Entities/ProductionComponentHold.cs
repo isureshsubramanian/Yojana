@@ -24,6 +24,17 @@ public sealed class ProductionComponentHold : ITenantScoped
     public DateTime? ReturnedAt { get; set; }
 }
 
+/// <summary>Order-level facts used to decide whether held components may be linked without a person's scan.</summary>
+public sealed class ProductionOrderBuild : ITenantScoped
+{
+    public TenantId TenantId { get; set; }
+    public required string ProductionOrderType { get; set; }
+    public Guid ProductionOrderId { get; set; }
+    public Guid? ProducedItemId { get; set; }
+    public decimal? PlannedQuantity { get; set; }
+    public DateTime FirstSeenAt { get; set; }
+}
+
 /// <summary>Durable assignment and stale-hold attention work; one open row per order and kind.</summary>
 public sealed class ProductionHoldTask : ITenantScoped
 {

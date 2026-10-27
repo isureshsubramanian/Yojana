@@ -43,7 +43,10 @@ public sealed class IntegrationDocumentQueryPort(IntegrationDbContext db, ITenan
             components.Add(new(line.LineNo, await RefAsync(row.ConnectionId, "item", line.ItemExternalId, cancellationToken),
                 line.Quantity, line.Serials.Select(Serial).ToList(), LotId: null));
         var returned = await LinesAsync(row.ConnectionId, payload.ReturnedComponents ?? [], cancellationToken);
-        return new(document, order, row.OccurredAt, produced, components, ReturnedComponents: returned);
+        Guid? producedItem = string.IsNullOrWhiteSpace(payload.ProducedItemExternalId) ? null
+            : await RefAsync(row.ConnectionId, "item", payload.ProducedItemExternalId, cancellationToken);
+        return new(document, order, row.OccurredAt, produced, components, ReturnedComponents: returned,
+            ProducedItemId: producedItem, PlannedQuantity: payload.PlannedQuantity);
     }
 
     public async Task<ComponentIssueDocument?> GetComponentIssueAsync(SerialDocumentRef document,
@@ -59,7 +62,9 @@ public sealed class IntegrationDocumentQueryPort(IntegrationDbContext db, ITenan
             components.Add(new(line.LineNo,
                 await RefAsync(row.ConnectionId, "item", line.ItemExternalId, cancellationToken), line.Quantity,
                 line.Serials.Select(Serial).ToList()));
-        return new(document, order, row.OccurredAt, components);
+        Guid? producedItem = string.IsNullOrWhiteSpace(payload.ProducedItemExternalId) ? null
+            : await RefAsync(row.ConnectionId, "item", payload.ProducedItemExternalId, cancellationToken);
+        return new(document, order, row.OccurredAt, components, producedItem, payload.PlannedQuantity);
     }
 
     public async Task<TransferDocument?> GetTransferAsync(SerialDocumentRef document, CancellationToken cancellationToken)

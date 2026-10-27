@@ -87,13 +87,37 @@ public sealed class ContractCompatibilityTests
     }
 
     [Theory]
-    [InlineData("1.1", true)]
     [InlineData("1.0", true)]
+    [InlineData("1.1", true)]
     [InlineData("0.9", true)]
     [InlineData("2.0", false)]
     [InlineData("not-a-version", false)]
     public void Current_and_previous_major_are_accepted(string version, bool expected) =>
         Assert.Equal(expected, IntegrationContracts.Accepts(version));
+
+    [Fact]
+    public void Stored_1_0_manufacturing_messages_without_new_optional_fields_still_translate()
+    {
+        var completed = System.Text.Json.Nodes.JsonNode.Parse(
+            IntegrationSchemaCatalog.Read("examples/production-completed.json"))!.AsObject();
+        completed["envelope"]!["contract_version"] = "1.0";
+        completed["payload"]!.AsObject().Remove("planned_quantity");
+        completed["payload"]!.AsObject().Remove("returned_components");
+        var parsedCompleted = JsonSerializer.Deserialize<CanonicalMessage<ProductionCompleted>>(
+            completed.ToJsonString(), IntegrationContracts.Json)!;
+        Assert.Null(parsedCompleted.Payload.PlannedQuantity);
+        Assert.Null(parsedCompleted.Payload.ReturnedComponents);
+
+        var issued = System.Text.Json.Nodes.JsonNode.Parse(
+            IntegrationSchemaCatalog.Read("examples/components-issued.json"))!.AsObject();
+        issued["envelope"]!["contract_version"] = "1.0";
+        issued["payload"]!.AsObject().Remove("produced_item_external_id");
+        issued["payload"]!.AsObject().Remove("planned_quantity");
+        var parsedIssued = JsonSerializer.Deserialize<CanonicalMessage<ComponentsIssued>>(
+            issued.ToJsonString(), IntegrationContracts.Json)!;
+        Assert.Null(parsedIssued.Payload.ProducedItemExternalId);
+        Assert.Null(parsedIssued.Payload.PlannedQuantity);
+    }
 }
 
 internal static class StructuralSchemaValidator

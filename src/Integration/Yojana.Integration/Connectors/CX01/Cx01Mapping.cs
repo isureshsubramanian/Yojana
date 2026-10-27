@@ -13,6 +13,8 @@ using Yojana.Platform.Contracts.Time;
 
 namespace Yojana.Integration.Connectors.CX01;
 
+internal sealed record Cx01ProductionOrderRead(string AbsoluteEntry, string? ItemNo, decimal? PlannedQuantity);
+
 internal sealed record Cx01MappedAcceptance(InboundAcceptance Acceptance,
     IReadOnlyList<Cx01MissingSerialLine> MissingSerialLines, string? ContentHash = null,
     IReadOnlyList<InboundAcceptance>? AdditionalAcceptances = null)
@@ -309,7 +311,8 @@ internal static class Cx01Mapper
         IReadOnlyDictionary<int, IReadOnlyList<CanonicalSerial>> recoveredSerials,
         IReadOnlySet<int> serialManagedLines, string captureMode, DateTime observedUtc,
         bool mapCancelledOriginal = false, Cx01FieldReader? fields = null,
-        IReadOnlyDictionary<string, string>? currencyMap = null)
+        IReadOnlyDictionary<string, string>? currencyMap = null,
+        IReadOnlyDictionary<string, Cx01ProductionOrderRead?>? productionOrders = null)
     {
         fields ??= Cx01FieldReader.Defaults;
         var key = Text(raw, entity.KeyField) ?? throw new InvalidOperationException("CX01 response has no key.");
@@ -372,7 +375,7 @@ internal static class Cx01Mapper
                         new Money(Decimal(raw, "DocTotal"), Currency(raw, currencyMap) ?? "")),
                     "GoodsReceiptPosted" => new GoodsReceiptPosted(DocumentRef(raw, key),
                         Text(raw, "CardCode") ?? "", lines, BaseDocument(lines)),
-                    "ProductionCompleted" => ProductionReceipt(raw, key, occurred, lines),
+                    "ProductionCompleted" => ProductionReceipt(raw, key, occurred, lines, productionOrders),
                     "TransferPosted" => new TransferPosted(DocumentRef(raw, key),
                         Text(raw, "FromWarehouse") ?? (lines.Count == 0 ? null : lines[0].LocationExternalId) ?? "",
                         Text(raw, "ToWarehouse") ?? "", lines),
@@ -398,7 +401,7 @@ internal static class Cx01Mapper
             JsonSerializer.Serialize(canonical, canonicalType, IntegrationContracts.Json), retainedRaw);
         var additional = entity.CanonicalMessage == nameof(InventoryAdjusted)
             ? ProductionIssueAcceptances(raw, Lines(raw, previousSerials, recoveredSerials, serialManagedLines, [],
-                currencyMap), envelope, retainedRaw)
+                currencyMap), envelope, retainedRaw, productionOrders)
             : [];
         if (payload is InventoryAdjusted { Lines.Count: 0 } && additional.Count > 0)
             return new(additional[0], missing, contentHash, additional.Skip(1).ToList());
@@ -569,7 +572,8 @@ internal static class Cx01Mapper
     private const string ProductionOrderObjectType = "202";
 
     private static List<InboundAcceptance> ProductionIssueAcceptances(JsonElement raw,
-        IReadOnlyList<CanonicalLine> lines, CanonicalEnvelope source, string retainedRaw)
+        IReadOnlyList<CanonicalLine> lines, CanonicalEnvelope source, string retainedRaw,
+        IReadOnlyDictionary<string, Cx01ProductionOrderRead?>? productionOrders)
     {
         var issued = lines.Where(line => line.BaseDocumentRef?.Type == ProductionOrderObjectType)
             .GroupBy(line => line.BaseDocumentRef!.ExternalId ?? line.BaseDocumentRef.Number,
@@ -578,8 +582,10 @@ internal static class Cx01Mapper
         foreach (var order in issued)
         {
             var based = order.First().BaseDocumentRef!;
+            var orderRead = productionOrders?.GetValueOrDefault(order.Key);
             var payload = new ComponentsIssued(DocumentRef(raw, source.ErpExternalId),
-                based with { Type = "production_order" }, order.ToList());
+                based with { Type = "production_order" }, order.ToList(), orderRead?.ItemNo,
+                orderRead?.PlannedQuantity);
             var envelope = source with
             {
                 MessageId = Guid.CreateVersion7(),
@@ -618,21 +624,32 @@ internal static class Cx01Mapper
     }
 
     private static ProductionCompleted ProductionReceipt(JsonElement raw, string key, DateTimeOffset occurred,
-        List<CanonicalLine> lines)
+        List<CanonicalLine> lines, IReadOnlyDictionary<string, Cx01ProductionOrderRead?>? productionOrders)
     {
         var based = lines.Where(line => line.BaseDocumentRef?.Type == ProductionOrderObjectType).ToList();
-        // The parent output line has no source BOM line. This is the receipt's own evidence of the order's produced
-        // item; it avoids a second remote read. A return-only shape cannot be classified safely and is parked.
-        var producedItem = based.FirstOrDefault(line => line.BaseDocumentRef?.Line is null)?.ItemExternalId;
-        if (producedItem is null && based.Count > 0)
-            throw new InvalidOperationException("production_receipt_produced_item_unavailable");
-        producedItem ??= lines.Count == 0 ? "" : lines[0].ItemExternalId;
+        var orderRef = ProductionOrderRef(lines, raw, key, occurred);
+        var orderKey = orderRef.ExternalId ?? orderRef.Number;
+        var orderRead = productionOrders?.GetValueOrDefault(orderKey);
+        var producedItem = orderRead?.ItemNo
+            ?? based.FirstOrDefault(line => line.BaseDocumentRef?.Line is null)?.ItemExternalId;
+        // With only based component rows and no order enrichment, treating the first component as output would
+        // commission a returned part. Empty keeps every such row on the refusal-safe return path.
+        producedItem ??= based.Count > 0 || lines.Count == 0 ? "" : lines[0].ItemExternalId;
         var produced = lines.Where(line => line.BaseDocumentRef?.Type != ProductionOrderObjectType
-            || line.ItemExternalId == producedItem).ToList();
-        var returned = based.Where(line => line.ItemExternalId != producedItem).ToList();
-        return new(DocumentRef(raw, key), ProductionOrderRef(lines, raw, key, occurred), producedItem,
-            produced, [], returned);
+            || line.BaseDocumentRef.Line is null || line.ItemExternalId == producedItem).ToList();
+        var returned = based.Where(line => line.BaseDocumentRef?.Line is not null
+            && line.ItemExternalId != producedItem).ToList();
+        return new(DocumentRef(raw, key), orderRef, producedItem, produced, [], returned,
+            orderRead?.PlannedQuantity);
     }
+
+    public static IReadOnlyList<string> ProductionOrderExternalIds(JsonElement raw) => LineElements(raw)
+        .Where(line => IntOrNull(line, "BaseType") == 202)
+        .Select(line => Text(line, "BaseEntry"))
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .Select(value => value!)
+        .Distinct(StringComparer.Ordinal)
+        .ToList();
 
     private static string PartnerKind(string? value) => value switch
     {

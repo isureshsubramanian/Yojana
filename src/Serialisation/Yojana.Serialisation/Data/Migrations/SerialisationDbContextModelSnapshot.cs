@@ -6361,6 +6361,43 @@ namespace Yojana.Serialisation.Data.Migrations
                     b.ToTable("production_hold_task", "serialisation");
                 });
 
+            modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ProductionOrderBuild", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("ProductionOrderType")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("production_order_type");
+
+                    b.Property<Guid>("ProductionOrderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("production_order_id");
+
+                    b.Property<DateTime>("FirstSeenAt")
+                        .HasColumnType("datetime2(3)")
+                        .HasColumnName("first_seen_at");
+
+                    b.Property<decimal?>("PlannedQuantity")
+                        .HasPrecision(19, 6)
+                        .HasColumnType("decimal(19,6)")
+                        .HasColumnName("planned_quantity");
+
+                    b.Property<Guid?>("ProducedItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("produced_item_id");
+
+                    b.HasKey("TenantId", "ProductionOrderType", "ProductionOrderId")
+                        .HasName("pk_production_order_build");
+
+                    b.HasIndex("TenantId", "ProducedItemId", "FirstSeenAt")
+                        .HasDatabaseName("ix_production_order_build_tenant_id_produced_item_id_first_seen_at");
+
+                    b.ToTable("production_order_build", "serialisation");
+                });
+
             modelBuilder.Entity("Yojana.Serialisation.Data.Entities.ProductionOrderReceipt", b =>
                 {
                     b.Property<Guid>("TenantId")

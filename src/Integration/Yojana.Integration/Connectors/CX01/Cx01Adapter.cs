@@ -127,6 +127,7 @@ public sealed class Cx01Adapter(
         var keys = await ChangedKeysAsync(request.ConnectionId, entity, from, null,
             request.MaximumEvents, cancellationToken);
         var acceptances = new List<InboundAcceptance>(keys.Count);
+        var productionOrders = new Dictionary<string, Cx01ProductionOrderRead?>(StringComparer.Ordinal);
         var next = cursor;
         foreach (var changed in keys.OrderBy(x => x.Timestamp).ThenBy(x => x.Key, StringComparer.Ordinal))
         {
@@ -169,7 +170,7 @@ public sealed class Cx01Adapter(
                 try
                 {
                     var mapped = await MapWithSerialFallbackAsync(request.ConnectionId, entity, document.RootElement,
-                        configured, "poll", cancellationToken);
+                        configured, "poll", cancellationToken, productionOrders);
                     acceptances.AddRange(mapped.Acceptances);
                     if (mapped.MissingSerialLines.Count > 0)
                         await attributionTasks.RaiseAsync(request.ConnectionId, entity.Collection, changed.Key,
@@ -514,8 +515,31 @@ public sealed class Cx01Adapter(
 
     private async Task<Cx01MappedAcceptance> MapWithSerialFallbackAsync(Guid connectionId,
         Cx01EntityDefinition entity, JsonElement raw, Cx01ConnectionSettings configured,
-        string captureMode, CancellationToken cancellationToken)
+        string captureMode, CancellationToken cancellationToken,
+        Dictionary<string, Cx01ProductionOrderRead?>? productionOrders = null)
     {
+        productionOrders ??= new(StringComparer.Ordinal);
+        foreach (var order in Cx01Mapper.ProductionOrderExternalIds(raw))
+        {
+            if (productionOrders.ContainsKey(order)) continue;
+            try
+            {
+                using var response = await client.GetAsync(connectionId,
+                    Cx01Protocol.Root + "ProductionOrders(" + Cx01Protocol.KeyLiteral(order)
+                    + ")?$select=AbsoluteEntry,ItemNo,PlannedQuantity", cancellationToken);
+                productionOrders[order] = new(
+                    Text(response.RootElement, "AbsoluteEntry") ?? order,
+                    Text(response.RootElement, "ItemNo"),
+                    response.RootElement.TryGetProperty("PlannedQuantity", out var planned)
+                        ? Cx01Json.Decimal(planned) : null);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                // The order read enriches the event. Its absence must keep the document moving through the
+                // conservative assignment path rather than park a valid issue or receipt.
+                productionOrders[order] = null;
+            }
+        }
         var key = RequiredText(raw, entity.KeyField);
         var previous = entity.CanonicalMessage == "DeliveryPosted"
             ? await serialHistory.ForDocumentAsync(connectionId, entity.Collection, key, cancellationToken)
@@ -535,7 +559,8 @@ public sealed class Cx01Adapter(
                 configured, cancellationToken);
         return Cx01Mapper.Map(tenant.TenantId, connectionId, entity, raw, previous, recovered, managed, captureMode,
             clock.UtcNow, Cx01Mapper.IsCancelledOriginal(raw),
-            new Cx01FieldReader(Cx01FieldMap.Effective(configured.FieldMap)), configured.CurrencyMap);
+            new Cx01FieldReader(Cx01FieldMap.Effective(configured.FieldMap)), configured.CurrencyMap,
+            productionOrders);
     }
 
     private async Task<Dictionary<int, IReadOnlyList<CanonicalSerial>>> RecoverSerialsAsync(Guid connectionId,
@@ -589,6 +614,7 @@ public sealed class Cx01Adapter(
         var after = Cx01Watermark.Parse(cursor);
         var keys = await RangeKeysAsync(connectionId, entity, from, to, cancellationToken);
         var messages = new List<InboundAcceptance>();
+        var productionOrders = new Dictionary<string, Cx01ProductionOrderRead?>(StringComparer.Ordinal);
         foreach (var changed in keys.Where(key => after == Cx01Watermark.Empty || key.CompareTo(after) > 0)
                      .OrderBy(key => key.Timestamp).ThenBy(key => key.Key, StringComparer.Ordinal))
         {
@@ -599,7 +625,7 @@ public sealed class Cx01Adapter(
                 && await WasCapturedAsync(connectionId, entity, changed.Key, cancellationToken)) continue;
             if (await IsOwnWriteAsync(connectionId, entity, document.RootElement, cancellationToken)) continue;
             messages.AddRange((await MapWithSerialFallbackAsync(connectionId, entity, document.RootElement,
-                configured, captureMode, cancellationToken)).Acceptances);
+                configured, captureMode, cancellationToken, productionOrders)).Acceptances);
             if (messages.Count == pageSize) break;
         }
         return messages;

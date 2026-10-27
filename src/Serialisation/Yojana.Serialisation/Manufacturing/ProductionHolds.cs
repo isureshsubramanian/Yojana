@@ -42,12 +42,13 @@ public sealed class ProductionHoldQueries(SerialisationDbContext db, ITenantCont
             var parents = await db.ProductionOrderReceipts.AsNoTracking().Where(row =>
                 row.TenantId == tenant.TenantId && row.ProductionOrderType == group.ProductionOrderType
                 && row.ProductionOrderId == group.ProductionOrderId).ToListAsync(cancellationToken);
-            var item = parents.Count == 0 ? null : await db.ItemAssignments.AsNoTracking().Where(row =>
-                    row.TenantId == tenant.TenantId && row.UnitId == parents[0].ParentUnitId && row.ValidTo == null)
-                .Select(row => (Guid?)row.ItemId).SingleOrDefaultAsync(cancellationToken);
-            rows.Add(new(new(group.ProductionOrderType, group.ProductionOrderId), item, group.HeldCount,
-                group.OldestIssuedAt, parents.Count,
-                parents.Count > 1 ? "waiting_for_assignment" : "waiting_for_receipt"));
+            var build = await db.ProductionOrderBuilds.AsNoTracking().SingleOrDefaultAsync(row =>
+                row.TenantId == tenant.TenantId && row.ProductionOrderType == group.ProductionOrderType
+                && row.ProductionOrderId == group.ProductionOrderId, cancellationToken);
+            rows.Add(new(new(group.ProductionOrderType, group.ProductionOrderId), build?.ProducedItemId,
+                group.HeldCount, group.OldestIssuedAt, parents.Count, build?.PlannedQuantity,
+                build?.PlannedQuantity != 1m || parents.Count > 1
+                    ? "waiting_for_assignment" : "waiting_for_receipt"));
         }
         var next = ordered.Count <= take || rows.Count == 0 ? null
             : Encode(rows[^1].OldestIssuedAt, rows[^1].ProductionOrder.Id);
@@ -84,8 +85,12 @@ public sealed class ProductionHoldQueries(SerialisationDbContext db, ITenantCont
         var parents = receipts.Join(parentFacts, receipt => receipt.ParentUnitId, fact => fact.UnitId,
             (receipt, fact) => new InProductionParentRow(fact.UnitId, fact.ItemId, fact.RawValue,
                 new(receipt.ReceiptDocumentType, receipt.ReceiptDocumentId))).ToList();
-        return new(order, parents.FirstOrDefault()?.ItemId, components, parents,
-            parents.Count > 1 ? "waiting_for_assignment" : "waiting_for_receipt");
+        var build = await db.ProductionOrderBuilds.AsNoTracking().SingleOrDefaultAsync(row =>
+            row.TenantId == tenant.TenantId && row.ProductionOrderType == order.Type
+            && row.ProductionOrderId == order.Id, cancellationToken);
+        return new(order, build?.ProducedItemId, build?.PlannedQuantity, components, parents,
+            build?.PlannedQuantity != 1m || parents.Count > 1
+                ? "waiting_for_assignment" : "waiting_for_receipt");
     }
 
     private static string Encode(DateTime at, Guid id) => Convert.ToBase64String(Encoding.UTF8.GetBytes(

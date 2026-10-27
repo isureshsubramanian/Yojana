@@ -260,7 +260,7 @@ public sealed class DocumentEventTests(SerialisationHostFixture fixture)
         var order = new DocumentRef("production_order", Guid.NewGuid());
         var issue = new ComponentIssueDocument(new DocumentRef("component_issue", Guid.NewGuid()), order,
             T0.AddHours(1), [new ComponentIssue(1, componentItem, 25,
-                serials.Select(serial => new DocumentSerial(serial)).ToList())]);
+                serials.Select(serial => new DocumentSerial(serial)).ToList())], parentItem, 1m);
         Ports.Add(issue);
 
         var issued = await InvokeAsync<ConsumedEventResult>(tenant,
@@ -332,7 +332,8 @@ public sealed class DocumentEventTests(SerialisationHostFixture fixture)
 
         var singleOrder = new DocumentRef("production_order", Guid.NewGuid());
         var singleReceipt = new ProductionReceipt(new DocumentRef("production_receipt", Guid.NewGuid()), singleOrder,
-            T0.AddHours(1), [Line(1, parentItem, warehouse, $"{prefix}-P1")], [], warehouse);
+            T0.AddHours(1), [Line(1, parentItem, warehouse, $"{prefix}-P1")], [], warehouse,
+            ProducedItemId: parentItem, PlannedQuantity: 1m);
         Ports.Add(singleReceipt);
         await InvokeAsync<ConsumedEventResult>(tenant,
             new ManufacturingProductionReceiptPosted(Env(T0.AddHours(1)), singleReceipt.Document));
@@ -344,12 +345,14 @@ public sealed class DocumentEventTests(SerialisationHostFixture fixture)
 
         var multiOrder = new DocumentRef("production_order", Guid.NewGuid());
         var multiIssue = new ComponentIssueDocument(new DocumentRef("component_issue", Guid.NewGuid()), multiOrder,
-            T0.AddHours(3), [new ComponentIssue(1, componentItem, 1, [new DocumentSerial($"{prefix}-C2")])]);
+            T0.AddHours(3), [new ComponentIssue(1, componentItem, 1, [new DocumentSerial($"{prefix}-C2")])],
+            parentItem, 2m);
         Ports.Add(multiIssue);
         await InvokeAsync<ConsumedEventResult>(tenant,
             new ManufacturingComponentIssued(Env(T0.AddHours(3)), multiIssue.Document));
         var multiReceipt = new ProductionReceipt(new DocumentRef("production_receipt", Guid.NewGuid()), multiOrder,
-            T0.AddHours(4), [Line(1, parentItem, warehouse, $"{prefix}-P2", $"{prefix}-P3")], [], warehouse);
+            T0.AddHours(4), [Line(1, parentItem, warehouse, $"{prefix}-P2")], [], warehouse,
+            ProducedItemId: parentItem, PlannedQuantity: 2m);
         Ports.Add(multiReceipt);
         await InvokeAsync<ConsumedEventResult>(tenant,
             new ManufacturingProductionReceiptPosted(Env(T0.AddHours(4)), multiReceipt.Document));
@@ -367,12 +370,14 @@ public sealed class DocumentEventTests(SerialisationHostFixture fixture)
             var queries = waitingScope.ServiceProvider.GetRequiredService<Yojana.Serialisation.Manufacturing.ProductionHoldQueries>();
             var page = await queries.PageAsync(null, 25, CancellationToken.None);
             Assert.Contains(page.Items, row => row.ProductionOrder == multiOrder
-                && row.Status == "waiting_for_assignment" && row.ParentsReceived == 2);
+                && row.Status == "waiting_for_assignment" && row.ParentsReceived == 1
+                && row.PlannedQuantity == 2m && row.ProducedItemId == parentItem);
             var detail = await queries.DetailAsync(multiOrder, CancellationToken.None);
             Assert.NotNull(detail);
             Assert.Equal("waiting_for_assignment", detail.Status);
             Assert.Single(detail.Components);
-            Assert.Equal(2, detail.Parents.Count);
+            Assert.Single(detail.Parents);
+            Assert.Equal(2m, detail.PlannedQuantity);
         }
         var blocked = await Assert.ThrowsAsync<CommandRefusedException>(() => InvokeAsync<ReleaseUnitResult>(tenant,
             new ReleaseUnit(Guid.NewGuid(), selectedParent, T0.AddHours(5), "quality.user", Entity, "release-check")));
@@ -394,6 +399,41 @@ public sealed class DocumentEventTests(SerialisationHostFixture fixture)
     }
 
     [DatabaseFact]
+    public async Task Unknown_planned_quantity_never_guesses_from_one_received_parent()
+    {
+        var tenant = await fixture.NewTenantAsync("dmunknown");
+        var prefix = "UNK" + Guid.NewGuid().ToString("N")[..5].ToUpperInvariant();
+        var parentItem = Guid.NewGuid();
+        var componentItem = Guid.NewGuid();
+        var warehouse = Guid.NewGuid();
+        var componentReceipt = new ReceiptDocument(new DocumentRef("goods_receipt", Guid.NewGuid()),
+            Guid.NewGuid(), T0, [Line(1, componentItem, warehouse, $"{prefix}-C1")]);
+        Ports.Add(componentReceipt);
+        await InvokeAsync<ConsumedEventResult>(tenant,
+            new PurchasingReceiptPosted(Env(T0), componentReceipt.Document));
+        var order = new DocumentRef("production_order", Guid.NewGuid());
+        var issue = new ComponentIssueDocument(new DocumentRef("component_issue", Guid.NewGuid()), order,
+            T0.AddHours(1), [new ComponentIssue(1, componentItem, 1, [new DocumentSerial($"{prefix}-C1")])],
+            parentItem);
+        Ports.Add(issue);
+        await InvokeAsync<ConsumedEventResult>(tenant,
+            new ManufacturingComponentIssued(Env(T0.AddHours(1)), issue.Document));
+        var production = new ProductionReceipt(new DocumentRef("production_receipt", Guid.NewGuid()), order,
+            T0.AddHours(2), [Line(1, parentItem, warehouse, $"{prefix}-P1")], [], warehouse,
+            ProducedItemId: parentItem);
+        Ports.Add(production);
+        await InvokeAsync<ConsumedEventResult>(tenant,
+            new ManufacturingProductionReceiptPosted(Env(T0.AddHours(2)), production.Document));
+
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        Assert.True(await db.ProductionComponentHolds.AnyAsync(row => row.ProductionOrderId == order.Id
+            && row.LinkedAt == null));
+        Assert.True(await db.ProductionHoldTasks.AnyAsync(row => row.ProductionOrderId == order.Id
+            && row.Kind == "assignment" && row.Status == "open"));
+    }
+
+    [DatabaseFact]
     public async Task A_component_return_closes_the_hold_and_moves_the_existing_unit_back_to_the_receiving_warehouse()
     {
         var tenant = await fixture.NewTenantAsync("dmreturn");
@@ -412,8 +452,7 @@ public sealed class DocumentEventTests(SerialisationHostFixture fixture)
         await InvokeAsync<ConsumedEventResult>(tenant,
             new ManufacturingComponentIssued(Env(T0.AddHours(1)), issue.Document));
         var production = new ProductionReceipt(new DocumentRef("production_receipt", Guid.NewGuid()), order,
-            T0.AddHours(2), [Line(1, parentItem, warehouse, "SRV-" + Guid.NewGuid().ToString("N")[..10])], [],
-            warehouse, [Line(2, componentItem, warehouse, serial)]);
+            T0.AddHours(2), [], [], warehouse, [Line(2, componentItem, warehouse, serial)], parentItem, 1m);
         Ports.Add(production);
 
         await InvokeAsync<ConsumedEventResult>(tenant,
@@ -425,7 +464,29 @@ public sealed class DocumentEventTests(SerialisationHostFixture fixture)
         var current = await db.Current.SingleAsync(row => row.UnitId == component);
         Assert.Equal((warehouse, LocationKind.Warehouse), (current.LocationId, current.LocationKind));
         Assert.NotNull((await db.ProductionComponentHolds.SingleAsync(row => row.UnitId == component)).ReturnedAt);
-        Assert.Equal(2, await db.Units.CountAsync());
+        Assert.Single(await db.Units.ToListAsync());
+    }
+
+    [DatabaseFact]
+    public async Task A_return_line_with_an_unknown_serial_is_refused_without_commissioning_a_unit()
+    {
+        var tenant = await fixture.NewTenantAsync("dmreturnunknown");
+        var componentItem = Guid.NewGuid();
+        var parentItem = Guid.NewGuid();
+        var warehouse = Guid.NewGuid();
+        var order = new DocumentRef("production_order", Guid.NewGuid());
+        var production = new ProductionReceipt(new DocumentRef("production_receipt", Guid.NewGuid()), order,
+            T0.AddHours(2), [], [], warehouse,
+            [Line(2, componentItem, warehouse, "FIC-UNKNOWN-COMPONENT-01")], parentItem, 1m);
+        Ports.Add(production);
+
+        var result = await InvokeAsync<ConsumedEventResult>(tenant,
+            new ManufacturingProductionReceiptPosted(Env(T0.AddHours(2)), production.Document));
+
+        Assert.Contains(result.Exceptions, value => value.Contains("component_unknown", StringComparison.Ordinal));
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        Assert.Empty(await db.Units.ToListAsync());
     }
 
     [DatabaseFact]

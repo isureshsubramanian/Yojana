@@ -83,7 +83,7 @@ public sealed class GatewayEndToEndTests(IntegrationHostFixture fixture)
         {
             BaseDocumentRef = order with { Type = "202", Line = 1 },
         };
-        var issued = new ComponentsIssued(Doc("component_issue", "GI-1001"), order, [issuedLine]);
+        var issued = new ComponentsIssued(Doc("component_issue", "GI-1001"), order, [issuedLine], parentItem, 1m);
 
         await AcceptAndTranslate(tenant, connection, "component_issue", "GI-1001", "001", issued,
             At.AddHours(1));
@@ -103,7 +103,7 @@ public sealed class GatewayEndToEndTests(IntegrationHostFixture fixture)
         var producedLine = Line(parentItem, parentSerial, "WH-1") with { BaseDocumentRef = order };
         await AcceptAndTranslate(tenant, connection, "production_receipt", "PR-1001", "001",
             new ProductionCompleted(Doc("production_receipt", "PR-1001"), order, parentItem,
-                [producedLine], []), At.AddHours(2));
+                [producedLine], [], PlannedQuantity: 1m), At.AddHours(2));
 
         using var final = fixture.ScopeFor(tenant);
         var db = final.ServiceProvider.GetRequiredService<SerialisationDbContext>();

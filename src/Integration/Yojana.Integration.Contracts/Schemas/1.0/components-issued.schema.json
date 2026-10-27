@@ -13,6 +13,8 @@
       "properties": {
         "document_ref": { "type": "object" },
         "production_order_ref": { "type": "object" },
+        "produced_item_external_id": { "type": ["string", "null"] },
+        "planned_quantity": { "type": ["number", "null"] },
         "lines": {
           "type": "array",
           "items": {

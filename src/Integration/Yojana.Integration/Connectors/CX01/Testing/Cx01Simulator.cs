@@ -92,7 +92,14 @@ internal sealed class Cx01Simulator : IAsyncDisposable
     public bool ProductionReceiptAvailable { get; set; }
     public bool ProductionIssueAvailable { get; set; }
     public bool ProductionReceiptIncludesComponentReturn { get; set; }
+    public bool ProductionReceiptReturnOnly { get; set; }
+    public bool ProductionReturnUsesUnknownSerial { get; set; }
+    public bool ProductionOutputHasBaseLine { get; set; }
     public bool ProductionIssueContainsOnlyBasedLines { get; set; }
+    public bool ProductionOrderAvailable { get; set; } = true;
+    public decimal ProductionOrderPlannedQuantity { get; set; } = 1m;
+    public int ProductionOrderReadCount { get; private set; }
+    public List<string> ProductionOrderQueries { get; } = [];
     public bool NonIsoGoodsReceiptCurrency { get; set; }
     public bool SubscriptionStopped { get; set; }
     public List<string> DeletedSubscriptionPaths { get; } = [];
@@ -466,7 +473,7 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                     WarehouseCode = "WH-A",
                     BaseType = 202,
                     BaseEntry = 161,
-                    BaseLine = (int?)null,
+                    BaseLine = ProductionOutputHasBaseLine ? 0 : (int?)null,
                     ActualBaseEntry = (int?)null,
                     ActualBaseLine = (int?)null,
                     SerialNumbers = new[]
@@ -488,7 +495,8 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                     ActualBaseLine = (int?)null,
                     SerialNumbers = new[]
                     {
-                        new { InternalSerialNumber = "FIC-261027-CPU-01", SystemSerialNumber = 9001, Quantity = 1m },
+                        new { InternalSerialNumber = ProductionReturnUsesUnknownSerial
+                            ? "FIC-261027-CPU-NEW" : "FIC-261027-CPU-01", SystemSerialNumber = 9001, Quantity = 1m },
                     },
                 };
                 await JsonAsync(response, new
@@ -500,9 +508,27 @@ internal sealed class Cx01Simulator : IAsyncDisposable
                     UpdateTime = "213213",
                     DocObjectCode = "oInventoryGenEntry",
                     DocCurrency = "$",
-                    DocumentLines = ProductionReceiptIncludesComponentReturn
-                        ? new object[] { producedLine, returnedLine }
+                    DocumentLines = ProductionReceiptReturnOnly ? new object[] { returnedLine }
+                        : ProductionReceiptIncludesComponentReturn ? new object[] { producedLine, returnedLine }
                         : [producedLine],
+                });
+                return;
+            }
+            if (path == Cx01Protocol.Root + "ProductionOrders(161)")
+            {
+                ProductionOrderReadCount++;
+                ProductionOrderQueries.Add(request.Url?.Query ?? "");
+                if (!ProductionOrderAvailable)
+                {
+                    response.StatusCode = (int)HttpStatusCode.NotFound;
+                    response.Close();
+                    return;
+                }
+                await JsonAsync(response, new
+                {
+                    AbsoluteEntry = 161,
+                    ItemNo = "FIC-SRV-EDGE-01",
+                    PlannedQuantity = ProductionOrderPlannedQuantity,
                 });
                 return;
             }

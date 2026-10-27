@@ -19,7 +19,8 @@ export function Component() {
   const names = useReferenceNames({ items: rows.map(row => row.producedItemId), documents: rows.map(row => row.productionOrder) });
   const columns = useMemo<GridColumn<InProductionOrder>[]>(() => [
     { key: "order", label: "Production order", width: 24, render: row => <span className="primary">{names.document(row.productionOrder)}</span> },
-    { key: "item", label: "Produced item", width: 24, render: row => row.producedItemId ? names.item(row.producedItemId) : "Waiting for receipt" },
+    { key: "item", label: "Produced item", width: 20, render: row => row.producedItemId ? names.item(row.producedItemId) : "Not supplied" },
+    { key: "planned", label: "Planned", width: 8, numeric: true, render: row => row.plannedQuantity?.toLocaleString() ?? "Unknown" },
     { key: "held", label: "Held", width: 10, numeric: true, render: row => row.heldCount.toLocaleString() },
     { key: "oldest", label: "Oldest issue", width: 18, render: row => fmtDateTime(row.oldestIssuedAt) },
     { key: "parents", label: "Parents received", width: 10, numeric: true, render: row => row.parentsReceived.toLocaleString() },
@@ -40,7 +41,7 @@ function OrderDrawer({ order, done }: { order: InProductionOrder; done: () => vo
   useEffect(() => { const controller = new AbortController(); void productionApi.detail(order.productionOrder, controller.signal).then(value => { setDetail(value); if (value.parents.length === 1) setParent(value.parents[0]!.serial); }).catch(setError); return () => controller.abort(); }, [order.productionOrder]);
   const scans = components.split(/[\n,]+/).map(value => value.trim()).filter(Boolean);
   const assign = async () => { setBusy(true); setError(null); try { await productionApi.assign({ commandId: newCommandId(), productionOrder: order.productionOrder, parentSerial: parent.trim(), componentSerials: scans }); done(); } catch (reason) { setError(reason); } finally { setBusy(false); } };
-  return <div className="stack"><ErrorNote error={error} /><p>{detail?.components.length ?? order.heldCount} components held · {detail?.parents.length ?? order.parentsReceived} parents received.</p>
+  return <div className="stack"><ErrorNote error={error} /><p>{detail?.components.length ?? order.heldCount} components held · {detail?.parents.length ?? order.parentsReceived} parents received · planned quantity {detail?.plannedQuantity?.toLocaleString() ?? "unknown"}.</p>
     <table className="table dense"><thead><tr><th>Component</th><th>Item</th><th>Age begins</th><th>Issue</th></tr></thead><tbody>{detail?.components.map(row => <tr key={row.holdId}><td className="serial">{row.serial}</td><td>{names.item(row.itemId)}</td><td>{fmtDateTime(row.issuedAt)}</td><td>{names.document(row.issue)}</td></tr>)}</tbody></table>
     {detail?.status === "waiting_for_assignment" && <form className="stack" onSubmit={event => { event.preventDefault(); void assign(); }}><label className="field"><span className="lbl">Scan parent serial</span><input className="input" value={parent} onChange={event => setParent(event.target.value)} autoComplete="off" /></label><label className="field"><span className="lbl">Scan component serials</span><textarea className="input" rows={8} value={components} onChange={event => setComponents(event.target.value)} placeholder="One serial per line" /></label><span className="help">Each component must be held against this order, match a serialised BOM line and stay within its quantity. Nothing is applied until you confirm.</span><FormActions><button type="submit" className="btn primary" disabled={busy || !parent.trim() || scans.length === 0}>{busy ? "Assigning…" : "Assign components"}</button></FormActions></form>}
   </div>;
