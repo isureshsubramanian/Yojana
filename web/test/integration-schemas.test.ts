@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import * as z from "zod/mini";
-import { connectionPage, cursorPage, tenantStatusPage } from "../src/integration/adminTypes.ts";
+import { connectionPage, currencyMap, cursorPage, tenantStatusPage } from "../src/integration/adminTypes.ts";
 import { migrationSourcePage } from "../src/integration/migrationTypes.ts";
 import { deadLetterDetail, deadLetterRow, manualTask } from "../src/integration/types.ts";
 
@@ -51,4 +51,11 @@ test("cursor pages share one shape, and the connection pages add their KPIs", ()
   assert.deepEqual(keys(connectionPage), ["items", "kpis", "nextCursor"]);
   assert.deepEqual(keys(tenantStatusPage), ["items", "kpis", "nextCursor"]);
   assert.equal(z.safeParse(migrationSourcePage, { items: [], nextCursor: null }).success, true);
+});
+
+test("CX01 currency settings keep suggestions distinct from confirmed mappings", () => {
+  const parsed = z.parse(currencyMap, { connectionId: id(2), surveyObservedAt: "2026-09-01T09:00:00Z",
+    currencies: [{ erpCode: "$", name: "US Dollar", documentsCode: "$", suggestedIsoCode: "USD", mappedIsoCode: null }] });
+  assert.equal(parsed.currencies[0]!.suggestedIsoCode, "USD");
+  assert.equal(parsed.currencies[0]!.mappedIsoCode, null);
 });

@@ -16,6 +16,12 @@ namespace Yojana.Integration.Connectors.CX01;
 internal sealed record Cx01MappedAcceptance(InboundAcceptance Acceptance,
     IReadOnlyList<Cx01MissingSerialLine> MissingSerialLines, string? ContentHash = null);
 
+internal sealed class Cx01CurrencyNotMappedException(string erpCode)
+    : InvalidOperationException($"ERP currency code '{erpCode}' has no confirmed ISO 4217 mapping.")
+{
+    public string ErpCode { get; } = erpCode;
+}
+
 public sealed record Cx01BomSyncState(string ContentHash, bool Deleted);
 
 public interface ICx01BomSyncStateReader
@@ -187,6 +193,8 @@ public interface ICx01InboundRejectionSink
 {
     Task ParkAsync(Guid connectionId, string entity, string externalId, Cx01RemoteException exception,
         CancellationToken cancellationToken);
+    Task ParkDocumentAsync(Guid connectionId, string entity, string messageType, string externalId, JsonElement raw,
+        string reasonCode, string failure, CancellationToken cancellationToken);
 }
 
 public sealed class EfCx01InboundRejectionSink(
@@ -226,6 +234,66 @@ public sealed class EfCx01InboundRejectionSink(
         db.InboundMessages.Add(message);
         _ = await parking.ParkInboundAsync(message, "business_rejection", exception.BusinessMessage(),
             cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task ParkDocumentAsync(Guid connectionId, string entity, string messageType, string externalId,
+        JsonElement raw, string reasonCode, string failure, CancellationToken cancellationToken)
+    {
+        var marker = Cx01Mapper.ChangeMarker(raw, externalId);
+        var existing = await db.InboundMessages.SingleOrDefaultAsync(x => x.TenantId == tenant.TenantId
+            && x.ConnectionId == connectionId && x.ErpEntity == entity
+            && x.ErpExternalId == externalId && x.ErpChangeMarker == marker, cancellationToken);
+        if (existing is not null)
+        {
+            if (existing.TranslationStatus == InboundTranslationStatus.NeedsAttention)
+                _ = await parking.ParkInboundAsync(existing, reasonCode, failure, cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        foreach (var prior in await db.InboundMessages.Where(x => x.TenantId == tenant.TenantId
+                     && x.ConnectionId == connectionId && x.ErpEntity == entity
+                     && x.ErpExternalId == externalId && x.IsLatest).ToListAsync(cancellationToken))
+            prior.IsLatest = false;
+        var message = new InboundMessage
+        {
+            TenantId = tenant.TenantId,
+            InboundMessageId = TimeOrderedId.New(clock.UtcNow),
+            MessageId = Guid.CreateVersion7(),
+            ConnectionId = connectionId,
+            ConnectorCode = Cx01Capabilities.ConnectorCode,
+            ErpEntity = entity,
+            ErpExternalId = externalId,
+            ErpChangeMarker = marker,
+            MarkerKind = "timestamp",
+            ContractVersion = IntegrationContracts.CurrentVersion,
+            MessageType = messageType,
+            CaptureMode = "observed",
+            RawPayload = raw.GetRawText(),
+            CanonicalMessage = "{}",
+            OccurredAt = clock.UtcNow,
+            ObservedAt = clock.UtcNow,
+            AcceptedAt = clock.UtcNow,
+            IsLatest = true,
+            TranslationStatus = InboundTranslationStatus.NeedsAttention,
+            LastTranslationError = failure,
+            AttentionReasonCode = reasonCode,
+        };
+        db.InboundMessages.Add(message);
+        _ = await parking.ParkInboundAsync(message, reasonCode, failure, cancellationToken);
+        db.ExceptionTasks.Add(new IntegrationExceptionTask
+        {
+            TenantId = tenant.TenantId,
+            ExceptionTaskId = TimeOrderedId.New(clock.UtcNow),
+            ConnectionId = connectionId,
+            InboundMessageId = message.InboundMessageId,
+            Kind = reasonCode,
+            SubjectRef = $"{entity}:{externalId}",
+            Detail = failure,
+            Status = "open",
+            CreatedAt = clock.UtcNow,
+        });
         await db.SaveChangesAsync(cancellationToken);
     }
 }
@@ -300,7 +368,7 @@ internal static class Cx01Mapper
                     "GoodsReceiptPosted" => new GoodsReceiptPosted(DocumentRef(raw, key),
                         Text(raw, "CardCode") ?? "", lines, BaseDocument(lines)),
                     "ProductionCompleted" => new ProductionCompleted(DocumentRef(raw, key),
-                        new("production_order", Text(raw, "BaseRef") ?? key, DateOnly.FromDateTime(occurred.Date)),
+                        ProductionOrderRef(lines, raw, key, occurred),
                         lines.Count == 0 ? "" : lines[0].ItemExternalId, lines, []),
                     "TransferPosted" => new TransferPosted(DocumentRef(raw, key),
                         Text(raw, "FromWarehouse") ?? (lines.Count == 0 ? null : lines[0].LocationExternalId) ?? "",
@@ -378,7 +446,7 @@ internal static class Cx01Mapper
             var baseEntry = Text(line, "BaseEntry");
             var baseRef = baseEntry is null ? null : new ExternalDocumentRef(Text(line, "BaseType") ?? "document",
                 baseEntry, DateOnly.FromDateTime((Date(document, "DocDate") ?? DateTimeOffset.UnixEpoch).Date),
-                baseEntry, Int(line, "BaseLine"));
+                baseEntry, IntOrNull(line, "BaseLine"));
             result.Add(new CanonicalLine(lineNo, lineNo.ToString(CultureInfo.InvariantCulture),
                 Text(line, "ItemCode") ?? "", quantity, Text(line, "UoMCode") ?? "EA", serials, [],
                 Text(line, "WarehouseCode"), baseRef, Text(document, "CardCode"), DecimalOrNull(line, "Price"),
@@ -439,7 +507,7 @@ internal static class Cx01Mapper
         return new(Text(value, "DocObjectCode") ?? entity.Collection, original ?? cancellationKey,
             DateOnly.FromDateTime((Date(value, "DocDate") ?? DateTimeOffset.UnixEpoch).Date),
             original ?? cancellationKey,
-            baseLine.ValueKind == JsonValueKind.Undefined ? null : Int(baseLine, "BaseLine"));
+            baseLine.ValueKind == JsonValueKind.Undefined ? null : IntOrNull(baseLine, "BaseLine"));
     }
 
     private static string RetainedRaw(JsonElement raw)
@@ -488,6 +556,15 @@ internal static class Cx01Mapper
     private static ExternalDocumentRef? BaseDocument(IEnumerable<CanonicalLine> lines) =>
         lines.Select(x => x.BaseDocumentRef).FirstOrDefault(x => x is not null);
 
+    private static ExternalDocumentRef ProductionOrderRef(IReadOnlyList<CanonicalLine> lines, JsonElement raw,
+        string key, DateTimeOffset occurred)
+    {
+        if (BaseDocument(lines) is { } linked)
+            return linked with { Type = "production_order" };
+        return new("production_order", Text(raw, "BaseRef") ?? key,
+            DateOnly.FromDateTime(occurred.Date));
+    }
+
     private static string PartnerKind(string? value) => value switch
     {
         "cCustomer" => "customer",
@@ -495,12 +572,15 @@ internal static class Cx01Mapper
         _ => "both",
     };
 
-    // The connection's currency map runs ISO 4217 to the remote company's own code ("USD" to "$"); an inbound
-    // amount is read back through it so the gateway sees the ISO code. An unmapped code passes through unchanged.
+    // ISO-shaped values are checked against the actual code list. Customer-defined codes are never guessed: the
+    // onboarding survey may suggest a mapping, but only the administrator-confirmed per-connection map is applied.
     private static string? Currency(JsonElement document, IReadOnlyDictionary<string, string>? currencyMap)
     {
-        var remote = Text(document, "DocCurrency");
-        return remote is not null && currencyMap?.FirstOrDefault(x => x.Value == remote).Key is { } iso ? iso : remote;
+        var remote = Text(document, "DocCurrency")?.Trim();
+        if (remote is null) return null;
+        if (Iso4217Codes.Contains(remote)) return remote;
+        if (currencyMap?.GetValueOrDefault(remote) is { } mapped && Iso4217Codes.Contains(mapped)) return mapped;
+        throw new Cx01CurrencyNotMappedException(remote);
     }
 
     private static string NormaliseTime(string value)
@@ -516,20 +596,23 @@ internal static class Cx01Mapper
     }
 
     private static int Int(JsonElement value, string property) =>
-        value.TryGetProperty(property, out var found) && found.TryGetInt32(out var number) ? number : 0;
+        value.TryGetProperty(property, out var found) ? Cx01Json.Int32(found) ?? 0 : 0;
 
     private static int Int(JsonElement value, params string[] properties)
     {
         foreach (var property in properties)
-            if (value.TryGetProperty(property, out var found) && found.TryGetInt32(out var number)) return number;
+            if (value.TryGetProperty(property, out var found) && Cx01Json.Int32(found) is { } number) return number;
         return 0;
     }
 
+    private static int? IntOrNull(JsonElement value, string property) =>
+        value.TryGetProperty(property, out var found) ? Cx01Json.Int32(found) : null;
+
     private static decimal Decimal(JsonElement value, string property) =>
-        value.TryGetProperty(property, out var found) && found.TryGetDecimal(out var number) ? number : 0;
+        value.TryGetProperty(property, out var found) ? Cx01Json.Decimal(found) ?? 0 : 0;
 
     private static decimal? DecimalOrNull(JsonElement value, string property) =>
-        value.TryGetProperty(property, out var found) && found.TryGetDecimal(out var number) ? number : null;
+        value.TryGetProperty(property, out var found) ? Cx01Json.Decimal(found) : null;
 
     private static bool Flag(JsonElement value, string property) =>
         Text(value, property) is "tYES" or "Y" or "true" or "True";

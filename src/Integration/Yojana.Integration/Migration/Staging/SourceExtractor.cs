@@ -195,11 +195,11 @@ public sealed class SourceExtractor(
 
     // HIDDEN COUPLING (OD-60, connector hand-over after the final load)
     // WHAT:  this is the source server's own local clock, read before the first table. The final load turns it into
-    //        the connector's starting watermark (IConnectorPoller.StartingWatermark), whose modified-since filter compares
-    //        against the incumbent's document update stamps, which that server writes in the same local time.
-    // WHY:   the incumbent stores no time zone with its stamps, so the product's UTC clock cannot be compared with them.
-    // WHAT BREAKS IF SEPARATED: reading the clock after the tables, or from another server, opens a window of
-    //        documents that are in neither the migrated history nor the connector's first poll.
+    //        the connector's starting watermark (IConnectorPoller.StartingWatermarkAsync). The connector uses the
+    //        connection's server time zone to put this clock and remote update stamps on the same UTC scale.
+    // WHY:   the incumbent stores no time zone with its stamps, so a product UTC clock cannot identify the hand-over.
+    // WHAT BREAKS IF SEPARATED: reading the clock after the tables or from another server, or omitting the connection
+    //        identity needed for its time zone, opens a window outside both migrated history and the first poll.
     private static async Task<DateTime> SourceClockAsync(SqlConnection connection, CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();

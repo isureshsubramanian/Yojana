@@ -161,6 +161,17 @@ test("archive force and governed approval bypass require explicit evidence", () 
   assert.doesNotMatch(adminApi, /acceptedBy:|acceptedAt:|actorRef:/);
 });
 
+test("CX01 currency suggestions require administrator confirmation and parked messages retry through the mapping", () => {
+  for (const label of ["Currencies", "Suggested ISO code", "Mapped ISO code", "Confirm"])
+    assert.match(settings, new RegExp(label));
+  assert.match(settings, /adminApi\.currencies/);
+  assert.match(settings, /adminApi\.confirmCurrency/);
+  assert.match(settings, /suggestion is not used until an administrator confirms it/);
+  assert.match(messages, /detail\.reasonCode === "erp_currency_not_mapped"/);
+  assert.match(messages, /integrationApi\.retry/);
+  assert.match(api, /dead-letters\/\$\{id\}\/retry/);
+});
+
 test("getting-live and connection settings expose the warranty contract rules", () => {
   assert.match(connections, /Warranty contracts are maintained in/);
   assert.match(connections, /The incumbent until cutover/);

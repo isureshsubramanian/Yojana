@@ -53,6 +53,10 @@ export function Component() {
     if (!seed.externalId) { setError(new Error("The message does not contain an external code to use.")); return; }
     setBusy(true); setError(null); try { await integrationApi.createProvisionalAndRetry(detail.deadLetterItemId, seed.entityType, seed.externalId); await afterAction(); } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
+  const retry = async () => {
+    if (!detail) return; setBusy(true); setError(null);
+    try { await integrationApi.retry(detail.deadLetterItemId); await afterAction(); } catch (reason) { setError(reason); } finally { setBusy(false); }
+  };
   const discard = async () => {
     if (!detail || !discardReason.trim()) return;
     setBusy(true); setError(null); try { await integrationApi.discard(detail.deadLetterItemId, discardReason.trim()); await afterAction(); } catch (reason) { setError(reason); } finally { setBusy(false); }
@@ -88,7 +92,7 @@ export function Component() {
         <FindBar query={find} onQuery={setFind} facets={[]} activeFacet={null} onFacet={() => undefined} compact ariaLabel="Find a document, serial, item code or ERP key" placeholder="Document, serial, item code or ERP key" />
         <div className="toolbar integration-filters">
           <select className="select sm" aria-label="Connection" value={connectionId} onChange={(event) => setConnectionId(event.target.value)}><option value="">All connections</option>{connections.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
-          <select className="select sm" aria-label="Reason" value={reason} onChange={(event) => setReason(event.target.value)}><option value="">All reasons</option><option value="item_not_mapped">Unknown item</option><option value="serial_not_found">Serial not found</option><option value="party_not_mapped">Customer or supplier not linked</option><option value="max_outbox_age">Could not send</option></select>
+          <select className="select sm" aria-label="Reason" value={reason} onChange={(event) => setReason(event.target.value)}><option value="">All reasons</option><option value="item_not_mapped">Unknown item</option><option value="serial_not_found">Serial not found</option><option value="party_not_mapped">Customer or supplier not linked</option><option value="erp_currency_not_mapped">Currency not mapped</option><option value="max_outbox_age">Could not send</option></select>
           <select className="select sm" aria-label="Record type" value={recordType} onChange={(event) => setRecordType(event.target.value)}><option value="">All record types</option>{recordTypes.map((value) => <option key={value} value={value}>{recordTitle({ recordType: value })}</option>)}</select>
           <span className="grow" /><span className="hint">{sortCaption(columns, query, "Sorted by age, oldest first")}</span>
         </div>
@@ -96,17 +100,18 @@ export function Component() {
           gridId="integration-attention" userId={session.user.id} sort={query.sort} defaultSort={{ key: "received", dir: "asc" }} onSort={query.onSort}
           pageSize={query.pageSize} defaultPageSize={25} onPageSize={query.onPageSize} footerNote={sortCaption(columns, query, "Sorted by age, oldest first")} />
       </section>
-      {detail && <MessageDetail detail={detail} discardReason={discardReason} setDiscardReason={setDiscardReason} map={map} provisional={provisional} discard={discard} busy={busy} />}
+      {detail && <MessageDetail detail={detail} discardReason={discardReason} setDiscardReason={setDiscardReason} map={map} provisional={provisional} retry={retry} discard={discard} busy={busy} />}
     </div></IntegrationAccess>
   </main>;
 }
 
-function MessageDetail({ detail, discardReason, setDiscardReason, map, provisional, discard, busy }: { detail: DeadLetterDetail; discardReason: string; setDiscardReason: (value: string) => void; map: () => Promise<void>; provisional: () => Promise<void>; discard: () => Promise<void>; busy: boolean }) {
+function MessageDetail({ detail, discardReason, setDiscardReason, map, provisional, retry, discard, busy }: { detail: DeadLetterDetail; discardReason: string; setDiscardReason: (value: string) => void; map: () => Promise<void>; provisional: () => Promise<void>; retry: () => Promise<void>; discard: () => Promise<void>; busy: boolean }) {
   const seed = actionSeed(detail); const received = payload(detail);
   return <section className="card" aria-labelledby="message-detail"><div className="card-header"><h2 id="message-detail">{recordTitle(detail)} · {detail.connectionLabel}</h2><StatusBadge tone={detail.direction === "outbound" ? "bad" : "warn"}>{reasonLabel(detail.reasonCode)}</StatusBadge></div>
     <div className="integration-panes"><div><h3>As received from the ERP</h3><pre className="integration-code">{pretty(detail.rawPayload)}</pre><p className="hint">Stored unchanged</p></div>
       <div><h3>What we tried to record</h3><pre className="integration-code">{pretty(detail.canonicalAttempt)}</pre><div className="note bad"><strong>Why it stopped.</strong>&nbsp;{detail.failure}</div></div>
       <div><h3>What to do</h3><div className="integration-actions">
+        {detail.reasonCode === "erp_currency_not_mapped" && <div className="act on"><strong>Retry with the confirmed currency</strong><span>Confirm the currency on the connection settings screen first. Retry re-reads that mapping.</span><button type="button" className="btn primary sm" disabled={busy} onClick={() => void retry()}>Retry</button></div>}
         <div className="act on"><strong>Map and retry</strong><span>Treat the ERP code as the suggested record, then process again.</span>{seed.moduleName && <span className="integration-choice">{seed.moduleName}</span>}<button type="button" className="btn primary sm" disabled={busy || !seed.moduleId || !seed.externalId} onClick={() => void map()}>Map and retry</button></div>
         <div className="act"><strong>Create provisional and retry</strong><span>Record a provisional item or party now and leave it for confirmation.</span><button type="button" className="btn sm" disabled={busy || !seed.externalId} onClick={() => void provisional()}>Create provisional</button></div>
         <div className="act"><label className="field"><span className="lbl">Discard reason</span><input className="input" value={discardReason} onChange={(event) => setDiscardReason(event.target.value)} placeholder="Reason (required)" required /></label><span>Nothing is recorded. The reason stays in the message history.</span><button type="button" className="btn sm" disabled={busy || !discardReason.trim()} onClick={() => void discard()}>Discard with reason</button></div>

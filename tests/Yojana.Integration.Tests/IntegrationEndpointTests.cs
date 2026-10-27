@@ -92,13 +92,18 @@ public sealed class IntegrationEndpointTests
             .SelectMany(source => source.Endpoints).OfType<RouteEndpoint>()
             .Where(endpoint => endpoint.RoutePattern.RawText?.StartsWith("/api/integration/",
                 StringComparison.Ordinal) == true).ToList();
-        Assert.Equal(33, endpoints.Count);
+        Assert.Equal(36, endpoints.Count);
         Assert.All(endpoints, endpoint => Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             metadata => metadata.Policy == YojanaPolicy.IntegrationOperations));
         var fieldMapWrite = endpoints.Single(endpoint => endpoint.RoutePattern.RawText ==
             "/api/integration/connections/{connectionId:guid}/cx01/field-map"
             && endpoint.Metadata.GetMetadata<Microsoft.AspNetCore.Routing.HttpMethodMetadata>()!.HttpMethods.Contains("PUT"));
         Assert.Contains(fieldMapWrite.Metadata.GetOrderedMetadata<IAuthorizeData>(),
+            metadata => metadata.Policy == YojanaPolicy.TenantAdministrator);
+        var currencyWrite = endpoints.Single(endpoint => endpoint.RoutePattern.RawText ==
+            "/api/integration/connections/{connectionId:guid}/cx01/currencies"
+            && endpoint.Metadata.GetMetadata<Microsoft.AspNetCore.Routing.HttpMethodMetadata>()!.HttpMethods.Contains("PUT"));
+        Assert.Contains(currencyWrite.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             metadata => metadata.Policy == YojanaPolicy.TenantAdministrator);
         var approvalWrite = endpoints.Single(endpoint => endpoint.RoutePattern.RawText ==
             "/api/integration/connections/{connectionId:guid}/cx01/approval-handling"

@@ -69,11 +69,78 @@ public sealed class Cx01AdapterTests
     [Theory]
     [InlineData("2026-10-24T00:00:00Z")]
     [InlineData("2026-10-24")]
-    public void A_change_marker_reads_the_live_midnight_timestamp_date(string updateDate)
+    public void A_change_marker_converts_the_server_local_stamp_to_utc(string updateDate)
     {
         using var row = JsonDocument.Parse($$"""{"DocEntry":1291,"UpdateDate":"{{updateDate}}","UpdateTime":"23:03:57"}""");
-        Assert.Equal(new DateTimeOffset(2026, 10, 24, 23, 3, 57, TimeSpan.Zero), Cx01Watermark.From(row.RootElement, "1291").Timestamp);
+        Assert.Equal(new DateTimeOffset(2026, 10, 24, 17, 33, 57, TimeSpan.Zero),
+            Cx01Watermark.From(row.RootElement, "1291", TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata")).Timestamp);
         Assert.Equal("2026-10-24T230357|1291", Cx01Mapper.ChangeMarker(row.RootElement, "1291"));
+    }
+
+    [Fact]
+    public void Legacy_keyed_watermarks_are_reread_as_server_local_and_new_ones_round_trip_as_utc()
+    {
+        var india = TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata");
+        var newYork = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+
+        // Stored before the fix: 21:32 server-local in India, written as if UTC, keyed by the document.
+        var keyed = Cx01Watermark.Parse("2026-10-27T21:32:13.0000000+00:00|1294", india);
+        Assert.Equal(new DateTimeOffset(2026, 10, 27, 16, 2, 13, TimeSpan.Zero), keyed.Timestamp);
+        Assert.Equal("1294", keyed.Key);
+        // West of UTC the same legacy form moves later, never earlier than the real change.
+        Assert.Equal(new DateTimeOffset(2026, 10, 28, 1, 32, 13, TimeSpan.Zero),
+            Cx01Watermark.Parse("2026-10-27T21:32:13.0000000+00:00|1294", newYork).Timestamp);
+        // A legacy registration seed has no key and was already true UTC.
+        Assert.Equal(new DateTimeOffset(2026, 10, 27, 15, 58, 9, TimeSpan.Zero),
+            Cx01Watermark.Parse("2026-10-27T15:58:09.0000000+00:00|", india).Timestamp);
+
+        var current = new Cx01Watermark(new DateTimeOffset(2026, 10, 27, 16, 2, 13, TimeSpan.Zero), "1294");
+        Assert.EndsWith("|1294|utc", current.ToString(), StringComparison.Ordinal);
+        Assert.Equal(current, Cx01Watermark.Parse(current.ToString(), india));
+        Assert.Equal(current, Cx01Watermark.Parse(current.ToString()));
+    }
+
+    [Fact]
+    public void A_server_west_of_utc_does_not_put_its_first_local_hours_before_the_registration_watermark()
+    {
+        using var row = JsonDocument.Parse("""{"DocEntry":1292,"UpdateDate":"2026-09-01","UpdateTime":"00:30:00"}""");
+        var registration = new Cx01Watermark(new DateTimeOffset(2026, 9, 1, 2, 0, 0, TimeSpan.Zero), "");
+        var changed = Cx01Watermark.From(row.RootElement, "1292",
+            TimeZoneInfo.FindSystemTimeZoneById("America/New_York"));
+
+        Assert.True(changed.CompareTo(registration) > 0);
+        Assert.Equal(new DateTimeOffset(2026, 9, 1, 4, 30, 0, TimeSpan.Zero), changed.Timestamp);
+    }
+
+    [Fact]
+    public async Task India_server_stamp_and_registration_watermark_share_utc_scale()
+    {
+        await using var simulator = new Cx01Simulator();
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+        using var row = JsonDocument.Parse("""{"DocEntry":1294,"UpdateDate":"2026-10-27","UpdateTime":"21:32:13"}""");
+        var registration = Cx01Watermark.Parse(context.Adapter.WatermarkAt(
+            new DateTime(2026, 10, 27, 15, 58, 9, DateTimeKind.Utc)));
+        var changed = Cx01Watermark.From(row.RootElement, "1294",
+            TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata"));
+
+        Assert.True(changed.CompareTo(registration) > 0);
+        Assert.Equal(new DateTimeOffset(2026, 10, 27, 16, 2, 13, TimeSpan.Zero), changed.Timestamp);
+    }
+
+    [Fact]
+    public async Task Migration_hand_over_converts_the_source_local_clock_with_the_connection_time_zone()
+    {
+        await using var simulator = new Cx01Simulator();
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+        var configured = await context.Settings.GetAsync(context.ConnectionId, CancellationToken.None);
+        await context.Settings.SetAsync(context.ConnectionId,
+            configured with { ErpServerTimeZone = "Asia/Kolkata" }, CancellationToken.None);
+
+        var watermark = await context.Adapter.StartingWatermarkAsync(context.ConnectionId,
+            new DateTime(2026, 10, 27, 21, 32, 13, DateTimeKind.Unspecified), CancellationToken.None);
+
+        Assert.Equal(new DateTimeOffset(2026, 10, 27, 16, 2, 13, TimeSpan.Zero),
+            Cx01Watermark.Parse(watermark).Timestamp);
     }
 
     [Fact]
@@ -105,10 +172,57 @@ public sealed class Cx01AdapterTests
 
         Assert.Equal(2, result.Events.Count);
         Assert.All(result.Events, item => Assert.Equal(nameof(DeliveryPosted), item.MessageType));
-        Assert.EndsWith("|4102", result.NextWatermark, StringComparison.Ordinal);
+        Assert.EndsWith("|4102|utc", result.NextWatermark, StringComparison.Ordinal);
         Assert.All(simulator.CaptureReadPaths, path => Assert.DoesNotContain("$select", path,
             StringComparison.OrdinalIgnoreCase));
         Assert.False(simulator.SelectEmptiedSerials);
+    }
+
+    [Fact]
+    public async Task Production_receipt_accepts_null_base_line_and_links_the_parent_production_order()
+    {
+        await using var simulator = new Cx01Simulator { ProductionReceiptAvailable = true };
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+        var configured = await context.Settings.GetAsync(context.ConnectionId, CancellationToken.None);
+        await context.Settings.SetAsync(context.ConnectionId, configured with
+        {
+            CurrencyMap = new Dictionary<string, string> { ["$"] = "USD" },
+            ErpServerTimeZone = "Asia/Kolkata",
+        }, CancellationToken.None);
+
+        var result = await context.Adapter.PollAsync(new(context.TenantId, context.ConnectionId,
+            "production_receipts", null, TimeSpan.FromMinutes(2), 10), CancellationToken.None);
+
+        var accepted = Assert.Single(result.Events);
+        using var canonical = JsonDocument.Parse(accepted.CanonicalMessage);
+        var payload = canonical.RootElement.GetProperty("payload");
+        Assert.Equal("161", payload.GetProperty("production_order_ref").GetProperty("external_id").GetString());
+        Assert.Equal("production_order", payload.GetProperty("production_order_ref").GetProperty("type").GetString());
+        var line = Assert.Single(payload.GetProperty("lines").EnumerateArray());
+        Assert.Equal(JsonValueKind.Null, line.GetProperty("base_document_ref").GetProperty("line").ValueKind);
+        Assert.Equal("FIC-261027-SRV-01", Assert.Single(line.GetProperty("serials").EnumerateArray())
+            .GetProperty("value").GetString());
+        Assert.Equal("USD", line.GetProperty("currency").GetString());
+    }
+
+    [Fact]
+    public async Task An_unmapped_currency_parks_only_that_document_and_the_poll_advances()
+    {
+        await using var simulator = new Cx01Simulator
+        {
+            ReceiptCancelled = true,
+            NonIsoGoodsReceiptCurrency = true,
+        };
+        await using var context = await Cx01TestContext.CreateAsync(simulator);
+
+        var result = await context.Adapter.PollAsync(new(context.TenantId, context.ConnectionId,
+            "goods_receipts", null, TimeSpan.FromMinutes(2), 10), CancellationToken.None);
+
+        Assert.Single(result.Events);
+        var parked = Assert.Single(context.Rejections.ParkedDocuments);
+        Assert.Equal("3101", parked.ExternalId);
+        Assert.Equal("erp_currency_not_mapped", parked.Reason);
+        Assert.EndsWith("|3102|utc", result.NextWatermark, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -580,7 +694,7 @@ internal sealed class Cx01TestContext : IAsyncDisposable
         var adapter = new Cx01Adapter(tenant, clock, db,
             new GatewayReferenceStore(db, tenant, clock, new NoPersonalDataErasures()),
             bomState, settings, client, history, new NoCapturedDocuments(), tasks, new NoOwnWrites(), rejections,
-            new EmptySurveyReader(), new EmptyTrackingPermissions());
+            new EmptySurveyReader(), new EmptyTrackingPermissions(), new FixedTenantZone("UTC"));
         return new(tenantId, connectionId, client, settings, adapter, history, bomState, tasks, rejections,
             transport, db);
     }
@@ -678,6 +792,20 @@ internal sealed class CollectingInboundRejections : ICx01InboundRejectionSink
         Parked.Add((entity, externalId, exception));
         return Task.CompletedTask;
     }
+
+    public List<(string Entity, string ExternalId, string Reason)> ParkedDocuments { get; } = [];
+
+    public Task ParkDocumentAsync(Guid connectionId, string entity, string messageType, string externalId,
+        JsonElement raw, string reasonCode, string failure, CancellationToken cancellationToken)
+    {
+        ParkedDocuments.Add((entity, externalId, reasonCode));
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class FixedTenantZone(string id) : Yojana.Serialisation.Contracts.ITenantTimeZoneReadPort
+{
+    public Task<string> GetAsync(CancellationToken cancellationToken) => Task.FromResult(id);
 }
 
 internal sealed class EmptySurveyReader : ICx01SurveyReader

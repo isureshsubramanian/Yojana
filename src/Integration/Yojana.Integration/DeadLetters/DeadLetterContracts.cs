@@ -117,6 +117,13 @@ public sealed record CompleteManualTaskRequest(
     System.Text.Json.JsonElement? CorrectedDraft = null);
 public sealed record DeadLetterActionResult(Guid DeadLetterItemId, string Status, Guid? ModuleId = null);
 
+public interface IInboundRetryPreparer
+{
+    bool Applies(Yojana.Integration.Data.Entities.InboundMessage message);
+    Task PrepareAsync(Yojana.Integration.Data.Entities.InboundMessage message,
+        CancellationToken cancellationToken);
+}
+
 public sealed class DeadLetterRuleException(string rule, string message) : Exception(message)
 {
     public string Rule { get; } = rule;

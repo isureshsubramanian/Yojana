@@ -37,6 +37,7 @@ public enum ConnectionAuditEventType
     ParallelRunStarted,
     ParallelRunItemConfirmed,
     DocumentSettingsChanged,
+    CurrencySettingsChanged,
     MigrationLicenceConfirmed,
     MigrationLicenceWithdrawn,
     ParallelRunHandoverPlanned,

@@ -45,7 +45,7 @@ internal sealed class Cx01CoexistenceDriftReader(Cx01Client client) : ICoexisten
         {
             foreach (var row in rows.EnumerateArray())
             {
-                if (!row.TryGetProperty(Key, out var keyValue) || !keyValue.TryGetInt64(out var key)) continue;
+                if (!row.TryGetProperty(Key, out var keyValue) || Cx01Json.Int64(keyValue) is not { } key) continue;
                 last = Math.Max(last, key);
                 var values = fields.ToDictionary(field => field, field => Scalar(row, field), StringComparer.Ordinal);
                 var label = $"{Scalar(row, "ItemCode")} {Scalar(row, "InternalSerialNum")} (card {key})".Trim();

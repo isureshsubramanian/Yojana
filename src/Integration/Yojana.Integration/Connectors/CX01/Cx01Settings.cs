@@ -29,7 +29,9 @@ public sealed record Cx01ConnectionSettings(
     int RelayOfflineAfterSeconds = 120, int RelayRequestTimeoutSeconds = 90, int RelayQueueCapacity = 128,
     IReadOnlyDictionary<string, Cx01ApprovalHandling>? ApprovalHandling = null,
     Cx01DocumentSettings? Documents = null, Cx01DocumentAcceptance? DocumentsAcceptance = null,
-    Cx01NativeWarrantyStatusCodes? NativeWarrantyStatuses = null)
+    Cx01NativeWarrantyStatusCodes? NativeWarrantyStatuses = null,
+    IReadOnlyDictionary<string, string>? CurrencyMap = null,
+    string? ErpServerTimeZone = null)
 {
     public Cx01ConnectionSettings Validate()
     {
@@ -38,6 +40,11 @@ public sealed record Cx01ConnectionSettings(
         Cx01ApprovalPolicy.Validate(ApprovalHandling);
         Documents?.Validate();
         NativeWarrantyStatuses?.Validate();
+        if (CurrencyMap?.Any(pair => string.IsNullOrWhiteSpace(pair.Key) || pair.Key.Length > 16
+                || !Iso4217Codes.Contains(pair.Value)) == true)
+            throw new InvalidOperationException("The CX01 currency map is invalid.");
+        if (ErpServerTimeZone is not null && !TimeZoneInfo.TryFindSystemTimeZoneById(ErpServerTimeZone, out _))
+            throw new InvalidOperationException("The CX01 ERP server time zone is not recognised.");
         if (RelayWebhookUrl is not null) Yojana.Relay.Contracts.RelayWebhookUrl.Validate(RelayWebhookUrl);
         if (Transport is not ("direct" or "site_relay") || RelayCredentials is not ("site" or "cloud")
             || RelayQueueCapacity is < 1 or > 1024 || RelayOfflineAfterSeconds is < 30 or > 3600 || RelayRequestTimeoutSeconds is < 1 or > 300)

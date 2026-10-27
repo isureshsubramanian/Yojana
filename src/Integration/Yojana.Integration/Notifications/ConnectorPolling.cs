@@ -35,7 +35,8 @@ public interface IConnectorPoller
     /// clock (the migration hand-over after a final load, OD-60). Null when the connector cannot start from a time; the
     /// caller then leaves the watermark as it is and says so.
     /// </summary>
-    string? StartingWatermark(DateTime sourceLocalTime) => null;
+    Task<string?> StartingWatermarkAsync(Guid connectionId, DateTime sourceLocalTime,
+        CancellationToken cancellationToken) => Task.FromResult<string?>(null);
 }
 
 /// <summary>Connector-owned translation between UTC start instants and opaque remote watermark formats.</summary>

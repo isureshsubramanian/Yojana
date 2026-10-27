@@ -7,12 +7,14 @@ using Yojana.Integration.Connectors.CX01.Testing;
 using Yojana.Integration.Contracts;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
+using Yojana.Integration.DeadLetters;
 using Yojana.Integration.Inbox;
 using Yojana.Integration.Gateway;
 using Yojana.Integration.Notifications;
 using Yojana.Integration.Outbox;
 using Yojana.Integration.Security.Cryptography;
 using Yojana.Integration.Security.Workers;
+using Yojana.Integration.Security.Audit;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Serialisation.Contracts;
 using Yojana.Serialisation.Data;
@@ -22,6 +24,49 @@ namespace Yojana.Integration.DatabaseTests;
 [Collection("integration host")]
 public sealed class Cx01SimulatorDatabaseTests(IntegrationHostFixture fixture)
 {
+    [DatabaseFact]
+    public async Task Confirmed_currency_is_re_read_when_a_parked_inbound_message_is_retried()
+    {
+        await using var simulator = new Cx01Simulator { NonIsoGoodsReceiptCurrency = true };
+        var tenant = await fixture.NewTenantAsync("cxcur");
+        var connection = await fixture.AddConnectionAsync(tenant, Guid.CreateVersion7());
+        using var scope = fixture.ScopeFor(tenant);
+        var settings = scope.ServiceProvider.GetRequiredService<Cx01Settings>();
+        await settings.SetAsync(connection, new(simulator.BaseUri, "FICTIONAL_DEMO", "1000340",
+            ErpServerTimeZone: "UTC"), CancellationToken.None);
+        var protector = scope.ServiceProvider.GetRequiredService<ConnectionCredentialProtector>();
+        var store = scope.ServiceProvider.GetRequiredService<IConnectionCredentialStore>();
+        var login = JsonSerializer.SerializeToUtf8Bytes(new Cx01Credential("integration-user", "not-logged"),
+            IntegrationContracts.Json);
+        await store.SaveAsync(await protector.EncryptAsync(tenant, connection, Cx01Client.CredentialPurpose,
+            login, null, fixture.Clock.UtcNow.AddDays(30), CancellationToken.None), CancellationToken.None);
+        await scope.ServiceProvider.GetRequiredService<ConnectionThrottleProfiles>().OnboardAsync(
+            new(tenant, connection), Cx01Capabilities.For("1000340", false).Throttle, CancellationToken.None);
+
+        var result = await scope.ServiceProvider.GetRequiredService<Cx01Adapter>().PollAsync(new(tenant, connection,
+            "goods_receipts", null, TimeSpan.FromMinutes(2), 10), CancellationToken.None);
+        Assert.Empty(result.Events);
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        var letter = await db.DeadLetterItems.SingleAsync(row => row.ConnectionId == connection
+            && row.ReasonCode == "erp_currency_not_mapped");
+        var inbound = await db.InboundMessages.SingleAsync(row => row.InboundMessageId == letter.SourceId);
+        Assert.Equal(InboundTranslationStatus.NeedsAttention, inbound.TranslationStatus);
+
+        await scope.ServiceProvider.GetRequiredService<Cx01CurrencyMapService>().ConfirmAsync(connection,
+            new("$", "USD"), "user:fictional-admin", CancellationToken.None);
+        await scope.ServiceProvider.GetRequiredService<DeadLetterService>().RetryAsync(letter.DeadLetterItemId,
+            "user:fictional-operator", CancellationToken.None);
+
+        db.ChangeTracker.Clear();
+        inbound = await db.InboundMessages.SingleAsync(row => row.InboundMessageId == letter.SourceId);
+        Assert.Equal(InboundTranslationStatus.Pending, inbound.TranslationStatus);
+        using var canonical = JsonDocument.Parse(inbound.CanonicalMessage);
+        Assert.Equal("USD", canonical.RootElement.GetProperty("payload").GetProperty("lines")[0]
+            .GetProperty("currency").GetString());
+        Assert.Equal("completed", await db.ExceptionTasks.Where(row => row.InboundMessageId == inbound.InboundMessageId)
+            .Select(row => row.Status).SingleAsync());
+    }
+
     [DatabaseFact]
     public async Task Simulator_product_tree_syncs_through_the_gateway_into_the_BOM_projection()
     {
@@ -423,6 +468,18 @@ public sealed class Cx01SimulatorDatabaseTests(IntegrationHostFixture fixture)
         Assert.True(simulator.SerialQueryCreated);
         Assert.Equal(1, simulator.SerialQueryCreateCount);
         Assert.True(survey.OwnerAnswers.ValidationProcedureReviewed);
+        Assert.Equal("USD", Assert.Single(survey.Currencies!, currency => currency.ErpCode == "$").SuggestedIsoCode);
+        Assert.Equal("CAD", Assert.Single(survey.Currencies!, currency => currency.ErpCode == "CAN").SuggestedIsoCode);
+        var currencyService = scope.ServiceProvider.GetRequiredService<Cx01CurrencyMapService>();
+        var before = await currencyService.GetAsync(connection, CancellationToken.None);
+        Assert.Null(Assert.Single(before.Currencies, currency => currency.ErpCode == "$").MappedIsoCode);
+        var confirmed = await currencyService.ConfirmAsync(connection, new("$", "usd"), "user:fictional-admin",
+            CancellationToken.None);
+        Assert.Equal("USD", Assert.Single(confirmed.Currencies, currency => currency.ErpCode == "$").MappedIsoCode);
+        Assert.Equal("USD", (await settings.GetAsync(connection, CancellationToken.None)).CurrencyMap!["$"]);
+        var db = scope.ServiceProvider.GetRequiredService<IntegrationDbContext>();
+        Assert.Single(await db.ConnectionEvents.AsNoTracking().Where(row => row.ConnectionId == connection
+            && row.EventType == nameof(ConnectionAuditEventType.CurrencySettingsChanged)).ToListAsync());
         Assert.NotNull(await scope.ServiceProvider.GetRequiredService<IntegrationDbContext>().Cx01SurveyRecords
             .SingleOrDefaultAsync(row => row.ConnectionId == connection));
     }

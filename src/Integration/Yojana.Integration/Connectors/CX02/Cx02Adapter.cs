@@ -34,10 +34,12 @@ public sealed class Cx02Adapter(
     public Task<OutboundCreateResult> CreateAsync(OutboundCreateRequest request,
         CancellationToken cancellationToken) => documents.CreateAsync(request, cancellationToken);
 
-    public string? StartingWatermark(DateTime sourceLocalTime) =>
-        new Cx02Watermark(new DateTimeOffset(DateTime.SpecifyKind(sourceLocalTime, DateTimeKind.Utc)), "").ToString();
+    public Task<string?> StartingWatermarkAsync(Guid connectionId, DateTime sourceLocalTime,
+        CancellationToken cancellationToken) => Task.FromResult<string?>(
+            new Cx02Watermark(new DateTimeOffset(DateTime.SpecifyKind(sourceLocalTime, DateTimeKind.Utc)), "").ToString());
 
-    public string WatermarkAt(DateTime utcInstant) => StartingWatermark(utcInstant)!;
+    public string WatermarkAt(DateTime utcInstant) =>
+        new Cx02Watermark(new DateTimeOffset(DateTime.SpecifyKind(utcInstant, DateTimeKind.Utc)), "").ToString();
     public DateTime? InstantOf(string watermark) => Cx02Watermark.Parse(watermark) is var value
         && value != Cx02Watermark.Empty ? value.Timestamp.UtcDateTime : null;
     public bool IsMasterData(string entityType) => entityType is "items" or "customers";
