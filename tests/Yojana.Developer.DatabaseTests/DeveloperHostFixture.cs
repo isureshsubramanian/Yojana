@@ -67,6 +67,7 @@ public sealed class DeveloperHostFixture : IAsyncLifetime
         builder.AddYojanaPlatform();
         builder.Services.AddSingleton<IClock>(Clock);
         builder.AddSerialisationModule();
+        builder.AddSerialisationDevelopmentPorts();
         builder.AddIntegrationModule();
         builder.AddDeveloperModule();
         builder.AddSerialisationPublicApi();

@@ -32,6 +32,7 @@ builder.Services.AddRouting();
 builder.AddYojanaPlatform();
 builder.AddIntegrationModule();
 builder.AddSerialisationModule();
+builder.AddSerialisationDevelopmentPorts();
 builder.AddKnowledgeModule();
 // The Codex SQL Express image has no full-text feature. The demo adapter keeps the production implementation when
 // available and crosses this existing search seam only for the same LIKE-based fallback used by database tests.

@@ -22,6 +22,7 @@
   </Folder>
   <Folder Name="/src/Serialisation/">
     <Project Path="src/Serialisation/Yojana.Serialisation.Contracts/Yojana.Serialisation.Contracts.csproj" />
+    <Project Path="src/Serialisation/Yojana.Serialisation.DevelopmentPorts/Yojana.Serialisation.DevelopmentPorts.csproj" />
     <Project Path="src/Serialisation/Yojana.Serialisation/Yojana.Serialisation.csproj" />
   </Folder>
   <Folder Name="/src/Web/">

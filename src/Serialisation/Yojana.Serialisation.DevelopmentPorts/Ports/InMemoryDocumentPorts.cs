@@ -7,6 +7,7 @@ namespace Yojana.Serialisation.Ports;
 /// Document query ports fed from memory: the recorded-message harness (P1-T17) and the tests load documents here and
 /// publish the thin events; a connector (P8) or an in-house module (P12) replaces these registrations in a real host.
 /// </summary>
+[DevelopmentOnly]
 public sealed class InMemoryDocumentPorts : IPurchasingDocumentQueryPort, IManufacturingDocumentQueryPort,
     IProductionOrderAllocationPort, IInventoryDocumentQueryPort, ISalesDocumentQueryPort,
     IOwnershipSourceDocumentQueryPort, IServiceDocumentQueryPort, IInternalSaleDocumentQueryPort

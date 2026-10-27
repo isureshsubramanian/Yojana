@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Yojana.Platform.Contracts.Privacy;
 using Microsoft.EntityFrameworkCore;
 using Yojana.Serialisation.Contracts;
@@ -7,78 +6,13 @@ using Yojana.Serialisation.Data;
 
 namespace Yojana.Serialisation.Ports;
 
-/// <summary>In-memory item labels for tests and the recorded-message harness; a real item module replaces the port.</summary>
-public sealed class InMemoryItemNamePort(IItemQueryPort items) : IItemNamePort
-{
-    private readonly ConcurrentDictionary<Guid, ItemLabel> labels = new();
-
-    public void Register(ItemLabel label) => labels[label.ItemId] = label;
-
-    public async Task<IReadOnlyDictionary<Guid, ItemLabel>> NamesAsync(IReadOnlyCollection<Guid> itemIds, CancellationToken cancellationToken)
-    {
-        var answer = new Dictionary<Guid, ItemLabel>();
-        var ids = itemIds.Distinct().ToList();
-        var missing = ids.Where(itemId => !labels.ContainsKey(itemId)).ToList();
-        var profiles = missing.Count == 0
-            ? new Dictionary<Guid, ItemSerialisationProfile?>()
-            : await items.GetManyAsync(missing, cancellationToken);
-        foreach (var itemId in ids)
-        {
-            if (labels.TryGetValue(itemId, out var registered))
-            {
-                answer[itemId] = registered;
-                continue;
-            }
-
-            profiles.TryGetValue(itemId, out var profile);
-            answer[itemId] = new ItemLabel(itemId, profile?.ItemCode ?? ReferenceFallback.ItemCode(itemId), null);
-        }
-
-        return answer;
-    }
-
-    public Task<IReadOnlyList<ItemLabel>> SearchAsync(string text, int take, CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyList<ItemLabel>>(ReferenceFallback.Ranked(labels.Values, text, take,
-            label => label.Code, label => label.Name));
-}
-
-/// <summary>In-memory item-family labels for tests and the development catalogue.</summary>
-public sealed class InMemoryItemFamilyNamePort : IItemFamilyNamePort
-{
-    private readonly ConcurrentDictionary<string, ItemFamilyLabel> labels = new(StringComparer.OrdinalIgnoreCase);
-
-    public void Register(ItemFamilyLabel label) => labels[label.Code] = label;
-
-    public Task<IReadOnlyList<ItemFamilyLabel>> ListAsync(CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyList<ItemFamilyLabel>>(labels.Values
-            .OrderBy(label => label.Name, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(label => label.Code, StringComparer.OrdinalIgnoreCase).ToList());
-}
-
-/// <summary>In-memory partner labels for tests and the recorded-message harness; a real party module replaces the port.</summary>
-public sealed class InMemoryPartyNamePort : IPartyNamePort
-{
-    private readonly ConcurrentDictionary<Guid, PartyLabel> labels = new();
-
-    public void Register(PartyLabel label) => labels[label.PartyRef] = label;
-
-    public Task<IReadOnlyDictionary<Guid, PartyLabel>> NamesAsync(IReadOnlyCollection<Guid> partyRefs, CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyDictionary<Guid, PartyLabel>>(partyRefs.Distinct().ToDictionary(
-            partyRef => partyRef,
-            partyRef => labels.TryGetValue(partyRef, out var label)
-                ? label
-                : new PartyLabel(partyRef, ReferenceFallback.PartyCode(partyRef), null, null)));
-
-    public Task<IReadOnlyList<PartyLabel>> SearchAsync(string text, int take, CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyList<PartyLabel>>(ReferenceFallback.Ranked(labels.Values, text, take,
-            label => label.Code, label => label.Name));
-}
-
 /// <summary>Prevents every party-name consumer from redisplaying a name after its Platform tombstone is committed.</summary>
 public sealed class ErasureAwarePartyNamePort(
-    InMemoryPartyNamePort inner,
-    IPersonalDataErasureReadPort erasures) : IPartyNamePort
+    IPartyNamePort inner,
+    IPersonalDataErasureReadPort erasures) : IPartyNamePort, ISerialisationPortComposition
 {
+    public IReadOnlyCollection<object> Sources => [inner];
+
     public async Task<IReadOnlyDictionary<Guid, PartyLabel>> NamesAsync(IReadOnlyCollection<Guid> partyRefs,
         CancellationToken cancellationToken)
     {
@@ -107,33 +41,6 @@ public sealed class ErasureAwarePartyNamePort(
         $"ERASED-{partyRef.ToString("N")[..4].ToUpperInvariant()}";
 }
 
-/// <summary>Development and test contacts until the party owner's connector supplies them.</summary>
-public sealed class InMemoryPartyContactPort : IPartyContactPort
-{
-    private readonly ConcurrentDictionary<Guid, IReadOnlyList<PartyContactLabel>> contacts = new();
-
-    public void Register(PartyContactLabel contact) => contacts.AddOrUpdate(contact.PartyRef, [contact],
-        (_, existing) => existing.Where(x => !x.Email.Equals(contact.Email, StringComparison.OrdinalIgnoreCase)).Append(contact).ToList());
-
-    public Task<IReadOnlyList<PartyContactLabel>> ContactsAsync(Guid partyRef, CancellationToken cancellationToken) =>
-        Task.FromResult(contacts.TryGetValue(partyRef, out var found) ? found : (IReadOnlyList<PartyContactLabel>)[]);
-}
-
-/// <summary>Registered location labels shared by default location-port scopes in development and tests.</summary>
-public sealed class InMemoryLocationNameRegistry
-{
-    private readonly ConcurrentDictionary<Guid, LocationLabel> labels = new();
-
-    public void Register(LocationLabel label) => labels[label.LocationId] = label;
-
-    public bool TryGet(Guid locationId, out LocationLabel label) => labels.TryGetValue(locationId, out label!);
-
-    public IReadOnlyList<LocationLabel> Search(string text, int take, string? kind) =>
-        ReferenceFallback.Ranked(labels.Values.Where(label => kind is null
-                || string.Equals(label.Kind, kind, StringComparison.OrdinalIgnoreCase)), text, take,
-            label => label.Code, label => label.Name);
-}
-
 /// <summary>A location reference observed on one of this tenant's custody episodes.</summary>
 public sealed record RecordedLocationReference(Guid LocationId, string? Kind);
 
@@ -147,44 +54,34 @@ public interface IRecordedLocationReferenceQuery
 }
 
 /// <summary>
-/// Default location-name port. Catalogue labels win; short fallback labels cover locations already observed in
-/// custody history until the Inventory location master replaces this port.
+/// Production-safe location-name fallback over references already observed in custody history.
 /// </summary>
-public sealed class DefaultLocationNamePort(InMemoryLocationNameRegistry registry, IRecordedLocationReferenceQuery recorded) : ILocationNamePort
+public sealed class RecordedLocationNamePort(IRecordedLocationReferenceQuery recorded) : ILocationNamePort
 {
     public async Task<IReadOnlyDictionary<Guid, LocationLabel>> NamesAsync(
         IReadOnlyCollection<Guid> locationIds, CancellationToken cancellationToken)
     {
         var ids = locationIds.Distinct().ToList();
-        var missing = ids.Where(id => !registry.TryGet(id, out _)).ToList();
-        IReadOnlyDictionary<Guid, string?> recordedKinds = missing.Count == 0
+        IReadOnlyDictionary<Guid, string?> recordedKinds = ids.Count == 0
             ? new Dictionary<Guid, string?>()
-            : await recorded.KindsAsync(missing, cancellationToken);
+            : await recorded.KindsAsync(ids, cancellationToken);
 
-        return ids.ToDictionary(id => id, id => registry.TryGet(id, out var registered)
-            ? registered
-            : new LocationLabel(id, ReferenceFallback.LocationCode(id), null,
-                recordedKinds.TryGetValue(id, out var kind) ? kind : null));
+        return ids.ToDictionary(id => id, id => new LocationLabel(id, ReferenceFallback.LocationCode(id), null,
+            recordedKinds.TryGetValue(id, out var kind) ? kind : null));
     }
 
     public async Task<IReadOnlyList<LocationLabel>> SearchAsync(
         string text, int take, string? kind, CancellationToken cancellationToken)
     {
-        var registered = registry.Search(text, take, kind);
-        if (registered.Count >= take) return registered;
-
-        if (ReferenceFallback.LocationIdPrefix(text) is not { } idPrefix) return registered;
-        var registeredIds = registered.Select(label => label.LocationId).ToHashSet();
-        var candidates = await recorded.CandidatesAsync(idPrefix, kind, take + registered.Count, cancellationToken);
-        var fallback = candidates
-            .Where(candidate => !registeredIds.Contains(candidate.LocationId))
+        if (ReferenceFallback.LocationIdPrefix(text) is not { } idPrefix) return [];
+        var candidates = await recorded.CandidatesAsync(idPrefix, kind, take, cancellationToken);
+        return candidates
             .DistinctBy(candidate => candidate.LocationId)
             .Select(candidate => new LocationLabel(candidate.LocationId,
                 ReferenceFallback.LocationCode(candidate.LocationId), null, candidate.Kind))
             .OrderByDescending(label => label.Code.Equals(text.Trim(), StringComparison.OrdinalIgnoreCase))
             .ThenBy(label => label.Code, StringComparer.OrdinalIgnoreCase)
-            .Take(Math.Max(0, take - registered.Count));
-        return [.. registered, .. fallback];
+            .Take(take).ToList();
     }
 }
 
@@ -223,27 +120,6 @@ public sealed class RecordedLocationReferenceQuery(SerialisationDbContext db, IT
     }
 }
 
-/// <summary>Registered document labels shared by default document-port scopes in tests and recorded scenarios.</summary>
-public sealed class InMemoryDocumentNumberRegistry
-{
-    private readonly ConcurrentDictionary<DocumentKey, DocumentLabel> labels = new();
-
-    public void Register(DocumentLabel label) => labels[DocumentKey.From(label.Document)] = label;
-
-    public bool TryGet(DocumentKey key, out DocumentLabel label) => labels.TryGetValue(key, out label!);
-
-    public IReadOnlyList<DocumentLabel> Find(string type, string numberText, int take)
-    {
-        var query = numberText.Trim();
-        return labels.Values
-            .Where(label => label.Document.Type == type && label.Number.StartsWith(query, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(label => label.Number.Equals(query, StringComparison.OrdinalIgnoreCase))
-            .ThenBy(label => label.Number, StringComparer.OrdinalIgnoreCase)
-            .Take(take)
-            .ToList();
-    }
-}
-
 /// <summary>Tenant-scoped references that Serialisation has itself recorded.</summary>
 public interface IRecordedDocumentReferenceQuery
 {
@@ -252,35 +128,26 @@ public interface IRecordedDocumentReferenceQuery
 }
 
 /// <summary>
-/// Default document-number port. Registered numbers win; fallback numbers cover references already recorded by this
-/// module until the document-owning module or connector replaces the port.
+/// Production-safe document-number fallback over references already recorded by this module.
 /// </summary>
-public sealed class DefaultDocumentNumberPort(InMemoryDocumentNumberRegistry registry, IRecordedDocumentReferenceQuery recorded) : IDocumentNumberPort
+public sealed class RecordedDocumentNumberPort(IRecordedDocumentReferenceQuery recorded) : IDocumentNumberPort
 {
     public Task<IReadOnlyDictionary<DocumentKey, DocumentLabel>> NumbersAsync(IReadOnlyCollection<DocumentRef> documents, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyDictionary<DocumentKey, DocumentLabel>>(documents
             .Select(document => new { Document = document, Key = DocumentKey.From(document) })
             .DistinctBy(row => row.Key)
-            .ToDictionary(row => row.Key, row => registry.TryGet(row.Key, out var label)
-                ? label
-                : new DocumentLabel(row.Document, ReferenceFallback.DocumentNumber(row.Document))));
+            .ToDictionary(row => row.Key, row => new DocumentLabel(row.Document, ReferenceFallback.DocumentNumber(row.Document))));
 
     public async Task<IReadOnlyList<DocumentLabel>> FindAsync(string type, string numberText, int take, CancellationToken cancellationToken)
     {
-        var registered = registry.Find(type, numberText, take);
-        if (registered.Count >= take) return registered;
-
-        var registeredKeys = registered.Select(label => DocumentKey.From(label.Document)).ToHashSet();
-        if (ReferenceFallback.IdPrefix(type, numberText) is not { } idPrefix) return registered;
-        var candidates = await recorded.CandidatesAsync(type, idPrefix, take + registered.Count, cancellationToken);
-        var fallback = candidates
-            .Where(document => !registeredKeys.Contains(DocumentKey.From(document)))
+        if (ReferenceFallback.IdPrefix(type, numberText) is not { } idPrefix) return [];
+        var candidates = await recorded.CandidatesAsync(type, idPrefix, take, cancellationToken);
+        return candidates
             .Select(document => new DocumentLabel(document, ReferenceFallback.DocumentNumber(document)))
             .Where(label => label.Document.Id.ToString("N").StartsWith(idPrefix, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(label => label.Number.Equals(numberText.Trim(), StringComparison.OrdinalIgnoreCase))
             .ThenBy(label => label.Number, StringComparer.OrdinalIgnoreCase)
-            .Take(Math.Max(0, take - registered.Count));
-        return [.. registered, .. fallback];
+            .Take(take).ToList();
     }
 }
 
@@ -388,7 +255,7 @@ public static class ReferenceFallback
         _ => "DOC-",
     };
 
-    internal static IReadOnlyList<T> Ranked<T>(IEnumerable<T> source, string text, int take, params Func<T, string?>[] values)
+    public static IReadOnlyList<T> Ranked<T>(IEnumerable<T> source, string text, int take, params Func<T, string?>[] values)
     {
         var query = text.Trim();
         return source

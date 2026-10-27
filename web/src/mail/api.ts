@@ -62,7 +62,7 @@ export const mailPreviewView = z.object({ subject: z.string(), preheader: z.null
 export type MailPreviewView = z.infer<typeof mailPreviewView>;
 export const mailQueuedView = z.object({ messageIds: z.array(z.string()) });
 export type MailQueuedView = z.infer<typeof mailQueuedView>;
-export const customerContact = z.object({ name: z.string(), address: z.string(), role: z.nullable(z.string()) });
+export const customerContact = z.object({ name: z.string(), address: z.string(), role: z.nullable(z.string()), availabilityCode: z.optional(z.nullable(z.string())) });
 export type CustomerContact = z.infer<typeof customerContact>;
 export const composeTemplateChoice = z.object({ templateId: z.string(), versionId: z.string(), name: z.string(),
   version: z.number(), publishedAt: z.string(), languages: z.array(z.string()), defaultFor: z.array(z.string()),

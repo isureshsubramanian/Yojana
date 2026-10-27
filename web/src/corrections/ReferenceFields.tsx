@@ -105,7 +105,7 @@ export function ItemFamilyField({ id, label, value, onChange, optional, hint, di
     <select id={id} className="select" value={value ?? ""} disabled={disabled} aria-invalid={invalid || undefined} aria-describedby={hint ? `${id}-help` : undefined} onChange={(event) => onChange(event.target.value || null)}>
       <option value="">{optional ? "Any item class" : "Choose an item class…"}</option>
       {value && !families.options.some((option) => option.code === value) && <option value={value}>{families.name(value)}</option>}
-      {families.options.map((option) => <option key={option.code} value={option.code}>{option.name}</option>)}
+      {families.options.map((option) => <option key={option.code} value={option.code} disabled={Boolean(option.availabilityCode)}>{option.name}</option>)}
     </select>{hint && <span className={invalid ? "help bad" : "help"} id={`${id}-help`}>{hint}</span>}
   </label>;
 }

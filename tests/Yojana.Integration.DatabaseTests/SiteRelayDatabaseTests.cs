@@ -507,6 +507,7 @@ public sealed class SiteRelayDatabaseTests(IntegrationHostFixture fixture)
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.AddYojanaPlatform();
         builder.AddSerialisationModule();
+        builder.AddSerialisationDevelopmentPorts();
         builder.AddIntegrationModule();
         builder.Services.AddSingleton<IClock>(fixture.Clock);
         var app = builder.Build();

@@ -13,6 +13,7 @@ namespace Yojana.Serialisation.Ports;
 //        connector implementation. Change this comment with the port and CorrectItem caller.
 
 /// <summary>Development/test default: records idempotent requests and performs no Inventory posting.</summary>
+[DevelopmentOnly]
 public sealed class InMemoryStockReclassificationPort : IStockReclassificationPort
 {
     private readonly ConcurrentDictionary<Guid, StockReclassificationRequest> requests = new();

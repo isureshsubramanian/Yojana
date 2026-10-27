@@ -8,6 +8,7 @@ namespace Yojana.Serialisation.Ports;
 /// memory, with a tenant-neutral default for unknown items so development and tests can commission units. A host
 /// replaces both registrations; this class is never the production source of truth.
 /// </summary>
+[DevelopmentOnly]
 public sealed class InMemoryItemPorts : IItemQueryPort, IBomQueryPort
 {
     private readonly ConcurrentDictionary<Guid, ItemSerialisationProfile> items = new();

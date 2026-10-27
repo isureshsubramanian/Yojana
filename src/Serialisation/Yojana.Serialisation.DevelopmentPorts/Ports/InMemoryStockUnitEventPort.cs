@@ -22,6 +22,7 @@ namespace Yojana.Serialisation.Ports;
 // Engine: SQL Server / Azure SQL; the pairing relies on a single local transaction, never on a distributed one.
 
 /// <summary>Development/test boundary until Inventory supplies the same-transaction implementation.</summary>
+[DevelopmentOnly]
 public sealed class InMemoryStockUnitEventPort : IStockUnitEventPort
 {
     public ConcurrentQueue<StockPostingSerialCorrection> Corrections { get; } = new();

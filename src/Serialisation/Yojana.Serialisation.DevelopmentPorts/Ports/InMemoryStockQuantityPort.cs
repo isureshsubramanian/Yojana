@@ -4,6 +4,7 @@ using Yojana.Serialisation.Contracts;
 namespace Yojana.Serialisation.Ports;
 
 /// <summary>Development and test stock view; a host replaces IStockQuantityPort with its Inventory or connector adapter.</summary>
+[DevelopmentOnly]
 public sealed class InMemoryStockQuantityPort : IStockQuantityPort
 {
     private readonly ConcurrentDictionary<Guid, IReadOnlyList<OpenStockQuantity>> quantities = new();

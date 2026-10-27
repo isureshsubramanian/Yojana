@@ -4,7 +4,7 @@ import { useTenantTime } from "../components/tenantTime";
 import { useSession } from "../session/session";
 import { Breadcrumbs, PageHeader } from "../shell/PageHeader";
 import { ErrorNote } from "../units/common";
-import { mailApi, type ComposeTemplateChoice, type CoverageMailComposeView, type MailPreviewView, type MailRecipientInput } from "./api";
+import { mailApi, type ComposeTemplateChoice, type CoverageMailComposeView, type CustomerContact, type MailPreviewView, type MailRecipientInput } from "./api";
 import { DESIGNER_ROLES, holds, languageName, looksLikeAddress, recipientFor } from "./format";
 import "./mail.css";
 
@@ -34,7 +34,7 @@ export function Component() {
     mailApi.compose(unitId, controller.signal).then((loaded) => {
       setView(loaded);
       const first = loaded.contacts[0];
-      setTo(first ? [{ address: first.address, name: first.name }] : []);
+      setTo(first && !first.availabilityCode ? [{ address: first.address, name: first.name }] : []);
       const preferred = loaded.customerLanguage ?? "en";
       const choice = loaded.templates.find((x) => x.defaultFor.includes(preferred)) ?? loaded.templates.find((x) => x.defaultFor.length > 0) ?? loaded.templates[0];
       if (choice) { setVersionId(choice.versionId); setLanguage(choice.languages.includes(preferred) ? preferred : choice.languages[0] ?? "en"); }
@@ -93,6 +93,7 @@ export function Component() {
       <div className="mail-compose-grid">
         <div className="stack">
           <section className="card" aria-labelledby="mail-recipients-heading"><div className="card-header"><h2 id="mail-recipients-heading">Recipients</h2><span className="meta">{view.customerName ? `from ${view.customerName}'s contacts` : "no customer on the unit"}</span></div><div className="card-body stack">
+            {view.contacts.find((contact) => contact.availabilityCode)?.name && <div className="note warn">{view.contacts.find((contact) => contact.availabilityCode)!.name}</div>}
             <RecipientList label="To" recipients={to} onChange={setTo} contacts={view.contacts} max={10} />
             <RecipientList label="Cc" recipients={cc} onChange={setCc} contacts={view.contacts} max={10} />
             <p className="hint" style={{ margin: 0 }}>Only addresses on the customer's record, or typed and confirmed here. Each recipient in To gets their own copy; nobody sees the others' addresses except those in Cc.</p>
@@ -141,14 +142,14 @@ const display = (recipient: MailRecipientInput) => recipient.name ? `${recipient
 
 function RecipientList({ label, recipients, onChange, contacts, max }: {
   label: string; recipients: MailRecipientInput[]; onChange: (next: MailRecipientInput[]) => void;
-  contacts: { name: string; address: string; role: string | null }[]; max: number;
+  contacts: CustomerContact[]; max: number;
 }) {
   const [adding, setAdding] = useState(false);
   const [typed, setTyped] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const chosen = new Set(recipients.map((x) => x.address.toLowerCase()));
-  const available = contacts.filter((contact) => !chosen.has(contact.address.toLowerCase()));
-  const known = contacts.some((contact) => contact.address.toLowerCase() === typed.trim().toLowerCase());
+  const available = contacts.filter((contact) => !contact.availabilityCode && !chosen.has(contact.address.toLowerCase()));
+  const known = contacts.some((contact) => !contact.availabilityCode && contact.address.toLowerCase() === typed.trim().toLowerCase());
   const add = (recipient: MailRecipientInput) => { onChange([...recipients, recipient]); setTyped(""); setConfirmed(false); setAdding(false); };
   const id = `mail-${label.toLowerCase()}`;
   return <div className="field">

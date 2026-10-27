@@ -40,7 +40,11 @@ public sealed class ModuleReferenceRules
 
     private static bool IsContracts(string project) => project.EndsWith(".Contracts", StringComparison.Ordinal);
 
-    private static string ModuleOf(string project) => project.Replace(".Contracts", "", StringComparison.Ordinal);
+    private static string ModuleOf(string project)
+    {
+        if (project.StartsWith("Yojana.Serialisation.", StringComparison.Ordinal)) return "Yojana.Serialisation";
+        return project.Replace(".Contracts", "", StringComparison.Ordinal);
+    }
 
     [Fact]
     public void Every_module_references_only_contracts_of_other_modules()

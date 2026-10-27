@@ -11,6 +11,7 @@
     <ProjectReference Include="../../src/Platform/Yojana.Platform/Yojana.Platform.csproj" />
     <ProjectReference Include="../../src/Integration/Yojana.Integration/Yojana.Integration.csproj" />
     <ProjectReference Include="../../src/Serialisation/Yojana.Serialisation/Yojana.Serialisation.csproj" />
+    <ProjectReference Include="../../src/Serialisation/Yojana.Serialisation.DevelopmentPorts/Yojana.Serialisation.DevelopmentPorts.csproj" />
     <ProjectReference Include="../../src/Web/Yojana.Web/Yojana.Web.csproj" />
     <ProjectReference Include="../../tools/Yojana.Bench/Yojana.Bench.csproj" />
     <Compile Include="../../src/Integration/Yojana.Integration/Connectors/CX01/Testing/Cx01RelayLiveInput.cs" Link="Connectors/CX01/Cx01RelayLiveInput.cs" />

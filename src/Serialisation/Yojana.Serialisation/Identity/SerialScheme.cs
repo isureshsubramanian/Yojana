@@ -71,24 +71,3 @@ public interface ISerialSchemeSource
     /// <summary>The scheme whose pattern a value matches, if exactly one does.</summary>
     SerialSchemeDefinition? Recognise(string normalisedValue);
 }
-
-/// <summary>Code defaults and test registrations; tenant data replaces this with the settings screen of a later phase.</summary>
-public sealed class InMemorySerialSchemes : ISerialSchemeSource
-{
-    /// <summary>A plain eight-digit counter, no block: what an unconfigured tenant gets.</summary>
-    public static readonly SerialSchemeDefinition Default = new("internal", IdentifierType.InternalSerial, "", null, "", 8);
-
-    private readonly Dictionary<string, SerialSchemeDefinition> schemes = new(StringComparer.OrdinalIgnoreCase) { [Default.Code] = Default };
-
-    public void Register(SerialSchemeDefinition scheme) => schemes[scheme.Code] = scheme;
-
-    public SerialSchemeDefinition? Find(string code) => schemes.TryGetValue(code, out var s) ? s : null;
-
-    public IReadOnlyList<SerialSchemeDefinition> All() => schemes.Values.OrderBy(s => s.Code).ToList();
-
-    public SerialSchemeDefinition? Recognise(string normalisedValue)
-    {
-        var matches = schemes.Values.Where(s => s.TryParse(normalisedValue) is not null).ToList();
-        return matches.Count == 1 ? matches[0] : null;
-    }
-}

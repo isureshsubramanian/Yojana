@@ -48,6 +48,7 @@ public static class SerialisationModule
     public static IHostApplicationBuilder AddSerialisationModule(this IHostApplicationBuilder builder)
     {
         builder.AddModuleDbContext<SerialisationDbContext>(Schema);
+        builder.Services.AddHostedService<SerialisationPortCheckHostedService>();
         builder.Services.AddScoped<SerialisationPersonalDataHolder>();
         builder.Services.AddScoped<IPersonalDataHolder>(services =>
             services.GetRequiredService<SerialisationPersonalDataHolder>());
@@ -106,8 +107,7 @@ public static class SerialisationModule
         builder.Services.AddSingleton(baseOrderBackfill);
         builder.Services.AddScoped<LedgerBaseOrderBackfill>();
 
-        // Identity rules and commands (P1-T07, P1-T09). Item and BOM facts come through ports; until a connector or an
-        // in-house module registers them, the in-memory ports answer with defaults (development and tests only).
+        // Identity rules and commands (P1-T07, P1-T09). Item and BOM facts come through source ports.
         builder.Services.AddSingleton<IIdentifierPolicySource, IdentifierPolicySet>();
         // These factories keep PlatformDbContext, reached through ITenantSettings, outside Wolverine's
         // SerialisationDbContext handler graphs. Exposing either dependency directly prevents transaction discovery.
@@ -117,8 +117,7 @@ public static class SerialisationModule
             sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
         builder.Services.AddScoped<IdentifierService>();
         builder.Services.AddScoped<IdentifierAssignmentService>();
-        builder.Services.AddSingleton<InMemorySerialSchemes>();
-        builder.Services.TryAddSingleton<ISerialSchemeSource>(sp => sp.GetRequiredService<InMemorySerialSchemes>());
+        builder.Services.TryAddSingleton<ISerialSchemeSource, UnavailableSerialSchemeSource>();
         builder.Services.AddScoped<SerialAllocationReservationStore>();
         builder.Services.AddScoped<SerialRangeService>();
         builder.Services.AddScoped<AsBuiltCompleteness>();
@@ -181,8 +180,7 @@ public static class SerialisationModule
         builder.Services.AddScoped<LabelRenderer>();
         builder.Services.AddScoped<LabelPrintService>();
         builder.Services.AddScoped<LabelQueries>();
-        builder.Services.AddSingleton<InMemoryLabelPrinterPort>();
-        builder.Services.TryAddSingleton<ILabelPrinterPort>(sp => sp.GetRequiredService<InMemoryLabelPrinterPort>());
+        builder.Services.TryAddSingleton<ILabelPrinterPort, UnavailableLabelPrinterPort>();
         builder.Services.TryAddSingleton<IBarcodeEncoder, ZxingBarcodeEncoder>();
         builder.Services.TryAddSingleton<Yojana.Platform.Contracts.Security.IQrCodeRenderer, QrCodeRenderer>();
         builder.Services.TryAddSingleton<ILabelLookupUrlBuilder>(new LabelLookupUrlBuilder(
@@ -324,7 +322,10 @@ public static class SerialisationModule
         builder.Services.AddScoped(sp => new ClaimWaitingPeriodSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
         builder.Services.AddScoped(sp => new Claims.Risk.ClaimRiskRulesSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
         builder.Services.AddScoped(sp => new RecoverySettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
-        builder.Services.TryAddScoped<IWarrantyClaimsPort, WarrantyClaimsPort>();
+        builder.Services.AddScoped<WarrantyClaimsPort>();
+        builder.Services.TryAddScoped<IWarrantyClaimsPort>(sp => sp.GetRequiredService<WarrantyClaimsPort>());
+        builder.Services.AddKeyedScoped<IWarrantyClaimsPort>(SerialisationPortKeys.WarrantyClaimsRecordedSource,
+            (sp, _) => sp.GetRequiredService<WarrantyClaimsPort>());
         builder.Services.TryAddScoped<ISettlementFormulaPort, FullSettlementFormula>();
         builder.Services.TryAddScoped<IEntitlementRecoveryQuery, Entitlements.RecoveryEntitlementQueries>();
         // Coupled to SourceDocumentCorrectionEntitlements for the same Wolverine constraint as the P2 settings-backed
@@ -400,47 +401,31 @@ public static class SerialisationModule
             options.LocalQueue(CustomerSaleCertificateQueue.Name).UseDurableInbox().MaximumParallelMessages(1);
         });
 
-        // Document handlers (P1-T15): thin consumed events, documents through the publisher's query ports; in-memory
-        // ports stand in until a connector (P8) or an in-house module (P12) registers the real ones.
+        // Document handlers (P1-T15): thin consumed events, documents through the publisher's query ports.
         var documents = builder.Configuration.GetSection(DocumentOptions.SectionName).Get<DocumentOptions>() ?? new DocumentOptions();
         builder.Services.AddSingleton(documents);
         // Coupled to SerialConfirmationSettings for the same Wolverine constraint documented on that type: the
         // factory hides PlatformDbContext from document handlers whose transaction belongs to SerialisationDbContext.
         builder.Services.AddScoped(sp => new SerialConfirmationSettings(sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
         builder.Services.AddScoped<DocumentContext>();
-        builder.Services.AddSingleton<InMemoryDocumentPorts>();
-        builder.Services.TryAddSingleton<IPurchasingDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
-        builder.Services.TryAddSingleton<IManufacturingDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
-        builder.Services.TryAddSingleton<IProductionOrderAllocationPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
-        builder.Services.TryAddSingleton<IInventoryDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
-        builder.Services.TryAddSingleton<ISalesDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
-        builder.Services.TryAddSingleton<IOwnershipSourceDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
-        builder.Services.TryAddSingleton<IServiceDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
-        builder.Services.TryAddSingleton<IInternalSaleDocumentQueryPort>(sp => sp.GetRequiredService<InMemoryDocumentPorts>());
-        builder.Services.AddSingleton<InMemoryStockUnitEventPort>();
-        builder.Services.TryAddSingleton<IStockUnitEventPort>(sp => sp.GetRequiredService<InMemoryStockUnitEventPort>());
+        builder.Services.TryAddScoped<IProductionOrderAllocationPort, UnavailableProductionOrderAllocationPort>();
+        builder.Services.TryAddScoped<IOwnershipSourceDocumentQueryPort, UnavailableOwnershipSourceDocumentQueryPort>();
+        builder.Services.TryAddScoped<IServiceDocumentQueryPort, UnavailableServiceDocumentQueryPort>();
+        builder.Services.TryAddScoped<IInternalSaleDocumentQueryPort, UnavailableInternalSaleDocumentQueryPort>();
+        builder.Services.TryAddScoped<IStockUnitEventPort, UnavailableStockUnitEventPort>();
         builder.Services.TryAddScoped<IReplacementSourceQueryPort, DefaultReplacementSourceQueryPort>();
         builder.Services.TryAddScoped<IReturnReasonQueryPort, DefaultReturnReasonQueryPort>();
         builder.Services.AddScoped<IReleaseGuard, ReleaseCompletenessGuard>();
-        builder.Services.AddSingleton<InMemoryItemPorts>();
-        builder.Services.TryAddSingleton<IItemQueryPort>(sp => sp.GetRequiredService<InMemoryItemPorts>());
-        builder.Services.TryAddSingleton<IBomQueryPort>(sp => sp.GetRequiredService<InMemoryItemPorts>());
-        // Bind the in-memory name fallback to its in-memory fact store. A later module may replace IItemQueryPort with
-        // a scoped database adapter without turning this development catalogue into a captive scoped dependency.
-        builder.Services.AddSingleton(sp => new InMemoryItemNamePort(sp.GetRequiredService<InMemoryItemPorts>()));
-        builder.Services.TryAddSingleton<IItemNamePort>(sp => sp.GetRequiredService<InMemoryItemNamePort>());
-        // HIDDEN COUPLING (registration order): the Integration module is added after this one and its later
-        // IItemNamePort registration wins; it reaches this catalogue only through the published key for item ids it
-        // does not hold. Changing the module order in Program.cs silently restores catalogue-only names.
-        builder.Services.AddKeyedSingleton<IItemNamePort>(SerialisationPortKeys.ItemNameCatalogue,
-            (sp, _) => sp.GetRequiredService<InMemoryItemNamePort>());
-        builder.Services.AddSingleton<InMemoryItemFamilyNamePort>();
-        builder.Services.TryAddSingleton<IItemFamilyNamePort>(sp => sp.GetRequiredService<InMemoryItemFamilyNamePort>());
-        builder.Services.AddSingleton<InMemoryPartyContactPort>();
-        builder.Services.TryAddSingleton<IPartyContactPort>(sp => sp.GetRequiredService<InMemoryPartyContactPort>());
-        builder.Services.AddSingleton<InMemoryPartyNamePort>();
+        // HIDDEN COUPLING (registration order): these TryAdd Unavailable adapters are registered first;
+        // AddSerialisationDevelopmentPorts or Integration must run later so their source registrations win. Reversing
+        // the composition calls makes an honest Unavailable adapter win over a configured source. Keep the matching
+        // comments in the development extension and host composition root with this invariant.
+        builder.Services.AddKeyedSingleton<IItemNamePort, UnavailableItemNamePort>(SerialisationPortKeys.ItemNameCatalogue);
+        builder.Services.TryAddScoped<IItemFamilyNamePort, UnavailableItemFamilyNamePort>();
+        builder.Services.TryAddScoped<IPartyContactPort, UnavailablePartyContactPort>();
+        builder.Services.AddKeyedSingleton<IPartyNamePort, UnavailablePartyNamePort>(SerialisationPortKeys.PartyNameSource);
         builder.Services.TryAddScoped<IPartyNamePort>(sp => new ErasureAwarePartyNamePort(
-            sp.GetRequiredService<InMemoryPartyNamePort>(),
+            sp.GetRequiredKeyedService<IPartyNamePort>(SerialisationPortKeys.PartyNameSource),
             sp.GetRequiredService<IPersonalDataErasureReadPort>()));
         // A factory keeps PlatformDbContext (behind ITenantSettings) out of Wolverine handler graphs while adapting
         // only the existing party-name contract; screen command stamping is owned by the HTTP composition root.
@@ -449,27 +434,24 @@ public static class SerialisationModule
             sp.GetRequiredService<Yojana.Platform.Contracts.Tenancy.ITenantSettings>()));
         builder.Services.AddScoped<Yojana.Platform.Contracts.Settings.ISettingsSummaryContributor,
             LegalEntitySettingsSummaryContributor>();
-        builder.Services.AddSingleton<InMemoryLocationNameRegistry>();
         builder.Services.AddScoped<IRecordedLocationReferenceQuery, RecordedLocationReferenceQuery>();
-        // Inventory owns the location master later; this default decorates its development catalogue with only the
-        // tenant-filtered custody-history fallback exposed by the narrow location-name port.
-        builder.Services.TryAddScoped<ILocationNamePort, DefaultLocationNamePort>();
-        builder.Services.AddSingleton<InMemoryDocumentNumberRegistry>();
+        builder.Services.AddKeyedScoped<ILocationNamePort, RecordedLocationNamePort>(
+            SerialisationPortKeys.LocationNameRecordedSource);
+        builder.Services.TryAddScoped<ILocationNamePort>(sp =>
+            sp.GetRequiredKeyedService<ILocationNamePort>(SerialisationPortKeys.LocationNameRecordedSource));
         builder.Services.AddScoped<IRecordedDocumentReferenceQuery, RecordedDocumentReferenceQuery>();
-        // Unlike the in-memory registry, the fallback resolver is scoped because it reads this request's tenant-filtered
-        // DbContext. A real document module may replace the narrow port registration before this module is added.
-        builder.Services.TryAddScoped<IDocumentNumberPort, DefaultDocumentNumberPort>();
+        builder.Services.AddKeyedScoped<IDocumentNumberPort, RecordedDocumentNumberPort>(
+            SerialisationPortKeys.DocumentNumberRecordedSource);
+        builder.Services.TryAddScoped<IDocumentNumberPort>(sp =>
+            sp.GetRequiredKeyedService<IDocumentNumberPort>(SerialisationPortKeys.DocumentNumberRecordedSource));
         // P14-A: the Developer module reads only these thin filter/reference facts.
         builder.Services.TryAddScoped<IPublicEventContextPort, PublicEventContextPort>();
-        builder.Services.AddSingleton<InMemoryStockReclassificationPort>();
-        builder.Services.TryAddSingleton<IStockReclassificationPort>(sp => sp.GetRequiredService<InMemoryStockReclassificationPort>());
-        builder.Services.AddSingleton<InMemoryStockQuantityPort>();
-        builder.Services.TryAddSingleton<IStockQuantityPort>(sp => sp.GetRequiredService<InMemoryStockQuantityPort>());
-        builder.Services.AddSingleton<InMemoryWarrantyPorts>();
-        builder.Services.TryAddSingleton<IItemPolicyPort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
-        builder.Services.TryAddSingleton<ICustomerContractPort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
-        builder.Services.TryAddSingleton<IVendorWarrantyTermsPort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
-        builder.Services.TryAddSingleton<ITimeZoneSourcePort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
+        builder.Services.TryAddScoped<IStockReclassificationPort, UnavailableStockReclassificationPort>();
+        builder.Services.TryAddScoped<IStockQuantityPort, UnavailableStockQuantityPort>();
+        builder.Services.TryAddScoped<IItemPolicyPort, UnavailableItemPolicyPort>();
+        builder.Services.TryAddScoped<ICustomerContractPort, UnavailableCustomerContractPort>();
+        builder.Services.TryAddScoped<IVendorWarrantyTermsPort, UnavailableVendorWarrantyTermsPort>();
+        builder.Services.TryAddScoped<ITimeZoneSourcePort, UnavailableTimeZoneSourcePort>();
         // Coupled to TenantTimeZoneSettings for the same two-DbContext Wolverine constraint as the certificate settings:
         // the factories hide PlatformDbContext from entitlement handlers. Registering either implementation by type
         // makes Wolverine discover both database contexts and the transactional handler graph no longer starts.
@@ -481,8 +463,7 @@ public static class SerialisationModule
             sp.GetRequiredService<TenantTimeZoneSettings>(), sp.GetRequiredService<ITimeZoneSourcePort>()));
         builder.Services.TryAddScoped<ITimeZonePort>(sp => sp.GetRequiredService<TenantTimeZonePort>());
         builder.Services.TryAddScoped<ITenantTimeZoneReadPort>(sp => sp.GetRequiredService<TenantTimeZonePort>());
-        builder.Services.TryAddSingleton<IWarrantyClaimsPort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
-        builder.Services.TryAddSingleton<IWarrantyCertificatePort>(sp => sp.GetRequiredService<InMemoryWarrantyPorts>());
+        builder.Services.TryAddScoped<IWarrantyCertificatePort, UnavailableWarrantyCertificatePort>();
 
         // P6 certificate block. Owner modules expose snapshots through the narrow ports above; the engine owns only
         // immutable certificate rows and state-neutral certificate ledger events.

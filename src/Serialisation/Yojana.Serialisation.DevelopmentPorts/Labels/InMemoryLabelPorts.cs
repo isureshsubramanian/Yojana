@@ -4,6 +4,7 @@ using Yojana.Serialisation.Contracts;
 namespace Yojana.Serialisation.Labels;
 
 /// <summary>Development/test printer. Job id is its idempotency key, matching the production port contract.</summary>
+[DevelopmentOnly]
 public sealed class InMemoryLabelPrinterPort : ILabelPrinterPort
 {
     private readonly ConcurrentDictionary<Guid, LabelPrinterRequest> sent = new();
