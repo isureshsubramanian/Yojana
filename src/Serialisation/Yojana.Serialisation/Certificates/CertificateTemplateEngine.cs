@@ -343,6 +343,7 @@ public sealed class CertificateTemplateEngine(ICertificateTemplateLanguageCatalo
                 "issued_at" => metadata is null ? "" : Utc(metadata.IssuedAt).ToString("O", CultureInfo.InvariantCulture),
                 "supersedes_tracking_number" => metadata?.SupersedesTrackingNumber ?? "",
                 "supersede_reason" => metadata?.SupersedeReason ?? "",
+                "superseded_by_tracking_number" => metadata?.SupersededByTrackingNumber ?? "",
                 "payload_hash" => metadata?.PayloadHash ?? "",
                 "verify_reference" => metadata?.VerifyReference ?? "",
                 _ => "",

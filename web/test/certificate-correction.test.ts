@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { changeLabel, correctState, dispositionFileName, factChanges, mayIssueCertificates, printCopyState, reasonProblem } from "../src/certificates/correction.ts";
+import { changeLabel, correctState, currentVersion, dispositionFileName, factChanges, mayIssueCertificates, printCopyState, reasonProblem } from "../src/certificates/correction.ts";
 import { certificateCorrectionPreviewSchema } from "../src/certificates/types.ts";
 import * as z from "zod/mini";
 
@@ -53,4 +53,13 @@ test("the downloaded copy keeps the server's file name", () => {
   assert.equal(dispositionFileName("attachment; filename=\"YJ2U-CRT-1-v1-copy.pdf\"", "x"), "YJ2U-CRT-1-v1-copy.pdf");
   assert.equal(dispositionFileName("attachment; filename=a.pdf; filename*=UTF-8''YJ2U%20copy.html", "x"), "YJ2U copy.html");
   assert.equal(dispositionFileName(null, "fallback.pdf"), "fallback.pdf");
+});
+
+test("a copy of a superseded version names the latest issued version in its chain", () => {
+  const third = { ...row(3), status: "issued" };
+  const second = { ...row(2), status: "superseded" };
+  assert.equal(currentVersion([row(1), second, third], "c1"), "CRT-3");
+  assert.equal(currentVersion([row(1), row(2)], "c1"), "CRT-2");
+  assert.equal(currentVersion([row(1)], "c1"), null);
+  assert.equal(currentVersion(undefined, "c1"), null);
 });
