@@ -142,8 +142,11 @@ public static class AssignProductionComponentsHandler
                     "scan a commissioned component serial");
             componentIds.Add(component.UnitId);
         }
+        // A unit can have earlier holds (linked, or returned and issued again); only its open hold on this order counts.
         var holds = await context.Db.ProductionComponentHolds.Where(row => row.TenantId == context.Tenant.TenantId
-            && componentIds.Contains(row.UnitId)).ToListAsync(cancellationToken);
+            && componentIds.Contains(row.UnitId) && row.ProductionOrderType == command.ProductionOrder.Type
+            && row.ProductionOrderId == command.ProductionOrder.Id && row.LinkedAt == null && row.ReturnedAt == null)
+            .ToListAsync(cancellationToken);
         if (holds.Count != componentIds.Count)
             throw new Yojana.Serialisation.Contracts.CommandRefusedException("component_not_held_for_order", "A scanned component is not held in production.",
                 "refresh the order and scan an open held component");
