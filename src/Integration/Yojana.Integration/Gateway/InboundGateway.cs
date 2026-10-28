@@ -7,6 +7,7 @@ using Yojana.Integration.Contracts;
 using Yojana.Integration.Data;
 using Yojana.Integration.Data.Entities;
 using Yojana.Integration.DeadLetters;
+using Yojana.Integration.Outbox;
 using Yojana.Platform.Contracts.Identifiers;
 using Yojana.Platform.Contracts.Tenancy;
 using Yojana.Platform.Contracts.Time;
@@ -51,7 +52,7 @@ public sealed class TranslateInboundMessageHandler
 public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenant, IClock clock,
     GatewayReferenceStore references, ConnectionCapabilityReader capabilities, BoundedWaitResequencer resequencer,
     IMessageBus bus, InboundTranslationRecoveryOptions recoveryOptions, ITenantCurrency currency,
-    IErpChangeDivergenceSink erpChangeDivergences)
+    IErpChangeDivergenceSink erpChangeDivergences, IInboundMessageParkingSink parking)
 {
     public async Task<GatewayTranslationResult> TranslateAsync(Guid inboundMessageId, CancellationToken cancellationToken)
     {
@@ -136,6 +137,8 @@ public sealed class InboundGateway(IntegrationDbContext db, ITenantContext tenan
             row.TranslationStartedAt = null;
             row.LastTranslationError = foreignAmountReason;
             row.AttentionReasonCode = "currency_not_home";
+            // Parked like any held message so a person can retry it once the ERP or the connection mapping changes.
+            await parking.ParkInboundAsync(row, "currency_not_home", foreignAmountReason, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
             return new(row.InboundMessageId, row.MessageType, false, 0, [foreignAmountReason]);
         }

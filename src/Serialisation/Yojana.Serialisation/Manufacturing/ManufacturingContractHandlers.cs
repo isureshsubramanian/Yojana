@@ -141,14 +141,15 @@ public sealed class ManufacturingContractService(
                 }
             }
 
-            var repeatedHeld = (message.HeldComponents ?? []).GroupBy(component => component.Serial,
-                StringComparer.OrdinalIgnoreCase).Where(group => group.Count() > 1).Select(group => group.Key)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            foreach (var serial in repeatedHeld)
-                refusals.Add(Refusal(null, null, "component_repeated", $"Held component serial '{serial}' appears more than once.",
+            // A serial identifies a unit only together with its item: the ERP may number a CPU and a DIMM alike.
+            var repeatedHeld = (message.HeldComponents ?? []).GroupBy(component =>
+                    (Serial: component.Serial.ToUpperInvariant(), component.ItemId))
+                .Where(group => group.Count() > 1).Select(group => group.Key).ToHashSet();
+            foreach (var repeatedSerial in repeatedHeld)
+                refusals.Add(Refusal(null, null, "component_repeated", $"Held component serial '{repeatedSerial.Serial}' appears more than once.",
                     "send each returned serial once"));
             foreach (var component in (message.HeldComponents ?? []).Where(component =>
-                         !repeatedHeld.Contains(component.Serial)))
+                         !repeatedHeld.Contains((component.Serial.ToUpperInvariant(), component.ItemId))))
             {
                 var unit = await resolver.ResolveAsync(new DocumentSerial(component.Serial), component.ItemId,
                     cancellationToken);
