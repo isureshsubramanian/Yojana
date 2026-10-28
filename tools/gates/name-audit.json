@@ -1,7 +1,7 @@
 {
   "$comment": "Competitor and external-product name audit (standing rule; ADR-0001 AI 16; ADR-0002 AI 13). The names live base64-encoded in name-denylist.b64 so that the list itself is not a mention in source. Matches are case-insensitive and word-bounded. Only the connector adapters and the legacy-migration staging adapter may contain protocol facts (table names, URL schemes, format identifiers) of an external system.",
   "denyListFile": "name-denylist.b64",
-  "scanRoots": ["src", "tests", "tools", "web", "scripts", ".github", "Makefile", "README.md", "docker-compose.yml", "Directory.Build.props", "Directory.Packages.props", ".editorconfig", ".gitignore"],
+  "scanRoots": ["src", "tests", "tools", "web", "scripts", ".github", "Makefile", "README.md", "DEVELOPING.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "docker-compose.yml", "Directory.Build.props", "Directory.Packages.props", ".editorconfig", ".gitignore"],
   "excludeDirectories": ["bin", "obj", "node_modules", "dist", ".browser", ".git"],
   "excludeFiles": ["src/Web/Yojana.Web/Notices/THIRD-PARTY-NOTICES.txt", "src/Relay/Yojana.Relay/Notices/THIRD-PARTY-NOTICES.txt"],
   "allowedPathPrefixes": ["src/Integration/Yojana.Integration/Connectors/", "src/Integration/Yojana.Integration/Migration/Staging/"]

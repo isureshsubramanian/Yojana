@@ -42,6 +42,8 @@ bench-*.json
 sample-data/
 samples/
 *.png
+# README screenshots only (owner, 2026-10-28); scripts/check-push.sh allows the same path.
+!.github/assets/*.png
 *.jpg
 *.jpeg
 *.gif

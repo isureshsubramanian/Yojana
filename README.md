@@ -1,145 +1,108 @@
+<div align="center">
+
 # Yojana
 
-Serial number and warranty management at million-unit scale: a modular monolith on .NET 10 and
-Microsoft SQL Server / Azure SQL, with a React web client. The domain design lives in the project's
-architecture decision records; the build plan lives in `docs/plan/` (both are kept beside the code and
-are not part of the repository history).
+**Open-source serial-number and warranty management for companies that build, sell and service hardware.**
 
-## Layout
+Every unit, every part inside it, every warranty — traced from goods receipt to production, delivery, service and return.
 
-| Path | What it is |
+[![Licence: Apache-2.0](https://img.shields.io/badge/licence-Apache--2.0-blue.svg)](LICENSE)
+![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)
+![React + TypeScript](https://img.shields.io/badge/React-TypeScript-3178C6)
+![SQL Server](https://img.shields.io/badge/SQL%20Server-2022%2B-CC2927)
+
+<picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/asbuilt-dark.png"><img src=".github/assets/asbuilt-light.png" alt="A released GPU server and the 25 serialised parts recorded inside it"></picture>
+
+</div>
+
+---
+
+## Why Yojana
+
+ERP serial fields tell you *that* a serial was received or shipped. They rarely tell you what is **inside** a server,
+which **warranty** covers it today, who **had** it last month, or what happened when a part was swapped in the field.
+Yojana keeps that history as an append-only ledger beside your ERP, so service, quality and finance all see the same
+facts.
+
+## What it does
+
+| | |
 |---|---|
-| `src/Platform/` | MOD-01 platform foundation: tenancy (session context + row-level security), SQL Server conventions, Wolverine messaging with the SQL Server outbox, Quartz.NET scheduling with the SQL Server job store, authentication and role policies, development seeding. `Yojana.Platform.Contracts` is the only project every module may reference besides its own and other modules' `.Contracts` projects. |
-| `src/Serialisation/`, `src/Integration/` | Bounded contexts, one implementation project and one `.Contracts` project each. Modules talk through contracts, commands and events, never through each other's tables. |
-| `src/Web/Yojana.Web` | The composition root and HTTP host. Serves the web client from its `wwwroot` (copied from `web/dist` at build), `/notices` (third-party attributions), `/health`, sign-in, tenant selection, the shell's overview and health endpoints, and the P0 smoke endpoints. |
-| `src/Workers/Yojana.RenderWorker` | Loopback-only certificate PDF worker. It owns the bounded browser pool and the pinned headless-shell installer; the serialisation module talks to it only through the `IPdfRenderer` HTTP contract. |
-| `web/` | MOD-02 web client: React shell in the Glass house theme (tokens in `src/styles/theme-glass.css`, applied through `data-theme`; light and dark through `data-mode` or the OS preference), routing with one lazy chunk per route, one inline SVG sprite, system font stack, print stylesheet. Built by esbuild alone (`web/build.mjs`); no bundler plugins, no CSS-in-JS. Shared components in `web/src/components/` (scan-first input, server-paged grid, find-within bar, selection-set preview, approval inbox, timeline rail, status badge, search palette with hover card) render server-shaped data only. Development builds add a `/patterns` gallery of them on fixture data. |
-| `tools/web-perf/` | `lcp.mjs`: drives a Chromium-based browser over the DevTools protocol (no packages) to measure largest contentful paint under a 10 Mbit link and to take the design screenshots. |
-| `tests/` | Architecture rules (project-reference graph), platform unit tests, and database tests that run when `YOJANA_TEST_SQL` points at a disposable SQL Server database. |
-| `tools/Yojana.Gates` | The four gates: licence policy, notices generation, name audit, bundle budget, plus a self-test that plants a violation for each. |
-| `tools/gates/` | Gate configuration: the licence allow-list and exceptions, the budgets, and the base64-encoded name deny-list. |
-| `tools/notices-input/` | Generator inputs for notices that cannot be read from a package (repository licence texts with source URL and date, shared frameworks, vendored files). |
-| `tools/sqlserver-verification/` | The P0-T08 verification scripts and harness; results are recorded in the ADR. |
+| 🔢 **Unit identity & custody** | One record per physical unit: manufacturer, vendor and internal serials, MAC, IMEI, GS1 (SGTIN, GIAI) and UDI identifiers; location and owner over time; scan-first screens. |
+| 🧩 **As-built records** | Components issued in the ERP become the parent's as-built tree automatically; returns and swaps keep the history. |
+| 🛡️ **Warranty & entitlements** | Policy engine for standard and extended cover, add-ons and contract terms; "is this unit covered?" answered in milliseconds. |
+| 🔧 **Claims, RMA & refurbishment** | Claims, campaigns and supplier recovery; returns, replacements and refurbish-to-stock with a full trail. |
+| ✍️ **Corrections with approval** | Mistakes are corrected, never edited away: every fix is an event with a reason, an approver and an audit trail. |
+| 🏷️ **Certificates & labels** | Warranty certificates as PDF and serial labels on plain laser-printer label sheets. |
+| 🔌 **ERP integration** | An ERP-agnostic gateway with connectors; a relay for on-premises ERPs; the ERP stays the system of record for stock. |
+| 🌐 **Customer portal, API & webhooks** | Customers register products and raise returns; developers get a public API and signed webhooks. |
+| 📦 **Imports & legacy migration** | Spreadsheet imports and a rehearsed, reversible cut-over from a legacy serial system. |
+| 🔐 **Built for business data** | Multi-company with row-level security, passkeys and TOTP, role-based approvals, privacy erasure, no PII in logs. |
 
-## Developer environment
+<table>
+<tr>
+<td width="33%"><picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/coverage-dark.png"><img src=".github/assets/coverage-light.png" alt="What a unit is covered for today, line by line"></picture><br><sub><b>What's covered</b>: one answer from every live cover, in customer wording</sub></td>
+<td width="33%"><picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/claims-dark.png"><img src=".github/assets/claims-light.png" alt="Claims with ageing and approved amounts"></picture><br><sub><b>Claims</b>: adjudicated per line, aged from submission</sub></td>
+<td width="33%"><picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/returns-dark.png"><img src=".github/assets/returns-light.png" alt="Returns in six stages with exceptions first"></picture><br><sub><b>Returns</b>: every RMA through six stages, exceptions first</sub></td>
+</tr>
+</table>
 
-Prerequisites: .NET SDK 10.0.3xx (see `global.json`), Node.js 22 or later with npm, Docker, GNU make.
+<sub>Screenshots show the fictional companies and products from the project's demo loader (`make demo`).</sub>
+
+## Measured, not promised
+
+| Workload | Result | Where measured |
+|---|---|---|
+| Goods receipt of **10,000 serials** | **3.17 s** (warm) | Benchmark host, SQL Server 2025 Developer |
+| Shipment of 500 serials | 431 ms database time | Same host |
+| Warranty entitlement check | **p99 10.7–11.5 ms** | Same host |
+| Legacy migration rehearsal, **150,000 serials** | cut-over 24.6 min, full undo 26 min | Same host |
+
+Figures are from the project's own phase benchmarks on a single developer-class Windows machine; your hardware will differ.
+
+## Quick start
+
+Prerequisites: .NET SDK 10, Node.js 22+, Docker, GNU make.
+
+```bash
+git clone https://github.com/isureshsubramanian/Yojana.git && cd Yojana
+make env restore web-install web   # generated dev passwords, packages, web client
+make db-up db-wait seed            # SQL Server in Docker, demo tenant with one user per role
+make run                           # open http://localhost:5080
+```
+
+Sign in as `admin@dev.yojana.local` with the `YOJANA_SEED_PASSWORD` written to `.env`. Full developer guide:
+[DEVELOPING.md](DEVELOPING.md).
+
+## Architecture at a glance
 
 ```
-make env            # writes .env with generated development passwords (git-ignored; see .env.example)
-make restore        # packages and local tools (dotnet-ef)
-make web-install    # web client packages, exactly as locked
-make web            # type-check and build the web client into web/dist
-make db-up db-wait  # SQL Server 2022 Express in Docker on localhost:1433, sa password from .env
-make seed           # migrate and seed tenant DEV with one user per role
-make run            # http://localhost:5080 serves the client and the API
-make web-dev        # optional: client with live reload on http://localhost:5173 (builds into web/.dev), API proxied to 5080
+ ERP (on-premises or cloud)                      People
+        │  API or database                         │  browser, scanner, portal
+   ┌────▼─────┐   signed, pinned    ┌──────────────▼──────────────┐
+   │  Relay   │ ──────────────────► │  Yojana host (.NET 10)       │
+   └──────────┘                     │  Integration · Serialisation │──► Webhooks / public API
+                                    │  Knowledge · Developer       │
+                                    └──────────────┬──────────────┘
+                                                   │ outbox, row-level security
+                                            SQL Server / Azure SQL
 ```
 
-### Certificate PDF worker
+A modular monolith: modules talk only through contracts, commands and events, never each other's tables.
+Messages leave through a transactional outbox; every tenant table is protected by row-level security.
 
-The default certificate renderer remains dependency-free HTML. To enable PDF output:
+## Quality gates
 
-```
-make browser        # downloads and verifies the pinned headless-shell archive for this host
-make render-worker  # loopback worker at http://127.0.0.1:5091
-```
+`make gate` must pass before anything is merged: licence policy, generated third-party notices, external-name audit,
+web bundle budget and client source rules. `make self-test` proves each gate fails on a planted violation. The
+third-party notices ship inside every build and are served at `/notices`.
 
-The browser comes directly from the upstream Chrome for Testing archive onto the customer host; it is
-not redistributed with Yojana. The installer verifies the configured SHA-256 before unpacking, records
-the installed executable hash, and keeps `LICENSE.headless_shell` beside the executable. It downloads
-only `chrome-headless-shell`: it never downloads full Chrome or ffmpeg. Browser version, platform URLs,
-hashes and install path are pinned in `src/Workers/Yojana.RenderWorker/appsettings.json`.
+## Contributing & security
 
-Set `Serialisation:Certificates:Renderer` to `pdf` and
-`Serialisation:Certificates:PdfWorkerBaseUrl` to `http://127.0.0.1:5091` in the web-host configuration.
-Leaving the renderer as `html` is the documented fallback when no worker is configured. The worker accepts
-`POST /render` with `{ html, page }` (`page` contains size, orientation, four millimetre margins,
-header/footer HTML and the page-number flag) and returns `application/pdf` bytes. It disables JavaScript,
-blocks every page request except `data:` URLs, enforces the configured render timeout, and recycles bounded
-browser slots after the configured render count.
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Please report vulnerabilities
+privately as described in [SECURITY.md](SECURITY.md), not in a public issue.
 
-The generated `src/Web/Yojana.Web/Notices/THIRD-PARTY-NOTICES.txt` includes PuppeteerSharp, every newly shipped
-transitive package and the platform-specific `LICENSE.headless_shell` texts. Restored transitive packages supplied
-by the .NET shared framework are still licence-gated, but are not duplicated as worker artefact notice blocks. The
-generated file is copied into the worker artefact under
-`Notices/` and is available from the loopback worker at `/notices`. The notice gate compares every configured
-browser version, URL and archive hash with `tools/notices-input/components/`, so a browser bump cannot pass
-without its matching notice input.
+## Licence
 
-No password is built into the repository. The host's development connection string carries the login only;
-`YOJANA_SQL_PASSWORD` completes it (a string with no SQL login, or with its own password, is used as is), and
-the container, `make db-wait` and the seed read the same `.env`. Changing the sa password after the container
-exists needs `make db-reset` (drops the development data volume) before `make db-up`.
-
-Behind a reverse proxy, list its addresses under `Platform:ForwardedHeaders:KnownProxies` or its CIDR ranges under
-`KnownNetworks`, and set `ForwardLimit` to the proxy-chain length. With neither allow-list configured the middleware
-stays off and ignores `X-Forwarded-For`, so deployment configuration must identify every proxy that may supply the
-client address used by sign-in limiting and audit events.
-
-Mail (password resets, invitations, later customer mail) goes through one transport configured under
-`Platform:Mail`. `Transport` is `none` by default: nothing is sent and every message is recorded as failed, with a
-warning at startup. Development writes each message as an `.eml` file into `/tmp/yojana-mail` (`pickup`). For a
-deployment choose `smtp` (`Smtp:Host`, `Port`, `Security` `starttls` or `tls`; `none` only to a loopback relay;
-`UserName` with the password in `YOJANA_MAIL_SMTP_PASSWORD`) or `graph` (`Graph:SenderMailbox`, and either a managed
-identity or `Credential: client_secret` with `TenantId`, `ClientId` and `YOJANA_MAIL_GRAPH_CLIENT_SECRET`; the app
-needs the `Mail.Send` application permission). `LinkBaseUrl` is the https address people open the product at; every link in a mail is built from it, never from the
-request. `FromAddress` must belong to a domain whose SPF and DKIM records cover
-that transport. A tenant chooses only its sender name, reply-to address and the footer line shown after its name on
-every e-mail (tenant settings `mail.sender_name`, `mail.reply_to`, `company.mail_footer_line`), under Settings › Company;
-e-mail carries no logo or images. Invitation expiry (`security.invitation.valid_days`, 1 to 30, default 7) is on
-Settings › Sign-in policy. A tenant administrator checks the transport with `POST /api/platform/mail/test`, which sends to their
-own address, then `GET /api/platform/mail/messages/{id}`. Failed attempts retry for about four hours
-(`MaxAttempts`, default 8); the delivery log keeps no message bodies and is purged after `LogRetentionDays` (90).
-
-Passkeys (fingerprint, face or device PIN; WebAuthn checked by Fido2NetLib) belong to one host name, the relying party
-id. Set it in `appsettings.json` under `Platform:Passkeys`: `RelyingPartyId` (for example `yojana.example.com`) and
-`Origins`, every https address people use to reach the product, each on that host or a subdomain of it. It is never
-taken from another setting. Choose it before anyone adds a passkey: every passkey is bound to the id it was created
-for, so changing it later means everyone adds their passkeys again. While it is empty passkeys are off and the
-passkey endpoints answer `passkey_unavailable`. Development accepts `http://localhost:5080` and the live-reload client on `5173`. A tenant
-administrator allows passkeys (on by default) and passwordless sign-in with a passkey alone (off by default) under
-Settings › Sign-in policy; a person in several companies follows the strictest, and a passkey always counts as the
-second step.
-
-Seeded users are `<role>@dev.yojana.local` (for example `serial_administrator@dev.yojana.local`) and
-`admin@dev.yojana.local`, password `YOJANA_SEED_PASSWORD` from `.env` (change it there and rerun `make seed` to
-reset every seeded user to it). Sign in with
-`POST /api/auth/sign-in {"email","password"}`; with one membership the tenant is selected automatically,
-otherwise `POST /api/auth/select-tenant {"tenantCode"}`. `POST /api/smoke/ping {"note"}` publishes a
-message through the outbox; `GET /api/smoke` shows the request, handler and job rows for the tenant.
-
-`make test` runs the database-free tests; `make test-db` needs `YOJANA_TEST_SQL`; `make web-test` runs the client's unit tests with Node's built-in runner. `make web-lcp` measures the
-shell's largest contentful paint against a running host with a Chromium-based browser (`YOJANA_BROWSER` to pick
-one) and fails above 2.0 s; CI runs it against the seeded database.
-
-## Gates
-
-`make gate` is what CI runs: licence policy, notices up to date, name audit, bundle budget and client source
-rules. `make self-test` proves each gate fails on a planted violation. Adding a NuGet package means, in the same
-change: a version in `Directory.Packages.props`, a licence the policy allows (or an exception the owner has
-decided on in `tools/gates/licence-policy.json`), and `make notices` with the regenerated
-`src/Web/Yojana.Web/Notices/THIRD-PARTY-NOTICES.txt` committed. Adding an npm package means the same: its
-licence (development tooling included) must be allowed, and the production closure is credited from the
-licence text each package ships. The notices file ships inside the artefact and is served at `/notices` and
-from the user menu.
-
-The budget gate also enforces two MOD-02 source rules: no CSS-in-JS runtime may be imported, and only
-`web/src/theme/` may touch the `data-theme` and `data-mode` attributes.
-
-The name audit forbids competitor and external-product names in source. Protocol facts of an external
-system (table names, URL schemes, format identifiers) are allowed only under
-`src/Integration/Yojana.Integration/Connectors/<code>/` and the migration staging adapter.
-
-## Conventions enforced by the platform
-
-- `tenant_id` leads every primary key and index of a tenant table; the model is validated at start.
-- Surrogate keys come from `TimeOrderedId.New()`, which is time-ordered under SQL Server's
-  `uniqueidentifier` comparison (a plain UUIDv7 is not; see the ADR verification notes).
-- Every tenant table carries a FILTER and BLOCK predicate pair on `sec.fn_tenant_predicate`, added by the
-  module's migration with `migrationBuilder.AddTenantPolicy(schema, table)`; the tenant is set once per
-  connection through `SESSION_CONTEXT('tenant_id')`.
-- `datetime2(3)` in UTC for every timestamp; snake_case names; one schema per module; platform
-  migrations apply before module migrations.
-- Messages are published inside the unit of work and delivered after commit (Wolverine outbox); jobs
-  derive from `TenantJob` and are scheduled per tenant.
+Yojana is licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) and the generated third-party
+notices served by every build.
