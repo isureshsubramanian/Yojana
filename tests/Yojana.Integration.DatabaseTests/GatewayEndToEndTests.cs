@@ -282,6 +282,10 @@ public sealed class GatewayEndToEndTests(IntegrationHostFixture fixture)
         Assert.True(await check.ServiceProvider.GetRequiredService<IntegrationDbContext>().ExceptionTasks
             .AnyAsync(value => value.InboundMessageId == accepted.InboundMessageId
                 && value.Kind == "currency_not_home"));
+        var parked = await check.ServiceProvider.GetRequiredService<IntegrationDbContext>().DeadLetterItems
+            .SingleAsync(value => value.SourceId == accepted.InboundMessageId);
+        Assert.Equal("currency_not_home", parked.ReasonCode);
+        Assert.Equal(DeadLetterStatus.NeedsAttention, parked.Status);
     }
 
     [DatabaseFact]

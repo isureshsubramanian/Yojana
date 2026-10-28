@@ -593,6 +593,42 @@ public sealed class DocumentEventTests(SerialisationHostFixture fixture)
         await AssertComponentsTakeParentLocationAsync(db, assigned.ParentUnitId);
     }
 
+    [DatabaseFact]
+    public async Task Returned_components_of_different_items_may_share_a_serial()
+    {
+        // The ERP numbered a CPU and a DIMM alike in live receipt 142; serial plus item identifies the unit.
+        var tenant = await fixture.NewTenantAsync("dmsame");
+        var serial = "SAME" + Guid.NewGuid().ToString("N")[..6].ToUpperInvariant();
+        var parentItem = Guid.NewGuid();
+        var cpuItem = Guid.NewGuid();
+        var dimmItem = Guid.NewGuid();
+        var warehouse = Guid.NewGuid();
+        var stock = new ReceiptDocument(new DocumentRef("goods_receipt", Guid.NewGuid()), Guid.NewGuid(), T0,
+            [Line(1, cpuItem, warehouse, serial), Line(2, dimmItem, warehouse, serial)]);
+        Ports.Add(stock);
+        await InvokeAsync<ConsumedEventResult>(tenant, new PurchasingReceiptPosted(Env(T0), stock.Document));
+        var order = new DocumentRef("production_order", Guid.NewGuid());
+        var issue = new ComponentIssueDocument(new DocumentRef("component_issue", Guid.NewGuid()), order,
+            T0.AddHours(1), [new ComponentIssue(1, cpuItem, 1, [new DocumentSerial(serial)]),
+                new ComponentIssue(2, dimmItem, 1, [new DocumentSerial(serial)])], parentItem, 2m);
+        Ports.Add(issue);
+        await InvokeAsync<ConsumedEventResult>(tenant, new ManufacturingComponentIssued(Env(T0.AddHours(1)), issue.Document));
+        var returned = new ProductionReceipt(new DocumentRef("production_receipt", Guid.NewGuid()), order,
+            T0.AddHours(2), [], [], warehouse,
+            [Line(1, cpuItem, warehouse, serial), Line(2, dimmItem, warehouse, serial)], parentItem, 2m);
+        Ports.Add(returned);
+
+        var result = await InvokeAsync<ConsumedEventResult>(tenant,
+            new ManufacturingProductionReceiptPosted(Env(T0.AddHours(2)), returned.Document));
+
+        Assert.DoesNotContain(result.Exceptions, text => text.Contains("component_repeated", StringComparison.Ordinal));
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var holds = await db.ProductionComponentHolds.Where(row => row.ProductionOrderId == order.Id).ToListAsync();
+        Assert.Equal(2, holds.Count);
+        Assert.All(holds, hold => Assert.NotNull(hold.ReturnedAt));
+    }
+
     // A component linked out of a production hold leaves in_production and sits where its parent sits.
     private static async Task AssertComponentsTakeParentLocationAsync(SerialisationDbContext db, Guid parent)
     {
