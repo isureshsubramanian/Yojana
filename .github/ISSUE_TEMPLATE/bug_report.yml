@@ -1,0 +1,39 @@
+name: Bug report
+description: Something does not work as described
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please do not include customer data, serial numbers from a live system, passwords or keys.
+        Security problems go through **Security → Report a vulnerability**, not here.
+  - type: textarea
+    id: did
+    attributes:
+      label: What did you do?
+      description: Steps, screen or API call, and the data you used (demo data is ideal).
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: saw
+    attributes:
+      label: What happened instead?
+      description: Error text, refusal rule, screenshot.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: e.g. main @ e36b46f
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: e.g. macOS 27, SQL Server 2025 Developer, .NET 10.0.402
