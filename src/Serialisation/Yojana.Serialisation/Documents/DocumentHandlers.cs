@@ -610,18 +610,47 @@ internal static class Components
         DocumentRef order, Guid parentUnitId, IReadOnlyList<ProductionComponentHold> holds, string actor,
         Guid legalEntityId, DateTime assignedAt, CancellationToken ct)
     {
+        // All or nothing inside the caller's transaction: links, custody moves and hold closing commit together. A
+        // refusal part-way rolls back to the savepoint, so a caller that records the refusal and commits leaves no
+        // link without its closed hold.
+        await ctx.Db.SaveChangesAsync(ct);
+        var transaction = ctx.Db.Database.CurrentTransaction;
+        const string savepoint = "production_component_assign";
+        if (transaction is not null) await transaction.CreateSavepointAsync(savepoint, ct);
+        try
+        {
+            return await AssignCoreAsync(ctx, commandId, order, parentUnitId, holds, actor, legalEntityId,
+                assignedAt, ct);
+        }
+        catch (CommandRefusedException) when (transaction is not null)
+        {
+            await transaction.RollbackToSavepointAsync(savepoint, ct);
+            ctx.Db.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    private static async Task<RecordAssemblyResult> AssignCoreAsync(DocumentContext ctx, Guid commandId,
+        DocumentRef order, Guid parentUnitId, IReadOnlyList<ProductionComponentHold> holds, string actor,
+        Guid legalEntityId, DateTime assignedAt, CancellationToken ct)
+    {
         var parent = (await ParentsAsync(ctx, order, ct)).SingleOrDefault(row => row.UnitId == parentUnitId)
             ?? throw new CommandRefusedException("parent_not_on_order", "The scanned parent was not received for this production order.", "scan a parent received for this order");
         var expected = await ctx.Bom.ExpectedSerialisedComponentsAsync(parent.ItemId,
             DateOnly.FromDateTime(parent.CreatedAt), ct);
         var open = await ctx.Db.AssemblyLinks.AsNoTracking().Where(link => link.TenantId == ctx.Tenant.TenantId
             && link.ParentUnitId == parentUnitId && link.RemovedAt == null).ToListAsync(ct);
+        // A component already linked to this parent (an earlier run that stopped before closing its hold) keeps its
+        // link; only the hold and custody are completed.
+        var existing = open.Where(link => link.ChildUnitId is not null)
+            .ToDictionary(link => link.ChildUnitId!.Value, link => link.LinkId);
         var inputs = new List<ChildInput>();
         foreach (var hold in holds)
         {
             if (hold.ProductionOrderType != order.Type || hold.ProductionOrderId != order.Id
                 || hold.LinkedAt is not null || hold.ReturnedAt is not null)
                 throw new CommandRefusedException("component_not_held_for_order", "A scanned component is not open against this production order.", "refresh the order and scan an open held component");
+            if (existing.ContainsKey(hold.UnitId)) continue;
             var candidates = expected.Where(slot => slot.ComponentItemId == hold.ItemId).ToList();
             var slot = candidates.FirstOrDefault(candidate =>
                 open.Count(link => string.Equals(link.Slot, candidate.Slot, StringComparison.OrdinalIgnoreCase))
@@ -634,24 +663,39 @@ internal static class Components
         }
         var receipt = await ctx.Db.ProductionOrderReceipts.AsNoTracking().SingleAsync(row =>
             row.TenantId == ctx.Tenant.TenantId && row.ParentUnitId == parentUnitId, ct);
-        var result = await ctx.AssembleAsync(new RecordAssembly(commandId, parentUnitId, inputs, assignedAt,
-            actor, legalEntityId, Document: order), ct);
+        // ERP documents carry the company's calendar date (00:00 UTC), which can be later than this clock: the link is
+        // never dated before the issue that held the components.
+        var linkedAt = holds.Select(hold => hold.IssuedAt).Append(assignedAt).Max();
+        var result = inputs.Count == 0 ? new RecordAssemblyResult(parentUnitId, [], [],
+                await ctx.Db.Units.AsNoTracking().Where(unit => unit.TenantId == ctx.Tenant.TenantId
+                    && unit.UnitId == parentUnitId).Select(unit => unit.LifecycleStatus).SingleAsync(ct))
+            : await ctx.AssembleAsync(new RecordAssembly(commandId, parentUnitId, inputs, linkedAt,
+                actor, legalEntityId, Document: order), ct);
+        var created = inputs.Zip(result.LinkIds).ToDictionary(pair => pair.First.ChildUnitId!.Value, pair => pair.Second);
         // A linked component is no longer in production: it is inside the parent, so it takes the parent's custody.
         var parentCustody = await ctx.Db.Episodes.AsNoTracking().SingleOrDefaultAsync(episode =>
             episode.TenantId == ctx.Tenant.TenantId && episode.UnitId == parentUnitId
             && episode.Kind == EpisodeKind.Custody && episode.ValidTo == null, ct);
-        for (var index = 0; index < holds.Count; index++)
+        var holdUnits = holds.Select(hold => hold.UnitId).ToList();
+        var childCustodyFrom = await ctx.Db.Episodes.AsNoTracking().Where(episode =>
+                episode.TenantId == ctx.Tenant.TenantId && holdUnits.Contains(episode.UnitId)
+                && episode.Kind == EpisodeKind.Custody && episode.ValidTo == null)
+            .ToDictionaryAsync(episode => episode.UnitId, episode => episode.ValidFrom, ct);
+        var linkIds = new List<Guid>();
+        foreach (var hold in holds)
         {
-            var hold = holds[index];
             if (parentCustody?.LocationKind is { } parentLocationKind)
             {
+                // Custody history only moves forward: the move is dated no earlier than either unit's current custody.
+                var movedAt = new[] { linkedAt, parentCustody.ValidFrom,
+                    childCustodyFrom.GetValueOrDefault(hold.UnitId, linkedAt) }.Max();
                 var move = await ctx.Episodes.PrepareCustodyMoveAsync(hold.UnitId,
                     new CustodyTarget(parentLocationKind, parentCustody.LocationId, parentCustody.PartyRef,
                         parentCustody.PartyType, Reason: EpisodeReason.Production, Source: EpisodeSource.Manufacturing),
                     UnitEventType.CustodyChanged,
                     IdempotencyKey.For(actor, order.Type, order.Id, hold.IssueLine, hold.UnitId,
-                        UnitEventType.CustodyChanged + ":assembled", assignedAt),
-                    assignedAt, actor, legalEntityId, order,
+                        UnitEventType.CustodyChanged + ":assembled", movedAt),
+                    movedAt, actor, legalEntityId, order,
                     new Dictionary<string, object?>
                     {
                         ["production_order_type"] = order.Type,
@@ -662,8 +706,10 @@ internal static class Components
                     }, null, false, ct);
                 await ctx.Writer.AppendAsync([move.Draft], ct);
             }
+            var linkId = existing.TryGetValue(hold.UnitId, out var kept) ? kept : created[hold.UnitId];
+            linkIds.Add(linkId);
             hold.ParentUnitId = parentUnitId;
-            hold.AssemblyLinkId = result.LinkIds[index];
+            hold.AssemblyLinkId = linkId;
             hold.ReceiptDocumentType = receipt.ReceiptDocumentType;
             hold.ReceiptDocumentId = receipt.ReceiptDocumentId;
             hold.LinkedAt = assignedAt;
@@ -690,7 +736,7 @@ internal static class Components
             task.CompletedBy = actor;
         }
         await ctx.Db.SaveChangesAsync(ct);
-        return result;
+        return result with { LinkIds = linkIds };
     }
 
     public static async Task RaiseTaskAsync(DocumentContext ctx, DocumentRef order, string kind,
