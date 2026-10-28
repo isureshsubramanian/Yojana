@@ -403,6 +403,146 @@ public sealed class DocumentEventTests(SerialisationHostFixture fixture)
         await AssertComponentsTakeParentLocationAsync(db, selectedParent);
     }
 
+    [DatabaseFact]
+    public async Task A_late_issue_dated_after_this_clock_still_moves_the_component_to_its_parent()
+    {
+        // The ERP dates documents by the company's calendar day (00:00 UTC), which can be ahead of this clock.
+        var tenant = await fixture.NewTenantAsync("dmday");
+        var prefix = "DAY" + Guid.NewGuid().ToString("N")[..5].ToUpperInvariant();
+        var day = DateTime.SpecifyKind(DateTime.UtcNow.Date.AddDays(2), DateTimeKind.Utc);
+        var parentItem = Guid.NewGuid();
+        var componentItem = Guid.NewGuid();
+        var warehouse = Guid.NewGuid();
+        fixture.Services.GetRequiredService<InMemoryItemPorts>().RegisterBom(parentItem,
+            [new ExpectedComponent("PORT", componentItem, "FIC-NIC-25G", 1)]);
+        await fixture.EnableErpBomCompletenessAsync(tenant);
+        var componentReceipt = new ReceiptDocument(new DocumentRef("goods_receipt", Guid.NewGuid()),
+            Guid.NewGuid(), day, [Line(1, componentItem, warehouse, $"{prefix}-C1")]);
+        Ports.Add(componentReceipt);
+        await InvokeAsync<ConsumedEventResult>(tenant, new PurchasingReceiptPosted(Env(day), componentReceipt.Document));
+        var order = new DocumentRef("production_order", Guid.NewGuid());
+        var receipt = new ProductionReceipt(new DocumentRef("production_receipt", Guid.NewGuid()), order, day,
+            [Line(1, parentItem, warehouse, $"{prefix}-P1")], [], warehouse, ProducedItemId: parentItem,
+            PlannedQuantity: 1m);
+        Ports.Add(receipt);
+        await InvokeAsync<ConsumedEventResult>(tenant, new ManufacturingProductionReceiptPosted(Env(day), receipt.Document));
+        var issue = new ComponentIssueDocument(new DocumentRef("component_issue", Guid.NewGuid()), order, day,
+            [new ComponentIssue(1, componentItem, 1, [new DocumentSerial($"{prefix}-C1")])], parentItem, 1m);
+        Ports.Add(issue);
+
+        var issued = await InvokeAsync<ConsumedEventResult>(tenant,
+            new ManufacturingComponentIssued(Env(day), issue.Document));
+
+        Assert.Empty(issued.Exceptions);
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var parent = await db.Identifiers.Where(row => row.RawValue == $"{prefix}-P1").Select(row => row.UnitId).SingleAsync();
+        Assert.True(await db.ProductionComponentHolds.AllAsync(row => row.ProductionOrderId != order.Id
+            || (row.LinkedAt != null && row.ParentUnitId == parent)));
+        await AssertComponentsTakeParentLocationAsync(db, parent);
+    }
+
+    [DatabaseFact]
+    public async Task A_component_already_linked_to_the_parent_keeps_its_link_when_its_hold_is_completed()
+    {
+        var tenant = await fixture.NewTenantAsync("dmkeep");
+        var prefix = "KEEP" + Guid.NewGuid().ToString("N")[..5].ToUpperInvariant();
+        var parentItem = Guid.NewGuid();
+        var componentItem = Guid.NewGuid();
+        var warehouse = Guid.NewGuid();
+        fixture.Services.GetRequiredService<InMemoryItemPorts>().RegisterBom(parentItem,
+            [new ExpectedComponent("PORT", componentItem, "FIC-NIC-25G", 1)]);
+        var componentReceipt = new ReceiptDocument(new DocumentRef("goods_receipt", Guid.NewGuid()),
+            Guid.NewGuid(), T0, [Line(1, componentItem, warehouse, $"{prefix}-C1")]);
+        Ports.Add(componentReceipt);
+        await InvokeAsync<ConsumedEventResult>(tenant, new PurchasingReceiptPosted(Env(T0), componentReceipt.Document));
+        var order = new DocumentRef("production_order", Guid.NewGuid());
+        var receipt = new ProductionReceipt(new DocumentRef("production_receipt", Guid.NewGuid()), order,
+            T0.AddHours(1), [Line(1, parentItem, warehouse, $"{prefix}-P1")], [], warehouse,
+            ProducedItemId: parentItem, PlannedQuantity: 1m);
+        Ports.Add(receipt);
+        await InvokeAsync<ConsumedEventResult>(tenant,
+            new ManufacturingProductionReceiptPosted(Env(T0.AddHours(1)), receipt.Document));
+        Guid parent, component;
+        using (var setupScope = fixture.ScopeFor(tenant))
+        {
+            var setupDb = setupScope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            parent = await setupDb.Identifiers.Where(row => row.RawValue == $"{prefix}-P1").Select(row => row.UnitId).SingleAsync();
+            component = await setupDb.Identifiers.Where(row => row.RawValue == $"{prefix}-C1").Select(row => row.UnitId).SingleAsync();
+        }
+        var linked = await InvokeAsync<RecordAssemblyResult>(tenant, new RecordAssembly(Guid.NewGuid(), parent,
+            [new ChildInput(component, Slot: "PORT")], T0.AddHours(2), "production.operator", Entity));
+        var issue = new ComponentIssueDocument(new DocumentRef("component_issue", Guid.NewGuid()), order,
+            T0.AddHours(3), [new ComponentIssue(1, componentItem, 1, [new DocumentSerial($"{prefix}-C1")])],
+            parentItem, 1m);
+        Ports.Add(issue);
+
+        var issued = await InvokeAsync<ConsumedEventResult>(tenant,
+            new ManufacturingComponentIssued(Env(T0.AddHours(3)), issue.Document));
+
+        Assert.Empty(issued.Exceptions);
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var links = await db.AssemblyLinks.Where(row => row.ChildUnitId == component && row.RemovedAt == null).ToListAsync();
+        Assert.Equal(Assert.Single(linked.LinkIds), Assert.Single(links).LinkId);
+        var hold = await db.ProductionComponentHolds.SingleAsync(row => row.UnitId == component);
+        Assert.Equal(links[0].LinkId, hold.AssemblyLinkId);
+        Assert.NotNull(hold.LinkedAt);
+        await AssertComponentsTakeParentLocationAsync(db, parent);
+    }
+
+    [DatabaseFact]
+    public async Task A_refused_link_part_way_leaves_no_link_and_every_hold_open()
+    {
+        var tenant = await fixture.NewTenantAsync("dmatom");
+        var prefix = "ATOM" + Guid.NewGuid().ToString("N")[..5].ToUpperInvariant();
+        var parentItem = Guid.NewGuid();
+        var otherItem = Guid.NewGuid();
+        var componentItem = Guid.NewGuid();
+        var warehouse = Guid.NewGuid();
+        fixture.Services.GetRequiredService<InMemoryItemPorts>().RegisterBom(parentItem,
+            [new ExpectedComponent("PORT", componentItem, "FIC-NIC-25G", 2)]);
+        var stock = new ReceiptDocument(new DocumentRef("goods_receipt", Guid.NewGuid()), Guid.NewGuid(), T0,
+            [Line(1, componentItem, warehouse, $"{prefix}-C1", $"{prefix}-C2"), Line(2, otherItem, warehouse, $"{prefix}-O1")]);
+        Ports.Add(stock);
+        await InvokeAsync<ConsumedEventResult>(tenant, new PurchasingReceiptPosted(Env(T0), stock.Document));
+        Guid other, second;
+        using (var setupScope = fixture.ScopeFor(tenant))
+        {
+            var setupDb = setupScope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+            other = await setupDb.Identifiers.Where(row => row.RawValue == $"{prefix}-O1").Select(row => row.UnitId).SingleAsync();
+            second = await setupDb.Identifiers.Where(row => row.RawValue == $"{prefix}-C2").Select(row => row.UnitId).SingleAsync();
+        }
+        // C2 is already inside another unit, so linking it to the new parent is refused after C1 was taken.
+        await InvokeAsync<RecordAssemblyResult>(tenant, new RecordAssembly(Guid.NewGuid(), other,
+            [new ChildInput(second)], T0.AddMinutes(30), "production.operator", Entity));
+        var order = new DocumentRef("production_order", Guid.NewGuid());
+        var receipt = new ProductionReceipt(new DocumentRef("production_receipt", Guid.NewGuid()), order,
+            T0.AddHours(1), [Line(1, parentItem, warehouse, $"{prefix}-P1")], [], warehouse,
+            ProducedItemId: parentItem, PlannedQuantity: 1m);
+        Ports.Add(receipt);
+        await InvokeAsync<ConsumedEventResult>(tenant,
+            new ManufacturingProductionReceiptPosted(Env(T0.AddHours(1)), receipt.Document));
+        var issue = new ComponentIssueDocument(new DocumentRef("component_issue", Guid.NewGuid()), order,
+            T0.AddHours(2), [new ComponentIssue(1, componentItem, 1, [new DocumentSerial($"{prefix}-C1")]),
+                new ComponentIssue(2, componentItem, 1, [new DocumentSerial($"{prefix}-C2")])], parentItem, 1m);
+        Ports.Add(issue);
+
+        var issued = await InvokeAsync<ConsumedEventResult>(tenant,
+            new ManufacturingComponentIssued(Env(T0.AddHours(2)), issue.Document));
+
+        Assert.Contains(issued.Exceptions, text => text.Contains("child_already_installed", StringComparison.Ordinal));
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var parent = await db.Identifiers.Where(row => row.RawValue == $"{prefix}-P1").Select(row => row.UnitId).SingleAsync();
+        Assert.False(await db.AssemblyLinks.AnyAsync(row => row.ParentUnitId == parent && row.RemovedAt == null));
+        var holds = await db.ProductionComponentHolds.Where(row => row.ProductionOrderId == order.Id).ToListAsync();
+        Assert.Equal(2, holds.Count);
+        Assert.All(holds, hold => Assert.Null(hold.LinkedAt));
+        Assert.Equal(2, await db.Current.CountAsync(row => (row.UnitId == second || holds.Select(h => h.UnitId).Contains(row.UnitId))
+            && row.LocationKind == LocationKind.InProduction));
+    }
+
     // A component linked out of a production hold leaves in_production and sits where its parent sits.
     private static async Task AssertComponentsTakeParentLocationAsync(SerialisationDbContext db, Guid parent)
     {
