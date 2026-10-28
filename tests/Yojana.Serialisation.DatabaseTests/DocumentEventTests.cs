@@ -629,6 +629,86 @@ public sealed class DocumentEventTests(SerialisationHostFixture fixture)
         Assert.All(holds, hold => Assert.NotNull(hold.ReturnedAt));
     }
 
+    [DatabaseFact]
+    public async Task An_erp_return_from_a_released_unit_is_followed_and_raises_one_exception_per_parent()
+    {
+        // ADR-0026: live receipt 142 took 22 parts out of released SRV-01 with no warning.
+        var (tenant, order, warehouse, componentItem, parentItem, prefix, parent) = await BuildTwoComponentUnitAsync("dmrel");
+        await InvokeAsync<ReleaseUnitResult>(tenant,
+            new ReleaseUnit(Guid.NewGuid(), parent, T0.AddHours(3), "quality.user", Entity, "release-check"));
+        var returned = new ProductionReceipt(new DocumentRef("production_receipt", Guid.NewGuid()), order,
+            T0.AddHours(4), [], [], warehouse, [Line(1, componentItem, warehouse, $"{prefix}-C2")], parentItem, 1m);
+        Ports.Add(returned);
+        var message = new ManufacturingProductionReceiptPosted(Env(T0.AddHours(4)), returned.Document);
+
+        var result = await InvokeAsync<ConsumedEventResult>(tenant, message);
+        var replay = await InvokeAsync<ConsumedEventResult>(tenant, message);
+
+        var notice = Assert.Single(result.Exceptions, text => text.Contains("released_unit_parts_removed", StringComparison.Ordinal));
+        Assert.Contains($"1 part(s) removed from released unit {prefix}-P1", notice, StringComparison.Ordinal);
+        Assert.EndsWith($": {prefix}-C2", notice, StringComparison.Ordinal);
+        Assert.DoesNotContain(replay.Exceptions, text => text.Contains("released_unit_parts_removed", StringComparison.Ordinal));
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var component = await db.Identifiers.Where(row => row.RawValue == $"{prefix}-C2").Select(row => row.UnitId).SingleAsync();
+        Assert.True(await db.AssemblyLinks.AnyAsync(row => row.ChildUnitId == component && row.RemovedAt != null));
+        var current = await db.Current.SingleAsync(row => row.UnitId == component);
+        Assert.Equal((warehouse, LocationKind.Warehouse), (current.LocationId, current.LocationKind));
+        Assert.Equal(LifecycleStatus.Released, (await db.Units.SingleAsync(row => row.UnitId == parent)).LifecycleStatus);
+    }
+
+    [DatabaseFact]
+    public async Task An_erp_return_from_a_pre_release_unit_raises_no_released_unit_exception()
+    {
+        var (tenant, order, warehouse, componentItem, parentItem, prefix, parent) = await BuildTwoComponentUnitAsync("dmpre");
+        var returned = new ProductionReceipt(new DocumentRef("production_receipt", Guid.NewGuid()), order,
+            T0.AddHours(4), [], [], warehouse, [Line(1, componentItem, warehouse, $"{prefix}-C2")], parentItem, 1m);
+        Ports.Add(returned);
+
+        var result = await InvokeAsync<ConsumedEventResult>(tenant,
+            new ManufacturingProductionReceiptPosted(Env(T0.AddHours(4)), returned.Document));
+
+        Assert.DoesNotContain(result.Exceptions, text => text.Contains("released_unit_parts_removed", StringComparison.Ordinal));
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        Assert.Equal(1, await db.AssemblyLinks.CountAsync(row => row.ParentUnitId == parent && row.RemovedAt == null));
+    }
+
+    // Two components issued to a one-unit order and linked to its received parent; the parent stays pre-release.
+    private async Task<(TenantId Tenant, DocumentRef Order, Guid Warehouse, Guid ComponentItem, Guid ParentItem, string Prefix, Guid Parent)>
+        BuildTwoComponentUnitAsync(string tenantName)
+    {
+        var tenant = await fixture.NewTenantAsync(tenantName);
+        var prefix = "REL" + Guid.NewGuid().ToString("N")[..5].ToUpperInvariant();
+        var parentItem = Guid.NewGuid();
+        var componentItem = Guid.NewGuid();
+        var warehouse = Guid.NewGuid();
+        fixture.Services.GetRequiredService<InMemoryItemPorts>().RegisterBom(parentItem,
+            [new ExpectedComponent("PSU", componentItem, "FIC-PSU-800", 2)]);
+        await fixture.EnableErpBomCompletenessAsync(tenant);
+        var stock = new ReceiptDocument(new DocumentRef("goods_receipt", Guid.NewGuid()), Guid.NewGuid(), T0,
+            [Line(1, componentItem, warehouse, $"{prefix}-C1", $"{prefix}-C2")]);
+        Ports.Add(stock);
+        await InvokeAsync<ConsumedEventResult>(tenant, new PurchasingReceiptPosted(Env(T0), stock.Document));
+        var order = new DocumentRef("production_order", Guid.NewGuid());
+        var issue = new ComponentIssueDocument(new DocumentRef("component_issue", Guid.NewGuid()), order,
+            T0.AddHours(1), [new ComponentIssue(1, componentItem, 2,
+                [new DocumentSerial($"{prefix}-C1"), new DocumentSerial($"{prefix}-C2")])], parentItem, 1m);
+        Ports.Add(issue);
+        await InvokeAsync<ConsumedEventResult>(tenant, new ManufacturingComponentIssued(Env(T0.AddHours(1)), issue.Document));
+        var production = new ProductionReceipt(new DocumentRef("production_receipt", Guid.NewGuid()), order,
+            T0.AddHours(2), [Line(1, parentItem, warehouse, $"{prefix}-P1")], [], warehouse,
+            ProducedItemId: parentItem, PlannedQuantity: 1m);
+        Ports.Add(production);
+        await InvokeAsync<ConsumedEventResult>(tenant,
+            new ManufacturingProductionReceiptPosted(Env(T0.AddHours(2)), production.Document));
+        using var scope = fixture.ScopeFor(tenant);
+        var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
+        var parent = await db.Identifiers.Where(row => row.RawValue == $"{prefix}-P1").Select(row => row.UnitId).SingleAsync();
+        Assert.Equal(2, await db.AssemblyLinks.CountAsync(row => row.ParentUnitId == parent && row.RemovedAt == null));
+        return (tenant, order, warehouse, componentItem, parentItem, prefix, parent);
+    }
+
     // A component linked out of a production hold leaves in_production and sits where its parent sits.
     private static async Task AssertComponentsTakeParentLocationAsync(SerialisationDbContext db, Guid parent)
     {
@@ -703,9 +783,10 @@ public sealed class DocumentEventTests(SerialisationHostFixture fixture)
             T0.AddHours(2), [], [], warehouse, [Line(2, componentItem, warehouse, serial)], parentItem, 1m);
         Ports.Add(production);
 
-        await InvokeAsync<ConsumedEventResult>(tenant,
+        var result = await InvokeAsync<ConsumedEventResult>(tenant,
             new ManufacturingProductionReceiptPosted(Env(T0.AddHours(2)), production.Document));
 
+        Assert.DoesNotContain(result.Exceptions, text => text.Contains("released_unit_parts_removed", StringComparison.Ordinal));
         using var scope = fixture.ScopeFor(tenant);
         var db = scope.ServiceProvider.GetRequiredService<SerialisationDbContext>();
         var component = await db.Identifiers.Where(row => row.RawValue == serial).Select(row => row.UnitId).SingleAsync();

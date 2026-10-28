@@ -370,6 +370,7 @@ public static class ManufacturingProductionReceiptPostedHandler
         await ctx.Db.SaveChangesAsync(ct);
         await Components.RecordParentsAsync(ctx, doc, ct);
         exceptions.AddRange(await Components.AssembleAsync(ctx, message.Envelope, doc.Document, doc.ProductionOrder, doc.Components, doc.PostedAt, ct));
+        var closedByReturn = new List<Guid>();
         foreach (var group in (doc.ReturnedComponents ?? []).Where(line => line.Serials.Count > 0)
                      .GroupBy(line => line.LocationId ?? doc.FacilityId))
         {
@@ -388,7 +389,10 @@ public static class ManufacturingProductionReceiptPostedHandler
                 doc.Document), ct);
             exceptions.AddRange(returned.Refusals.Select(refusal =>
                 $"{doc.Document.Type} {doc.Document.Id:N}: {refusal.Rule}: {refusal.Message}"));
+            // A replayed return closed nothing new; raising again would duplicate the person's task (ADR-0026).
+            if (!returned.Duplicate) closedByReturn.AddRange(returned.ClosedAssemblyLinkIds);
         }
+        exceptions.AddRange(await Components.ReleasedPartsRemovedAsync(ctx, doc.Document, closedByReturn, ct));
         exceptions.AddRange(await Components.LinkHeldAsync(ctx, message.Envelope, doc.ProductionOrder, ct));
         return new ConsumedEventResult("Manufacturing.ProductionReceiptPosted", doc.Document, affected, 0, exceptions, affected == 0 && exceptions.Count == 0);
     }, ct);
@@ -596,8 +600,10 @@ internal static class Components
         }
         try
         {
+            // Dated by the ERP document, not this clock: a same-day ERP return (also dated by the document) must not
+            // fall before the link it closes, or its custody move is refused and the whole receipt fails.
             await AssignAsync(ctx, env.MessageId, order, parents[0].UnitId, holds, env.Source, env.LegalEntityId,
-                ctx.Clock.UtcNow, ct);
+                env.OccurredAt, ct);
         }
         catch (CommandRefusedException exception)
         {
@@ -738,6 +744,42 @@ internal static class Components
         await ctx.Db.SaveChangesAsync(ct);
         return result with { LinkIds = linkIds };
     }
+
+    /// <summary>
+    /// ADR-0026: the ERP is followed when its return takes parts out of a released unit, but a person must be told.
+    /// One exception per parent; the gateway turns it into an exception task closed on the Exceptions screen.
+    /// </summary>
+    public static async Task<IReadOnlyList<string>> ReleasedPartsRemovedAsync(DocumentContext ctx,
+        DocumentRef returnDocument, IReadOnlyCollection<Guid> closedLinkIds, CancellationToken ct)
+    {
+        if (closedLinkIds.Count == 0) return [];
+        var links = await ctx.Db.AssemblyLinks.AsNoTracking().Where(link => link.TenantId == ctx.Tenant.TenantId
+            && closedLinkIds.Contains(link.LinkId)).Select(link => new { link.ParentUnitId, link.ChildUnitId })
+            .ToListAsync(ct);
+        var parentIds = links.Select(link => link.ParentUnitId).Distinct().ToList();
+        var released = await ctx.Db.Units.AsNoTracking().Where(unit => unit.TenantId == ctx.Tenant.TenantId
+            && parentIds.Contains(unit.UnitId) && ReleasedOrLater.Contains(unit.LifecycleStatus))
+            .Select(unit => unit.UnitId).ToListAsync(ct);
+        if (released.Count == 0) return [];
+        var unitIds = released.Concat(links.Where(link => released.Contains(link.ParentUnitId))
+            .Select(link => link.ChildUnitId).OfType<Guid>()).Distinct().ToList();
+        var serials = await ctx.Db.Identifiers.AsNoTracking().Where(row => row.TenantId == ctx.Tenant.TenantId
+            && unitIds.Contains(row.UnitId) && row.ValidTo == null && row.Type == IdentifierType.InternalSerial)
+            .ToDictionaryAsync(row => row.UnitId, row => row.RawValue, ct);
+        string Serial(Guid unitId) => serials.GetValueOrDefault(unitId) ?? unitId.ToString("N");
+        return released.Order().Select(parent =>
+        {
+            var removed = links.Where(link => link.ParentUnitId == parent).ToList();
+            var named = removed.Select(link => link.ChildUnitId).OfType<Guid>().Select(Serial).Order(StringComparer.Ordinal).ToList();
+            // The task detail holds 2000 characters; a very large return lists the first serials and a count.
+            var shown = named.Take(40).ToList();
+            var list = shown.Count == 0 ? "" : $": {string.Join(", ", shown)}{(named.Count > shown.Count ? $" and {named.Count - shown.Count} more" : "")}";
+            return $"{returnDocument.Type} {returnDocument.Id:N}: released_unit_parts_removed: {removed.Count} part(s) removed from released unit {Serial(parent)} by this ERP return{list}";
+        }).ToList();
+    }
+
+    private static readonly string[] ReleasedOrLater =
+        [LifecycleStatus.Released, LifecycleStatus.Dormant, LifecycleStatus.Scrapped, LifecycleStatus.Decommissioned];
 
     public static async Task RaiseTaskAsync(DocumentContext ctx, DocumentRef order, string kind,
         CancellationToken ct)
