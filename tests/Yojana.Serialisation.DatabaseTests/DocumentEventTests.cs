@@ -308,6 +308,8 @@ public sealed class DocumentEventTests(SerialisationHostFixture fixture)
             Assert.Equal(order, row.ProductionOrder);
             Assert.Equal(issue.Document.Id, row.Issue?.Id);
             Assert.Equal(production.Document.Id, row.Receipt?.Id);
+            // A serialised component shows its own item, never the lot fallback.
+            Assert.Equal(componentItem, row.ChildItemId);
         });
         var released = await InvokeAsync<ReleaseUnitResult>(tenant,
             new ReleaseUnit(Guid.NewGuid(), parent, T0.AddHours(3), "quality.user", Entity, "release-check"));

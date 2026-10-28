@@ -188,6 +188,8 @@ public sealed class UnitQueries(SerialisationDbContext db, IIdentifierPolicySour
         var links = await db.AssemblyLinks.AsNoTracking().Where(l => l.TenantId == tenantId && l.ParentUnitId == unitId).OrderBy(l => l.RemovedAt == null ? 0 : 1).ThenBy(l => l.Slot).ToListAsync(cancellationToken);
         var childIds = links.Where(l => l.ChildUnitId != null).Select(l => l.ChildUnitId!.Value).ToList();
         var childSerials = childIds.Count == 0 ? new Dictionary<Guid, string>() : await db.Identifiers.AsNoTracking().Where(i => i.TenantId == tenantId && childIds.Contains(i.UnitId) && i.ValidTo == null && i.Type == IdentifierType.InternalSerial).ToDictionaryAsync(i => i.UnitId, i => i.NormalisedValue, cancellationToken);
+        // A serialised child's item lives on the child unit, not on the link (the link carries it only for lot rows).
+        var childItems = childIds.Count == 0 ? new Dictionary<Guid, Guid>() : await db.ItemAssignments.AsNoTracking().Where(a => a.TenantId == tenantId && childIds.Contains(a.UnitId) && a.ValidTo == null).ToDictionaryAsync(a => a.UnitId, a => a.ItemId, cancellationToken);
         var holdSources = await db.ProductionComponentHolds.AsNoTracking().Where(row => row.TenantId == tenantId
             && row.AssemblyLinkId != null && links.Select(link => link.LinkId).Contains(row.AssemblyLinkId.Value))
             .ToDictionaryAsync(row => row.AssemblyLinkId!.Value, cancellationToken);
@@ -196,7 +198,8 @@ public sealed class UnitQueries(SerialisationDbContext db, IIdentifierPolicySour
             holdSources.TryGetValue(l.LinkId, out var source);
             return new AsBuiltRow(l.LinkId, l.Slot, l.Relation, l.ChildUnitId,
                 l.ChildUnitId is { } c && childSerials.TryGetValue(c, out var s) ? s : null,
-                l.ChildItemId, l.ChildLotId, l.Quantity, l.ReleaseStatus, l.ThroughPhantomItemId,
+                l.ChildItemId ?? (l.ChildUnitId is { } child && childItems.TryGetValue(child, out var item) ? (Guid?)item : null),
+                l.ChildLotId, l.Quantity, l.ReleaseStatus, l.ThroughPhantomItemId,
                 l.InstalledAt, l.RemovedAt,
                 source is null ? null : new(source.ProductionOrderType, source.ProductionOrderId),
                 source?.ReceiptDocumentId is { } receiptId && source.ReceiptDocumentType is { } receiptType
